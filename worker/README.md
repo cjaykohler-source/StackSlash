@@ -75,6 +75,36 @@ and check Discord for alerts once one fires. Stop with Ctrl+C (handled
 gracefully — marks its `job_runs` row `ok` on exit rather than leaving it
 stuck at `running`).
 
+## Deploying: always-on Mac via launchd
+
+If you have a Mac that's already always-on (a Mac mini, a dedicated
+machine — not a laptop that sleeps), that's a simpler and free
+alternative to Fly.io: run this as a real background service via macOS's
+`launchd`, the same mechanism system daemons use. It survives terminal
+closes, auto-restarts on crash, and starts on login/boot.
+
+1. `npm install && npm run build` in `worker/`
+2. Create `worker/.env` with real values (see above)
+3. Copy `worker/launchd/com.stackslash.outlier-worker.plist` to
+   `~/Library/LaunchAgents/` (edit the absolute paths inside it first if
+   this repo doesn't live at the same path as the machine that plist was
+   written for)
+4. `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stackslash.outlier-worker.plist`
+
+**After any code change:** `npm run build` then
+`launchctl kickstart -k gui/$(id -u)/com.stackslash.outlier-worker` —
+launchd runs the compiled `dist/` output, not a live-reloading dev
+server, so edits don't take effect until both of those run.
+
+Logs land wherever `StandardOutPath`/`StandardErrorPath` point in the
+plist (e.g. `~/Library/Logs/stackslash-outlier-worker/`).
+
+```bash
+launchctl print gui/$(id -u)/com.stackslash.outlier-worker   # status
+tail -f ~/Library/Logs/stackslash-outlier-worker/stdout.log  # live output
+launchctl bootout gui/$(id -u)/com.stackslash.outlier-worker.plist  # stop
+```
+
 ## Deploying (Fly.io)
 
 ```bash

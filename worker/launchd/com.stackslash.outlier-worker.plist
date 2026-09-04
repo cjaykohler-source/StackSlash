@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.outlier-worker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/node</string>
+        <string>--env-file=/Users/chriskohler/Desktop/StackSlash/worker/.env</string>
+        <string>/Users/chriskohler/Desktop/StackSlash/worker/dist/index.js</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/chriskohler/Desktop/StackSlash/worker</string>
+
+    <!-- Start on load (i.e. on login/boot since RunAtLoad is set), and
+         restart automatically if the process ever exits, whether from a
+         crash or a clean exit — this should run forever. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Back off between restarts so a persistent failure (e.g. bad env
+         vars) doesn't spin the CPU in a tight restart loop. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/chriskohler/Library/Logs/stackslash-outlier-worker/stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/chriskohler/Library/Logs/stackslash-outlier-worker/stderr.log</string>
+</dict>
+</plist>
