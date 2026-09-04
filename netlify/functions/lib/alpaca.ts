@@ -4,7 +4,13 @@
  * of account type. See: https://docs.alpaca.markets/reference/stockbars
  */
 
-const DATA_BASE_URL = process.env.ALPACA_BASE_URL ?? "https://data.alpaca.markets";
+function dataBaseUrl(): string {
+  const url = process.env.ALPACA_BASE_URL;
+  if (!url) {
+    throw new Error("Missing ALPACA_BASE_URL env var.");
+  }
+  return url;
+}
 
 function authHeaders(): HeadersInit {
   const keyId = process.env.ALPACA_API_KEY_ID;
@@ -50,7 +56,7 @@ export async function fetchDailyBars(
   });
   if (pageToken) params.set("page_token", pageToken);
 
-  const res = await fetch(`${DATA_BASE_URL}/v2/stocks/bars?${params.toString()}`, {
+  const res = await fetch(`${dataBaseUrl()}/v2/stocks/bars?${params.toString()}`, {
     headers: authHeaders(),
   });
 
@@ -71,7 +77,7 @@ export async function fetchSnapshots(
   symbols: string[],
 ): Promise<Record<string, { latestTrade: { p: number; t: string } | null; dailyBar: DailyBar | null }>> {
   const params = new URLSearchParams({ symbols: symbols.join(","), feed: "iex" });
-  const res = await fetch(`${DATA_BASE_URL}/v2/stocks/snapshots?${params.toString()}`, {
+  const res = await fetch(`${dataBaseUrl()}/v2/stocks/snapshots?${params.toString()}`, {
     headers: authHeaders(),
   });
 
