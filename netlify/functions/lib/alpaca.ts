@@ -33,21 +33,16 @@ export interface DailyBar {
   v: number;
 }
 
-/**
- * Fetch daily bars for a batch of symbols over a date range.
- * Alpaca's v2 bars endpoint accepts a comma-separated symbol list and
- * paginates via next_page_token — this handles one page fetch; callers
- * should loop on next_page_token for large universes/date ranges.
- */
-export async function fetchDailyBars(
+async function fetchBars(
   symbols: string[],
-  start: string, // YYYY-MM-DD
-  end: string, // YYYY-MM-DD
+  timeframe: string,
+  start: string,
+  end: string,
   pageToken?: string,
 ): Promise<{ bars: Record<string, DailyBar[]>; nextPageToken: string | null }> {
   const params = new URLSearchParams({
     symbols: symbols.join(","),
-    timeframe: "1Day",
+    timeframe,
     start,
     end,
     adjustment: "split",
@@ -70,6 +65,38 @@ export async function fetchDailyBars(
   };
 
   return { bars: json.bars ?? {}, nextPageToken: json.next_page_token ?? null };
+}
+
+/**
+ * Fetch daily bars for a batch of symbols over a date range.
+ * Alpaca's v2 bars endpoint accepts a comma-separated symbol list and
+ * paginates via next_page_token — this handles one page fetch; callers
+ * should loop on next_page_token for large universes/date ranges.
+ */
+export async function fetchDailyBars(
+  symbols: string[],
+  start: string, // YYYY-MM-DD
+  end: string, // YYYY-MM-DD
+  pageToken?: string,
+): Promise<{ bars: Record<string, DailyBar[]>; nextPageToken: string | null }> {
+  return fetchBars(symbols, "1Day", start, end, pageToken);
+}
+
+/**
+ * Fetch 1-minute bars for a single calendar date (YYYY-MM-DD). Not
+ * currently called anywhere — kept ready for whenever the "Day" chart
+ * range gets built (needs a scheduled job to populate bars_intraday,
+ * deferred for now; see the range-toggle UI's empty-state handling in
+ * SymbolDetail.tsx). Requesting the full 00:00-24:00 UTC span and letting
+ * Alpaca return only what actually traded is simpler than computing the
+ * exact market-open/close times (and their DST shifts) ourselves.
+ */
+export async function fetchIntradayBars(
+  symbols: string[],
+  date: string, // YYYY-MM-DD
+  pageToken?: string,
+): Promise<{ bars: Record<string, DailyBar[]>; nextPageToken: string | null }> {
+  return fetchBars(symbols, "1Min", date, date, pageToken);
 }
 
 /** Latest trade/quote snapshot for a batch of symbols — used by intraday-scan. */

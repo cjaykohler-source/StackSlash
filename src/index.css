@@ -153,6 +153,31 @@ body {
   font-size: 0.9rem;
 }
 
+.range-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.range-toggle button {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.range-toggle button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.range-toggle button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  font-weight: 600;
+}
+
 .trigger-feed {
   width: 100%;
   border-collapse: collapse;
