@@ -47,6 +47,12 @@ body {
   display: block;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .link-button {
   background: none;
   border: 1px solid var(--border);
@@ -54,10 +60,71 @@ body {
   padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
+  display: inline-block;
+  text-decoration: none;
+  font-size: 0.9rem;
+  line-height: 1.2;
 }
 .link-button:hover {
   color: var(--text);
   border-color: var(--accent);
+}
+
+.about-intro {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  max-width: 640px;
+  margin: 0 0 20px;
+}
+
+.trigger-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trigger-category-header {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin: 20px 0 4px;
+}
+.trigger-category-header:first-child {
+  margin-top: 0;
+}
+
+.trigger-info-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.trigger-info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.trigger-info-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.trigger-info-detail {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.trigger-info-cooldown {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
 }
 
 .centered {

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { RegimeBanner } from "../components/RegimeBanner";
 import { TriggerFeed } from "../components/TriggerFeed";
@@ -8,9 +9,14 @@ export function Dashboard() {
     <div className="page">
       <header className="page-header">
         <img src={logo} alt="StackSlash" className="brand-logo" />
-        <button className="link-button" onClick={() => supabase.auth.signOut()}>
-          Sign out
-        </button>
+        <div className="header-actions">
+          <Link to="/about" className="link-button">
+            About
+          </Link>
+          <button className="link-button" onClick={() => supabase.auth.signOut()}>
+            Sign out
+          </button>
+        </div>
       </header>
       <RegimeBanner />
       <section>

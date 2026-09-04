@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import { triggerLabel, triggerCategoryLabel } from "../lib/triggerInfo";
 
 interface FeedRow {
   id: number;
@@ -154,8 +155,8 @@ export function TriggerFeed() {
                       {row.symbols?.ticker ?? row.symbol_id}
                     </Link>
                   </td>
-                  <td>{row.triggers?.name ?? row.trigger_id}</td>
-                  <td>{row.triggers?.category ?? "—"}</td>
+                  <td>{row.triggers?.name ? triggerLabel(row.triggers.name) : row.trigger_id}</td>
+                  <td>{row.triggers?.name ? triggerCategoryLabel(row.triggers.name) : "—"}</td>
                   <td>
                     <span className={`status status-${row.status}`}>{row.status}</span>
                   </td>

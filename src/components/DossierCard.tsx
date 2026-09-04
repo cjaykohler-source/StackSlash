@@ -1,3 +1,5 @@
+import { triggerLabel, humanize } from "../lib/triggerInfo";
+
 // Deliberately a narrow structural type rather than importing the full
 // Dossier from lib/types — this only needs these four fields, and
 // decoupling avoids forcing every caller to also supply
@@ -16,27 +18,10 @@ export interface DossierCardData {
  * tick-level snapshot — see deep-dive.ts) — this formats whatever fields
  * are actually present rather than assuming one fixed schema, so it stays
  * correct as new trigger categories get added.
+ *
+ * Trigger labels come from lib/triggerInfo.ts (shared with TriggerFeed
+ * and the About page) rather than a local map.
  */
-
-const TRIGGER_LABELS: Record<string, string> = {
-  momentum_rank_entry: "Momentum Rank Entry",
-  earnings_surprise_drift: "Earnings Surprise Drift",
-  bb_rsi_confluence_long: "Bollinger/RSI Confluence (Long)",
-  bb_rsi_confluence_short: "Bollinger/RSI Confluence (Short)",
-  realtime_outlier_zscore: "Real-Time Outlier",
-  volatility_squeeze_breakout_long: "Volatility Squeeze Breakout (Up)",
-  volatility_squeeze_breakout_short: "Volatility Squeeze Breakout (Down)",
-  momentum_breakout: "Momentum Breakout",
-  macd_bullish_cross: "MACD Bullish Cross",
-  macd_bearish_cross: "MACD Bearish Cross",
-  momentum_exit: "Momentum Exit",
-};
-
-function humanizeKey(key: string): string {
-  return key
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 function pct(v: unknown, decimals = 2): string {
   const n = Number(v);
@@ -147,9 +132,7 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
     note?: string;
   };
 
-  const triggerLabel = analysis.trigger
-    ? (TRIGGER_LABELS[analysis.trigger] ?? humanizeKey(analysis.trigger))
-    : "Unknown trigger";
+  const displayLabel = analysis.trigger ? triggerLabel(analysis.trigger) : "Unknown trigger";
 
   const fields = Object.entries(analysis.fired_on ?? {}).filter(([key]) => !HIDDEN_FIELDS.has(key));
 
@@ -157,7 +140,7 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
     <div className="dossier-card">
       <div className="dossier-card-header">
         <div>
-          <div className="dossier-trigger-name">{triggerLabel}</div>
+          <div className="dossier-trigger-name">{displayLabel}</div>
           <div className="dossier-timestamp">{new Date(dossier.ts).toLocaleString()}</div>
         </div>
         <div className="dossier-score" title="Conviction score">
@@ -169,7 +152,7 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
         <div className="dossier-metrics">
           {fields.map(([key, value]) => {
             const meta = FIELD_META[key];
-            const label = meta?.label ?? humanizeKey(key);
+            const label = meta?.label ?? humanize(key);
             const formatted = value === null || value === undefined ? "—" : (meta?.format(value) ?? String(value));
             return (
               <div className="dossier-metric" key={key}>
