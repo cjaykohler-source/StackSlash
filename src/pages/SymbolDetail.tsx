@@ -59,8 +59,11 @@ function rangeStartDate(range: Range): Date {
  * Symbol drill-down: price chart (range-toggleable) + dossiers (the
  * "why it fired" explanations from the deep-dive worker) for that symbol.
  *
- * Day pulls from bars_intraday (populated by intraday-bars-scan.ts, 1-min
- * bars for today only). Week/Month/Year/5-Year all pull from bars_daily —
+ * Day pulls from bars_intraday, which nothing currently populates — no
+ * ingestion job for it has been built yet, so this range correctly shows
+ * an empty state rather than fake data (see the render below). Building
+ * that job (1-min bars for today, whole universe) is deferred, not done.
+ * Week/Month/Year/5-Year all pull from bars_daily —
  * Week/Month/Year are already covered by eod-scan's normal ~400-day
  * fetch; 5-Year needs backfill-history.ts to have been run at least once
  * for this symbol, or the chart will just show whatever bars_daily

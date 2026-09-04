@@ -2,41 +2,54 @@
 
 Two-tier market scanner: a wide, cheap Tier-1 surface over the whole
 universe, and Tier-2 triggers (momentum, earnings drift, technical entry
-timing, regime kill-switch) that fire a deep-dive dossier and a dedup'd
-alert. See the design discussion in this project's chat history for the
-full research basis and architecture rationale.
+timing, real-time outlier detection, regime kill-switch) that fire a
+deep-dive dossier and a dedup'd alert. See the design discussion in this
+project's chat history for the full research basis and architecture
+rationale.
 
 ## Stack
 
 - **Supabase** (`wnzxvdfskmivbyqadtll`, org StackSlash) — Postgres, Auth, Realtime
-- **Netlify** — static/SSR frontend + Scheduled Functions as the job runner
+- **Netlify** — static/SSR frontend + Scheduled Functions as the job runner for daily/intraday scans
 - **Alpaca Market Data API** — paper keys are sufficient (no funded account needed for data-only use)
+- **`worker/`** — a separate always-on process (Mac mini via `launchd`, or Fly.io) holding a live Alpaca websocket for real-time outlier detection; see `worker/README.md`. Not part of the Netlify deploy.
 
 ## Repo layout
 
 ```
 src/                      Frontend (Vite + React + Supabase client)
-  pages/                  Login, Dashboard (trigger feed + regime banner), SymbolDetail
+  pages/                  Login, Dashboard (trigger feed + regime banner), SymbolDetail (chart + dossiers)
   components/             AuthGuard, RegimeBanner, TriggerFeed
   lib/                    Supabase client, shared TS types (mirrors the DB schema)
 
 netlify/functions/
   eod-scan.ts             Job A — daily bars, factor_state, momentum ranking,
-                           regime_state, trigger evaluation. Scheduled ~30min after close.
+                           regime_state, non-technical trigger evaluation.
+                           Scheduled ~30min after close.
   intraday-scan.ts        Job B — polls snapshots for top-momentum names,
-                           evaluates technical triggers only. Scheduled every 10min
-                           during market hours.
-  deep-dive.ts            Job C — HTTP-triggered on trigger_events insert
-                           (wire via a Supabase Database Webhook). Writes a
-                           dossier and dispatches an alert.
+                           evaluates technical-category triggers only, on that
+                           candidate set only. Scheduled every 10min during
+                           market hours.
+  backfill-history.ts     Manually-triggered deep historical pull (default:
+                           5 years back) for the 5-Year chart range. Not
+                           scheduled — run once per symbol, or when adding one.
+  deep-dive.ts            Job C — HTTP-triggered by a Postgres trigger (see
+                           "Wiring" below) on every trigger_events insert,
+                           from any source (eod-scan, intraday-scan, or the
+                           realtime worker). Writes a dossier and dispatches
+                           an alert.
   send-alert.ts           Manual/test alert dispatch for an existing dossier.
   lib/
     supabaseAdmin.ts       Service-role client (server-only, bypasses RLS)
-    alpaca.ts               Alpaca REST client (bars, snapshots)
+    alpaca.ts               Alpaca REST client (daily/intraday bars, snapshots)
     indicators.ts            Pure math: returns, SMA/EMA, RSI, Bollinger, vol, percentile rank
     triggers.ts               Declarative trigger definition evaluator
     notify.ts                  Telegram/Discord dispatch + dedup/cooldown
     jobRun.ts                   job_runs logging wrapper
+
+worker/                   Separate deployable — persistent Alpaca websocket,
+                           EWMA-based real-time outlier detection. See its
+                           own README for setup/deployment (launchd or Fly.io).
 ```
 
 ## Setup
@@ -54,7 +67,8 @@ netlify/functions/
    - One of `TELEGRAM_BOT_TOKEN`+`TELEGRAM_CHAT_ID` or `DISCORD_WEBHOOK_URL` for alerts
 
    Set the same values in Netlify: Site settings > Environment variables — the
-   local `.env` only covers `netlify dev` / `vite dev`.
+   local `.env` only covers `netlify dev` / `vite dev`. `worker/` has its own
+   `.env`, separate from this one (see `worker/README.md`).
 
 3. **Create your login.** Supabase Auth > Users > Add user (email + password).
    This is the single shared login for the password-protected site.
@@ -68,6 +82,7 @@ netlify/functions/
    don't fire automatically in dev — invoke them directly, e.g.:
    ```bash
    curl -X POST http://localhost:8888/.netlify/functions/eod-scan
+   curl -X POST http://localhost:8888/.netlify/functions/backfill-history
    ```
 
 5. **Deploy.** Connect this repo to a new Netlify site (or `netlify init`),
@@ -75,50 +90,40 @@ netlify/functions/
    defines the build command, publish dir, SPA redirect, and the two
    scheduled-function cron expressions.
 
-6. **Wire the deep-dive webhook.** In Supabase: Database > Webhooks > new
-   webhook on table `trigger_events`, event `INSERT`, HTTP target
-   `https://<your-site>.netlify.app/.netlify/functions/deep-dive`. Without
-   this, trigger fires will sit in `trigger_events` with `status = 'new'`
-   and never get a dossier or an alert.
+6. **The deep-dive webhook is already wired — nothing to do here.** Unlike a
+   typical Supabase Database Webhook (which needs a one-time dashboard setup
+   the `supabase_functions` schema doesn't bootstrap on this project), this
+   was built directly with `pg_net`: a Postgres trigger
+   (`deep_dive_webhook` → `public.notify_deep_dive()`) fires on every
+   `trigger_events` insert and POSTs to the deployed `deep-dive` function.
+   It's part of the Supabase migration history, not a manual step. If you
+   ever move the site to a different URL, update the hardcoded URL inside
+   `public.notify_deep_dive()` (via a new migration) to match.
 
-## What's real vs. placeholder in this scaffold
+## What's real vs. placeholder
 
-**Real and functional once env vars are set:**
-- Schema, RLS, seed universe (SPY + 7 tickers) and seed triggers
-- `eod-scan`: fetches real Alpaca bars, computes real momentum/vol/technical
-  factors, ranks momentum cross-sectionally, computes a real (if simple)
-  regime signal off SPY, evaluates triggers, logs every evaluation
-- `intraday-scan`: polls real snapshots, evaluates technical triggers on
-  the momentum-filtered candidate set
-- Trigger evaluation, dedup/cooldown (DB-constraint-backed), Telegram/Discord delivery
-- Auth-gated dashboard with a live (Realtime) trigger feed and a symbol
-  drill-down chart
+**Real and functional:**
+- Schema, RLS, seed universe (SPY + 7 tickers) and seed triggers (5, spanning momentum/earnings/technical/outlier categories)
+- `eod-scan`: real Alpaca bars, real momentum/vol/technical factors, cross-sectional momentum ranking, a real (if simple) SPY-based regime signal, evaluates non-technical triggers only
+- `intraday-scan`: real snapshots, technical-category triggers only, restricted to the momentum-filtered candidate set (this restriction was a real bug once — `eod-scan` was evaluating technical triggers unrestricted too; fixed)
+- `backfill-history` + the 5-Year chart range: verified against real data — 1,255 clean daily bars/symbol, 2021-09 through today
+- `worker/`: a genuinely separate, persistent process — real Alpaca websocket, real EWMA-based z-score outlier detection, verified firing real alerts through the same pipeline
+- The `deep_dive_webhook` → dossier → dedup'd alert chain, end to end, for every trigger source
+- Auth-gated dashboard: live (Realtime) trigger feed, regime banner, symbol drill-down with the Week/Month/Year/5-Year chart ranges
 
-**Placeholder, called out in code comments — next things to build:**
-- `deep-dive.ts`'s scoring is a stand-in (`momentum_rank_pct` as a fake
-  "conviction score"). Replace with real multi-signal confirmation / the
-  skew-adjusted-expectation (CEV) approach from the research once there's
-  evaluation history to tune against.
-- `factor_state.sue` / `est_revision_30d` / `book_to_market` etc. are never
-  populated — Alpaca's data API doesn't cover fundamentals/estimates. The
-  `earnings_surprise_drift` trigger is seeded but inert until a fundamentals
-  vendor (Polygon, Finnhub, etc.) is added as a small extra step in `eod-scan`.
-  vol_percentile_252d, amihud_illiq, and the fundamentals fields in
-  `factor_state` are also not yet computed.
-- Volume-vs-average in `intraday-scan` uses the daily bar as a rough proxy;
-  a proper same-time-of-day comparison needs `bars_intraday` populated first.
-- Universe is 8 symbols. Expanding it just means adding rows to `symbols`
-  (or a script that syncs from an index constituent list) — nothing else
-  changes.
-- Edge-function-level auth gating (blocking the page load itself, not just
-  data) — noted as a TODO in `AuthGuard.tsx`. Current gate is client-side
-  redirect + RLS as the actual security boundary, which is enough for a
-  single-user password-protected tool but not a hardened multi-tenant gate.
+**Placeholder / not yet built, called out in code comments:**
+- `deep-dive.ts`'s scoring is a stand-in — always exactly `0.5` for anything without a `momentum_rank_pct` (which includes every outlier-worker fire). Replace with real multi-signal confirmation / a skew-adjusted-expectation approach once there's evaluation history to tune against.
+- `factor_state.sue` / `est_revision_30d` / `book_to_market` etc. are never populated — Alpaca's data API doesn't cover fundamentals/estimates. `earnings_surprise_drift` is seeded but inert until a fundamentals vendor is added.
+- The **"Day" chart range** — the range-toggle UI exists and defaults to it, but nothing populates `bars_intraday` yet, so it correctly shows an empty state rather than fake data. Needs a new ingestion job (1-min bars, whole universe) — deliberately deferred.
+- Volume-vs-average in `intraday-scan` uses the daily bar as a rough proxy — the same `bars_intraday` gap above would fix this too.
+- Universe is 8 symbols — expanding it is just adding rows to `symbols` (then re-running `backfill-history` for the new ones).
+- Edge-function-level auth gating (blocking page load itself, not just data) — noted as a TODO in `AuthGuard.tsx`. Current gate is client-side redirect + RLS as the real security boundary; fine for single-user, not a hardened multi-tenant gate.
+- The outlier worker's z-score reliability at low tick counts is a known, real limitation (small-sample EWMA variance) — see its own README for the tuning knobs (`MIN_TICKS_BEFORE_EVAL`, `EWMA_ALPHA`).
 
 ## Backtesting
 
 `netlify/functions/lib/indicators.ts` and `triggers.ts` have no I/O
 dependencies by design — a future `scripts/backtest.ts` can import them
-directly, replay historical `bars_daily` rows, and evaluate the same
-trigger definitions to score hit rate / forward return before enabling a
-trigger live.
+directly, replay historical `bars_daily` rows (now with 5 years of real
+history available), and evaluate the same trigger definitions to score
+hit rate / forward return before enabling a trigger live.
