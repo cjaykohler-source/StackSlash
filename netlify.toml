@@ -1,0 +1,32 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[dev]
+  command = "npm run dev"
+  targetPort = 5173
+  port = 8888
+  publish = "dist"
+  autoLaunch = false
+
+# SPA fallback so client-side routing (e.g. /symbol/AAPL) works on refresh.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# ---------------------------------------------------------------------------
+# Scheduled functions (Netlify cron). Times are UTC.
+# eod-scan:      21:30 UTC ~ 30 min after US market close (16:00 ET / 20:00 UTC,
+#                adjust for DST as needed), Mon-Fri.
+# intraday-scan: every 10 minutes during roughly 13:30-20:15 UTC (US market hours),
+#                Mon-Fri. Netlify cron does not support "only during market hours"
+#                natively beyond the hour range below; the function itself also
+#                no-ops outside market hours as a safety check.
+# ---------------------------------------------------------------------------
+[functions."eod-scan"]
+  schedule = "30 21 * * 1-5"
+
+[functions."intraday-scan"]
+  schedule = "*/10 13-20 * * 1-5"
