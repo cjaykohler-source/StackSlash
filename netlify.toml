@@ -4,15 +4,19 @@
   functions = "netlify/functions"
 
 [build.environment]
-  # ALPACA_BASE_URL is a public API endpoint, not a secret — omit it from
-  # secrets scanning so it doesn't false-positive against .env.example or
-  # any other repo file that documents it. Do NOT add ALPACA_API_KEY_ID /
-  # ALPACA_API_SECRET_KEY / SUPABASE_SERVICE_ROLE_KEY / any real secret
-  # here — those should stay scanned, and should also have "Builds" scope
-  # removed in the Netlify UI (Site settings > Environment variables) since
-  # they're only used server-side inside netlify/functions, never during
-  # the Vite build.
-  SECRETS_SCAN_OMIT_KEYS = "ALPACA_BASE_URL"
+  # Per-variable scope editing (removing "Builds" from server-only secrets)
+  # requires a paid Netlify plan, so these can't be scoped away from the
+  # build environment on the current plan. They're omitted from secrets
+  # scanning instead. This is safe specifically because these values are
+  # only ever imported inside netlify/functions/lib/*.ts (server-side) —
+  # nothing in src/ (the browser bundle) references them. Verify that
+  # invariant holds before adding anything else to this list: a real
+  # secret that IS reachable from src/ must never be added here — fix the
+  # code instead.
+  #
+  # ALPACA_BASE_URL is additionally just a public API endpoint, not a
+  # secret at all.
+  SECRETS_SCAN_OMIT_KEYS = "ALPACA_BASE_URL,ALPACA_API_KEY_ID,ALPACA_API_SECRET_KEY,SUPABASE_SERVICE_ROLE_KEY,DISCORD_WEBHOOK_URL,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID"
 
 [dev]
   command = "npm run dev"
