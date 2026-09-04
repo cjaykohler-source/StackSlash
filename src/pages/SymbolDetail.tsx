@@ -56,6 +56,18 @@ function rangeStartDate(range: Range): Date {
   return d;
 }
 
+// Per design: only 5-Year shows a year label on the x-axis. Year's own
+// 12-month window can technically straddle a Dec/Jan boundary, so this
+// is a deliberate trade-off (repeating the year on every tick elsewhere
+// is noisier than the rare cross-year ambiguity this introduces there).
+function formatDateLabel(dateStr: string, range: Range): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  return d.toLocaleDateString(
+    [],
+    range === "5y" ? { month: "short", day: "numeric", year: "numeric" } : { month: "short", day: "numeric" },
+  );
+}
+
 /**
  * Symbol drill-down: price chart (range-toggleable) + dossiers (the
  * "why it fired" explanations from the deep-dive worker) for that symbol.
@@ -115,7 +127,7 @@ export function SymbolDetail() {
         .order("date", { ascending: true })
         .limit(2000);
       const rows = (data as { date: string; close: number }[] | null) ?? [];
-      setPoints(rows.map((b) => ({ x: b.date, y: b.close })));
+      setPoints(rows.map((b) => ({ x: formatDateLabel(b.date, r), y: b.close })));
     }
     setLoading(false);
   }, []);

@@ -178,6 +178,45 @@ body {
   font-weight: 600;
 }
 
+.trigger-feed-days {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.trigger-feed-day {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 4px 0;
+}
+.trigger-feed-day[open] {
+  padding-bottom: 4px;
+}
+.trigger-feed-day summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  list-style: none;
+}
+.trigger-feed-day summary::-webkit-details-marker {
+  display: none;
+}
+.trigger-feed-day summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--text-dim);
+  transition: transform 0.1s ease;
+}
+.trigger-feed-day[open] summary::before {
+  transform: rotate(90deg);
+}
+.trigger-feed-day-count {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
 .trigger-feed {
   width: 100%;
   border-collapse: collapse;
