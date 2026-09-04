@@ -1,0 +1,21 @@
+# Fly.io app config for the always-on outlier worker.
+# Deploy with: flyctl launch (first time, will prompt to create the app
+# and can auto-detect this file) then flyctl deploy for subsequent updates.
+# Set secrets with: flyctl secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... etc.
+# (never put real values in this file — it's committed to the repo).
+
+app = "stackslash-outlier-worker"
+primary_region = "iad"  # us-east-1-ish, close to the Supabase project's region
+
+[build]
+
+[processes]
+  worker = "node dist/index.js"
+
+# No public HTTP service — this process only makes outbound connections
+# (to Alpaca's websocket and Supabase), so no [[services]]/port binding
+# is needed, unlike a typical Fly web app.
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
