@@ -29,6 +29,7 @@ const TRIGGER_LABELS: Record<string, string> = {
   momentum_breakout: "Momentum Breakout",
   macd_bullish_cross: "MACD Bullish Cross",
   macd_bearish_cross: "MACD Bearish Cross",
+  momentum_exit: "Momentum Exit",
 };
 
 function humanizeKey(key: string): string {
@@ -83,6 +84,10 @@ const FIELD_META: Record<string, FieldMeta> = {
   trade_ts: { label: "Trade Time", format: dateTime },
   as_of: { label: "As Of", format: (v) => String(v) },
   ret_1w: { label: "1-Week Return", format: (v) => pct(v) },
+  ret_1w_rank_pct: {
+    label: "1-Week Return Rank",
+    format: (v) => `${Math.round(Number(v) * 100)}th percentile`,
+  },
   ret_1m: { label: "1-Month Return", format: (v) => pct(v) },
   ret_6m: { label: "6-Month Return", format: (v) => pct(v) },
   ret_12m_ex1m: { label: "12-1 Month Momentum", format: (v) => pct(v) },
@@ -115,6 +120,18 @@ const FIELD_META: Record<string, FieldMeta> = {
   macd_cross: {
     label: "MACD Cross",
     format: (v) => (Number(v) === 1 ? "Bullish" : Number(v) === -1 ? "Bearish" : "None"),
+  },
+  // momentum_exit's snapshot shape (shadow position closing out)
+  shadow_position_id: { label: "Position #", format: (v) => String(v) },
+  entry_date: { label: "Entered On", format: (v) => String(v) },
+  days_held: { label: "Days Held", format: (v) => String(v) },
+  exit_price: { label: "Exit Price", format: usd },
+  exit_reason: {
+    label: "Exit Reason",
+    format: (v) =>
+      ({ rank_dropped: "Momentum rank dropped", weekly_reversal: "Bad week (reversal)", max_hold_period: "Held past 180 days" })[
+        String(v)
+      ] ?? String(v),
   },
 };
 

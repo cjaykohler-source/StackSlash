@@ -37,6 +37,7 @@ export interface FactorState {
   dist_sma200: number | null;
   bb_width_percentile_126d: number | null;
   volume_ratio_20d: number | null;
+  ret_1w_rank_pct: number | null;
   roc_20d: number | null;
   roc_20d_rank_pct: number | null;
   is_20d_high: boolean | null;
@@ -87,4 +88,19 @@ export interface WatchlistItem {
   symbol_id: number;
   note: string | null;
   added_at: string;
+}
+
+export interface ShadowPosition {
+  id: number;
+  symbol_id: number;
+  entry_trigger_event_id: number;
+  entry_trigger_name: string;
+  entry_date: string;
+  entry_price: number | null;
+  status: "open" | "closed";
+  exit_trigger_event_id: number | null;
+  exit_date: string | null;
+  exit_price: number | null;
+  exit_reason: "rank_dropped" | "weekly_reversal" | "max_hold_period" | null;
+  created_at: string;
 }

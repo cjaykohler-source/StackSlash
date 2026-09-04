@@ -103,20 +103,22 @@ worker/                   Separate deployable — persistent Alpaca websocket,
 ## What's real vs. placeholder
 
 **Real and functional:**
-- Schema, RLS, seed universe (SPY + 7 tickers) and seed triggers (5, spanning momentum/earnings/technical/outlier categories)
-- `eod-scan`: real Alpaca bars, real momentum/vol/technical factors, cross-sectional momentum ranking, a real (if simple) SPY-based regime signal, evaluates non-technical triggers only
+- Schema, RLS, seed universe (SPY + 7 tickers) and 11 seed triggers spanning momentum/earnings/technical/outlier/breakout/exit categories
+- `eod-scan`: real Alpaca bars, real momentum/vol/technical/breakout factors, cross-sectional ranking (momentum, 20-day ROC, 1-week return), a real (if simple) SPY-based regime signal, evaluates non-technical/non-exit triggers, opens/closes shadow_positions
 - `intraday-scan`: real snapshots, technical-category triggers only, restricted to the momentum-filtered candidate set (this restriction was a real bug once — `eod-scan` was evaluating technical triggers unrestricted too; fixed)
+- `intraday-bars-scan`: real 1-min bars, whole active universe, every 5 min during market hours — the **"Day" chart range** is populated, not a placeholder
 - `backfill-history` + the 5-Year chart range: verified against real data — 1,255 clean daily bars/symbol, 2021-09 through today
 - `worker/`: a genuinely separate, persistent process — real Alpaca websocket, real EWMA-based z-score outlier detection, verified firing real alerts through the same pipeline
+- **Shadow positions + `momentum_exit`**: auto-tracked hypothetical positions opened by `momentum_rank_entry`/`momentum_breakout` fires, closed when momentum rank drops, a bottom-decile week hits, or 180 days pass — verified end to end against real data, including the exit alert flowing through the same dossier/pipeline with zero new alert code
 - The `deep_dive_webhook` → dossier → dedup'd alert chain, end to end, for every trigger source
-- Auth-gated dashboard: live (Realtime) trigger feed, regime banner, symbol drill-down with the Week/Month/Year/5-Year chart ranges
+- Auth-gated dashboard: live (Realtime) trigger feed, regime banner, symbol drill-down with all five chart ranges
 
 **Placeholder / not yet built, called out in code comments:**
-- `deep-dive.ts`'s scoring is a stand-in — always exactly `0.5` for anything without a `momentum_rank_pct` (which includes every outlier-worker fire). Replace with real multi-signal confirmation / a skew-adjusted-expectation approach once there's evaluation history to tune against.
+- `deep-dive.ts`'s scoring is a stand-in — always exactly `0.5` for anything without a `momentum_rank_pct` (which includes every outlier-worker fire and every `momentum_exit`). Replace with real multi-signal confirmation / a skew-adjusted-expectation approach once there's evaluation history to tune against.
 - `factor_state.sue` / `est_revision_30d` / `book_to_market` etc. are never populated — Alpaca's data API doesn't cover fundamentals/estimates. `earnings_surprise_drift` is seeded but inert until a fundamentals vendor is added.
-- The **"Day" chart range** — the range-toggle UI exists and defaults to it, but nothing populates `bars_intraday` yet, so it correctly shows an empty state rather than fake data. Needs a new ingestion job (1-min bars, whole universe) — deliberately deferred.
-- Volume-vs-average in `intraday-scan` uses the daily bar as a rough proxy — the same `bars_intraday` gap above would fix this too.
+- Volume-vs-average in `intraday-scan` still uses the daily bar as a rough proxy rather than `bars_intraday` (which now exists and is populated) — a proper same-time-of-day comparison is still a follow-up.
 - Universe is 8 symbols — expanding it is just adding rows to `symbols` (then re-running `backfill-history` for the new ones).
+- Exit tracking only covers `momentum_rank_entry`/`momentum_breakout` — the mean-reversion/short-horizon triggers (BB/RSI confluence, squeeze breakout, MACD cross, outlier) have different holding-period logic and aren't tracked in `shadow_positions`. Manual position tracking (tying real trades to alerts, rather than auto-opening a shadow position on every entry fire) is a natural next step — see the exit-trigger design discussion in this project's chat history.
 - Edge-function-level auth gating (blocking page load itself, not just data) — noted as a TODO in `AuthGuard.tsx`. Current gate is client-side redirect + RLS as the real security boundary; fine for single-user, not a hardened multi-tenant gate.
 - The outlier worker's z-score reliability at low tick counts is a known, real limitation (small-sample EWMA variance) — see its own README for the tuning knobs (`MIN_TICKS_BEFORE_EVAL`, `EWMA_ALPHA`).
 
