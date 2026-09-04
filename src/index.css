@@ -7,6 +7,7 @@
   --accent: #4f8cff;
   --brand-green: #25e979;
   --green: #2ecc71;
+  --amber: #f0a020;
   --red: #e74c3c;
   color-scheme: dark;
 }
@@ -259,6 +260,10 @@ body {
 .status-alerted {
   background: rgba(46, 204, 113, 0.15);
   color: var(--green);
+}
+.status-dossier_ready {
+  background: rgba(240, 160, 32, 0.15);
+  color: var(--amber);
 }
 .status-dismissed {
   background: rgba(139, 147, 167, 0.15);
