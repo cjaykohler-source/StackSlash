@@ -224,22 +224,59 @@ body {
   flex-direction: column;
   gap: 12px;
 }
-.dossier-list li {
+
+.dossier-card {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px 14px;
+  padding: 14px 16px;
 }
-.dossier-header {
+.dossier-card-header {
   display: flex;
   justify-content: space-between;
-  color: var(--text-dim);
-  font-size: 0.8rem;
-  margin-bottom: 8px;
+  align-items: flex-start;
+  margin-bottom: 10px;
 }
-.dossier-list pre {
-  margin: 0;
-  white-space: pre-wrap;
-  font-size: 0.8rem;
-  color: var(--text);
+.dossier-trigger-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.dossier-timestamp {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+.dossier-score {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.dossier-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px 16px;
+}
+.dossier-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dossier-metric-label {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.dossier-metric-value {
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.dossier-note {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-style: italic;
 }

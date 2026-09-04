@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { supabase } from "../lib/supabaseClient";
+import { DossierCard } from "../components/DossierCard";
 
 type Range = "day" | "week" | "month" | "year" | "5y";
 
@@ -209,11 +210,7 @@ export function SymbolDetail() {
           <ul className="dossier-list">
             {dossiers.map((d) => (
               <li key={d.id}>
-                <div className="dossier-header">
-                  <span>{new Date(d.ts).toLocaleString()}</span>
-                  <span>score: {d.score ?? "—"}</span>
-                </div>
-                <pre>{JSON.stringify(d.analysis, null, 2)}</pre>
+                <DossierCard dossier={d} />
               </li>
             ))}
           </ul>
