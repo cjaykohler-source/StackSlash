@@ -33,19 +33,28 @@
 
 # ---------------------------------------------------------------------------
 # Scheduled functions (Netlify cron). Times are UTC.
-# eod-scan:      21:30 UTC ~ 30 min after US market close (16:00 ET / 20:00 UTC,
-#                adjust for DST as needed), Mon-Fri.
-# intraday-scan: every 10 minutes during roughly 13:30-20:15 UTC (US market hours),
-#                Mon-Fri. Netlify cron does not support "only during market hours"
-#                natively beyond the hour range below; the function itself also
-#                no-ops outside market hours as a safety check.
+# eod-scan:           21:30 UTC ~ 30 min after US market close (16:00 ET /
+#                     20:00 UTC, adjust for DST as needed), Mon-Fri.
+# intraday-scan:      every 10 minutes during roughly 13:00-21:00 UTC (US
+#                     market hours), Mon-Fri — technical triggers on the
+#                     momentum-filtered candidate set only.
+# intraday-bars-scan: every 5 minutes, same window — populates bars_intraday
+#                     (the "Day" chart range) for the whole active universe,
+#                     not just candidates. Separate cadence/scope from
+#                     intraday-scan on purpose (see the function's comment).
+# Netlify cron does not support "only during market hours" natively beyond
+# the hour range below; intraday-scan also no-ops outside market hours as
+# a safety check (intraday-bars-scan just returns whatever the date has,
+# which is empty outside trading hours anyway — harmless, not worth an
+# extra guard).
 # backfill-history is intentionally NOT scheduled — it's a one-time/as-
 # needed manual call (see the function's own comment), not a recurring job.
-# The "Day" chart range (intraday bars) is deferred — no scheduled job for
-# it yet; see the range-toggle UI's empty-state handling in SymbolDetail.tsx.
 # ---------------------------------------------------------------------------
 [functions."eod-scan"]
   schedule = "30 21 * * 1-5"
 
 [functions."intraday-scan"]
   schedule = "*/10 13-20 * * 1-5"
+
+[functions."intraday-bars-scan"]
+  schedule = "*/5 13-20 * * 1-5"
