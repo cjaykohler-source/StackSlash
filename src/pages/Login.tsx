@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import logo from "../assets/SS_SingleLine_Logo.png";
 
 export function Login() {
   const [email, setEmail] = useState("");
@@ -31,7 +32,7 @@ export function Login() {
   return (
     <div className="login-page">
       <form className="login-card" onSubmit={handleSubmit}>
-        <h1>StackSlash Scanner</h1>
+        <img src={logo} alt="StackSlash" className="brand-logo" />
         <p className="subtitle">Sign in to continue</p>
         <label>
           Email

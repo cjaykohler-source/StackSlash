@@ -1,5 +1,5 @@
 :root {
-  --bg: #0b0e14;
+  --bg: #010e1f;
   --panel: #131722;
   --border: #232838;
   --text: #e6e9f0;
@@ -37,6 +37,12 @@ body {
 .page-header h1 {
   font-size: 1.4rem;
   margin: 0;
+}
+
+.brand-logo {
+  height: 36px; /* 28px + 30% */
+  width: auto;
+  display: block;
 }
 
 .link-button {
@@ -78,9 +84,10 @@ body {
   gap: 14px;
 }
 
-.login-card h1 {
-  font-size: 1.1rem;
-  margin: 0;
+.login-card .brand-logo {
+  height: 47px; /* 36px + 30% */
+  align-self: center;
+  margin-bottom: 4px;
 }
 
 .subtitle {
