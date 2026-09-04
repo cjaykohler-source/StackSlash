@@ -5,6 +5,7 @@
   --text: #e6e9f0;
   --text-dim: #8b93a7;
   --accent: #4f8cff;
+  --brand-green: #25e979;
   --green: #2ecc71;
   --red: #e74c3c;
   color-scheme: dark;
@@ -74,8 +75,8 @@ body {
 }
 
 .login-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--bg);
+  border: 1px solid var(--brand-green);
   border-radius: 12px;
   padding: 32px;
   width: 320px;
@@ -106,7 +107,7 @@ body {
 
 .login-card input {
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--brand-green);
   border-radius: 6px;
   padding: 8px 10px;
   color: var(--text);
@@ -114,11 +115,11 @@ body {
 }
 
 .login-card button {
-  background: var(--accent);
+  background: var(--brand-green);
   border: none;
   border-radius: 6px;
   padding: 10px;
-  color: white;
+  color: var(--bg);
   font-weight: 600;
   cursor: pointer;
   margin-top: 6px;
