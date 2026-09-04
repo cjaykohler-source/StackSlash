@@ -35,6 +35,12 @@ export interface FactorState {
   rsi2: number | null;
   dist_ema20: number | null;
   dist_sma200: number | null;
+  bb_width_percentile_126d: number | null;
+  volume_ratio_20d: number | null;
+  roc_20d: number | null;
+  roc_20d_rank_pct: number | null;
+  is_20d_high: boolean | null;
+  macd_cross: -1 | 0 | 1 | null;
   computed_at: string;
 }
 

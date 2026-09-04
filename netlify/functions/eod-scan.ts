@@ -3,12 +3,16 @@ import { withJobRun } from "./lib/jobRun";
 import { fetchDailyBars } from "./lib/alpaca";
 import {
   avgDollarVolume,
+  bbWidthPercentile,
   bollinger,
+  isNewCloseHigh,
+  macdCrossSignal,
   pctReturn,
   percentileRank,
   realizedVol,
   rsi,
   sma,
+  volumeRatio,
   type Bar,
 } from "./lib/indicators";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
@@ -85,6 +89,7 @@ export default async () => {
     // --- 3. Compute factor_state, collect momentum for cross-sectional ranking ---
     const today = end;
     const momentumBySymbol = new Map<number, number>();
+    const rocBySymbol = new Map<number, number>();
     const factorRows: Record<string, unknown>[] = [];
 
     for (const [ticker, bars] of barsBySymbol.entries()) {
@@ -95,11 +100,13 @@ export default async () => {
       const ret1m = pctReturn(bars, 21);
       const ret6m = pctReturn(bars, 126);
       const ret12mEx1m = pctReturn(bars, 252 - 21, 21);
+      const roc20d = pctReturn(bars, 20);
       const bb = bollinger(bars, 20);
       const sma200 = sma(bars, 200);
       const last = bars[bars.length - 1].close;
 
       if (ret12mEx1m !== null) momentumBySymbol.set(symbolId, ret12mEx1m);
+      if (roc20d !== null) rocBySymbol.set(symbolId, roc20d);
 
       factorRows.push({
         symbol_id: symbolId,
@@ -115,14 +122,25 @@ export default async () => {
         rsi14: rsi(bars, 14),
         rsi2: rsi(bars, 2),
         dist_sma200: sma200 ? last / sma200 - 1 : null,
+        // New for the Volatility Squeeze Breakout / Momentum Breakout /
+        // MACD Cross triggers — see indicators.ts for each function's
+        // own reasoning.
+        bb_width_percentile_126d: bbWidthPercentile(bars, 126, 20),
+        volume_ratio_20d: volumeRatio(bars, 20),
+        roc_20d: roc20d,
+        is_20d_high: isNewCloseHigh(bars, 20),
+        macd_cross: macdCrossSignal(bars, 12, 26, 9),
       });
     }
 
     const momentumValues = [...momentumBySymbol.values()];
+    const rocValues = [...rocBySymbol.values()];
     for (const row of factorRows) {
       const symbolId = row.symbol_id as number;
       const m = momentumBySymbol.get(symbolId);
       row.momentum_rank_pct = m !== undefined ? percentileRank(momentumValues, m) : null;
+      const r = rocBySymbol.get(symbolId);
+      row.roc_20d_rank_pct = r !== undefined ? percentileRank(rocValues, r) : null;
     }
 
     if (factorRows.length) {

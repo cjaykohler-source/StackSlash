@@ -24,6 +24,11 @@ const TRIGGER_LABELS: Record<string, string> = {
   bb_rsi_confluence_long: "Bollinger/RSI Confluence (Long)",
   bb_rsi_confluence_short: "Bollinger/RSI Confluence (Short)",
   realtime_outlier_zscore: "Real-Time Outlier",
+  volatility_squeeze_breakout_long: "Volatility Squeeze Breakout (Up)",
+  volatility_squeeze_breakout_short: "Volatility Squeeze Breakout (Down)",
+  momentum_breakout: "Momentum Breakout",
+  macd_bullish_cross: "MACD Bullish Cross",
+  macd_bearish_cross: "MACD Bearish Cross",
 };
 
 function humanizeKey(key: string): string {
@@ -96,6 +101,21 @@ const FIELD_META: Record<string, FieldMeta> = {
   dist_ema20: { label: "Distance from 20-day EMA", format: (v) => pct(v) },
   dist_sma200: { label: "Distance from 200-day MA", format: (v) => pct(v) },
   risk_on: { label: "Regime", format: (v) => (v ? "Risk-On" : "Risk-Off") },
+  bb_width_percentile_126d: {
+    label: "Band Width Percentile (6mo)",
+    format: (v) => `${Math.round(Number(v) * 100)}th percentile`,
+  },
+  volume_ratio_20d: { label: "Volume vs. 20-Day Avg", format: (v) => `${num(v, 1)}x` },
+  roc_20d: { label: "20-Day Rate of Change", format: (v) => pct(v) },
+  roc_20d_rank_pct: {
+    label: "20-Day ROC Rank",
+    format: (v) => `${Math.round(Number(v) * 100)}th percentile`,
+  },
+  is_20d_high: { label: "20-Day High", format: (v) => (v ? "Yes" : "No") },
+  macd_cross: {
+    label: "MACD Cross",
+    format: (v) => (Number(v) === 1 ? "Bullish" : Number(v) === -1 ? "Bearish" : "None"),
+  },
 };
 
 // Fields that are noise in this context (redundant with the card's own

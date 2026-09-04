@@ -120,6 +120,26 @@ worker/                   Separate deployable — persistent Alpaca websocket,
 - Edge-function-level auth gating (blocking page load itself, not just data) — noted as a TODO in `AuthGuard.tsx`. Current gate is client-side redirect + RLS as the real security boundary; fine for single-user, not a hardened multi-tenant gate.
 - The outlier worker's z-score reliability at low tick counts is a known, real limitation (small-sample EWMA variance) — see its own README for the tuning knobs (`MIN_TICKS_BEFORE_EVAL`, `EWMA_ALPHA`).
 
+## Trigger backlog
+
+Signals considered against the research this project is built on but not
+yet built, roughly in priority order:
+
+- **Multi-Timeframe Trend Agreement** — EMA stack aligned on daily *and*
+  weekly, pullback to the fast EMA, RSI resets to 40-50. Needs
+  weekly-timeframe bars/EMAs, not just daily — more ingestion work than
+  the three triggers added in this pass.
+- **Candlestick Reversal at a Level** — hammer / bullish engulfing /
+  rising window occurring at a support/MA level, volume-confirmed. Needs
+  OHLC pattern-detection logic (we already store full OHLC in
+  `bars_daily`, so no new data source — just more involved code than a
+  threshold check).
+- **Estimate-Revision Breakout** — analyst estimate revisions trending up
+  ahead of price. Blocked on the same fundamentals/estimates data-source
+  gap as `earnings_surprise_drift` (Alpaca's market-data API doesn't cover
+  this; needs a vendor like Polygon or Finnhub added as a small extra
+  step in `eod-scan`).
+
 ## Backtesting
 
 `netlify/functions/lib/indicators.ts` and `triggers.ts` have no I/O
