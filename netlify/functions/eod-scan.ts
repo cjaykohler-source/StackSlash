@@ -154,10 +154,18 @@ export default async () => {
     }
 
     // --- 5. Evaluate triggers ---
+    // Deliberately excludes category='technical': those are entry-timing
+    // triggers meant to fire only in intraday-scan, only on symbols that
+    // already passed the momentum-rank candidate filter there. Evaluating
+    // them here would run them unrestricted against the whole universe,
+    // defeating that gate entirely (confirmed happening in practice —
+    // NVDA fired bb_rsi_confluence_short here at momentum_rank_pct=0.625,
+    // below intraday-scan's 0.67 candidate threshold).
     const { data: triggers, error: trigErr } = await db
       .from("triggers")
       .select("id, definition, cooldown_minutes")
-      .eq("enabled", true);
+      .eq("enabled", true)
+      .neq("category", "technical");
     if (trigErr) throw trigErr;
 
     const { data: regime } = await db
