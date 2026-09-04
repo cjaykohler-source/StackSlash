@@ -111,7 +111,13 @@ export function bbWidthPercentile(bars: Bar[], lookbackDays = 126, bbPeriod = 20
   if (bars.length < lookbackDays + bbPeriod) return null;
   const widths: number[] = [];
   for (let i = bars.length - lookbackDays; i < bars.length; i++) {
-    const bb = bollinger(bars.slice(0, i + 1), bbPeriod);
+    // bollinger() only ever uses the trailing `bbPeriod` elements of
+    // whatever's passed in — slicing just that window (not the whole
+    // growing prefix up to i) turns this from O(lookbackDays * bars.length)
+    // into O(lookbackDays * bbPeriod), which matters a lot once this gets
+    // called against years of history (a backtest replaying every
+    // historical day) rather than one ~400-day live fetch.
+    const bb = bollinger(bars.slice(i + 1 - bbPeriod, i + 1), bbPeriod);
     if (bb) widths.push(bb.width);
   }
   if (widths.length === 0) return null;

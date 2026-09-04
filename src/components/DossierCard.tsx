@@ -124,12 +124,29 @@ const FIELD_META: Record<string, FieldMeta> = {
 // header/props, or internal bookkeeping) — hidden rather than dumped.
 const HIDDEN_FIELDS = new Set(["symbol_id", "note", "trigger", "ticker"]);
 
+interface HistoricalStats {
+  horizon_days?: number;
+  sample_size: number;
+  win_rate?: number | null;
+  avg_return?: number | null;
+  cev_score?: number | null;
+  note?: string;
+}
+
+interface Confirmation {
+  name: string;
+  confirmed: boolean;
+  note: string;
+}
+
 export function DossierCard({ dossier }: { dossier: DossierCardData }) {
   const analysis = dossier.analysis as {
     trigger?: string;
     ticker?: string;
     fired_on?: Record<string, unknown>;
-    note?: string;
+    note?: string; // legacy placeholder-era dossiers only
+    historical?: HistoricalStats;
+    confirmations?: Confirmation[];
   };
 
   const displayLabel = analysis.trigger ? triggerLabel(analysis.trigger) : "Unknown trigger";
@@ -161,6 +178,34 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {analysis.historical && (
+        <div className="dossier-historical">
+          {analysis.historical.sample_size > 0 && typeof analysis.historical.win_rate === "number" ? (
+            <>
+              <span className="dossier-historical-label">Historically ({analysis.historical.sample_size} fires, {analysis.historical.horizon_days}-day):</span>{" "}
+              wins {pct(analysis.historical.win_rate, 0)} of the time, average return{" "}
+              {pct(analysis.historical.avg_return ?? 0)}
+            </>
+          ) : (
+            <span className="dossier-historical-note">{analysis.historical.note}</span>
+          )}
+        </div>
+      )}
+
+      {analysis.confirmations && analysis.confirmations.length > 0 && (
+        <div className="dossier-confirmations">
+          {analysis.confirmations.map((c) => (
+            <span
+              key={c.name}
+              className={`confirmation-chip ${c.confirmed ? "confirmation-yes" : "confirmation-no"}`}
+              title={c.note}
+            >
+              {c.confirmed ? "✓" : "✗"} {c.name}
+            </span>
+          ))}
         </div>
       )}
 

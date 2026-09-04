@@ -1,20 +1,8 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 import { fetchDailyBars } from "./lib/alpaca";
-import {
-  avgDollarVolume,
-  bbWidthPercentile,
-  bollinger,
-  isNewCloseHigh,
-  macdCrossSignal,
-  pctReturn,
-  percentileRank,
-  realizedVol,
-  rsi,
-  sma,
-  volumeRatio,
-  type Bar,
-} from "./lib/indicators";
+import { type Bar } from "./lib/indicators";
+import { computeFactors, computeRegime } from "./lib/dailySnapshot";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 
 /**
@@ -97,74 +85,27 @@ export default async () => {
       if (error) throw error;
     }
 
-    // --- 3. Compute factor_state, collect momentum for cross-sectional ranking ---
+    // --- 3. Compute factor_state via the shared dailySnapshot module ---
+    // (also used by backtest-triggers.ts, so live behavior and backtested
+    // "expectancy" numbers can't silently drift apart — see its own comment.)
     const today = end;
-    const momentumBySymbol = new Map<number, number>();
-    const rocBySymbol = new Map<number, number>();
-    const ret1wBySymbol = new Map<number, number>();
-    const factorRows: Record<string, unknown>[] = [];
-
+    const barsBySymbolId = new Map<number, Bar[]>();
     for (const [ticker, bars] of barsBySymbol.entries()) {
       const symbolId = byTicker.get(ticker);
-      if (!symbolId || bars.length < 30) continue;
-
-      const ret1w = pctReturn(bars, 5);
-      const ret1m = pctReturn(bars, 21);
-      const ret6m = pctReturn(bars, 126);
-      const ret12mEx1m = pctReturn(bars, 252 - 21, 21);
-      const roc20d = pctReturn(bars, 20);
-      const bb = bollinger(bars, 20);
-      const sma200 = sma(bars, 200);
-      const last = bars[bars.length - 1].close;
-
-      if (ret12mEx1m !== null) momentumBySymbol.set(symbolId, ret12mEx1m);
-      if (roc20d !== null) rocBySymbol.set(symbolId, roc20d);
-      if (ret1w !== null) ret1wBySymbol.set(symbolId, ret1w);
-
-      factorRows.push({
-        symbol_id: symbolId,
-        as_of: today,
-        ret_1w: ret1w,
-        ret_1m: ret1m,
-        ret_6m: ret6m,
-        ret_12m_ex1m: ret12mEx1m,
-        realized_vol_20d: realizedVol(bars, 20),
-        dollar_vol_20d: avgDollarVolume(bars, 20),
-        bb_pctb: bb?.pctB ?? null,
-        bb_width: bb?.width ?? null,
-        rsi14: rsi(bars, 14),
-        rsi2: rsi(bars, 2),
-        dist_sma200: sma200 ? last / sma200 - 1 : null,
-        // New for the Volatility Squeeze Breakout / Momentum Breakout /
-        // MACD Cross triggers — see indicators.ts for each function's
-        // own reasoning.
-        bb_width_percentile_126d: bbWidthPercentile(bars, 126, 20),
-        volume_ratio_20d: volumeRatio(bars, 20),
-        roc_20d: roc20d,
-        is_20d_high: isNewCloseHigh(bars, 20),
-        macd_cross: macdCrossSignal(bars, 12, 26, 9),
-      });
+      if (symbolId) barsBySymbolId.set(symbolId, bars);
     }
 
-    const momentumValues = [...momentumBySymbol.values()];
-    const rocValues = [...rocBySymbol.values()];
-    const ret1wValues = [...ret1wBySymbol.values()];
-    for (const row of factorRows) {
-      const symbolId = row.symbol_id as number;
-      const m = momentumBySymbol.get(symbolId);
-      row.momentum_rank_pct = m !== undefined ? percentileRank(momentumValues, m) : null;
-      const r = rocBySymbol.get(symbolId);
-      row.roc_20d_rank_pct = r !== undefined ? percentileRank(rocValues, r) : null;
-      const w = ret1wBySymbol.get(symbolId);
-      row.ret_1w_rank_pct = w !== undefined ? percentileRank(ret1wValues, w) : null;
+    const factorsBySymbolId = computeFactors(barsBySymbolId);
+    const factorRows: Record<string, unknown>[] = [];
+    for (const [symbolId, fields] of factorsBySymbolId.entries()) {
+      factorRows.push({ symbol_id: symbolId, as_of: today, ...fields });
     }
 
     // Latest close per symbol — used by steps 6/7 for shadow_positions
     // entry_price/exit_price (not stored on factor_state rows themselves).
     const priceBySymbolId = new Map<number, number>();
-    for (const [ticker, bars] of barsBySymbol.entries()) {
-      const symbolId = byTicker.get(ticker);
-      if (symbolId && bars.length) priceBySymbolId.set(symbolId, bars[bars.length - 1].close);
+    for (const [symbolId, bars] of barsBySymbolId.entries()) {
+      if (bars.length) priceBySymbolId.set(symbolId, bars[bars.length - 1].close);
     }
 
     if (factorRows.length) {
@@ -174,22 +115,15 @@ export default async () => {
 
     // --- 4. Regime state, off the first configured index-like symbol if present, else skip ---
     const spyBars = barsBySymbol.get("SPY");
-    if (spyBars && spyBars.length >= 200) {
-      const sma200 = sma(spyBars, 200);
-      const last = spyBars[spyBars.length - 1].close;
-      const vol = realizedVol(spyBars, 20);
-      const aboveSma = sma200 !== null ? last > sma200 : null;
-      // Simple starter rule for vol regime; tune against history once you have it.
-      const volRegime = vol === null ? null : vol > 0.25 ? "high" : vol > 0.15 ? "normal" : "low";
-      const riskOn = aboveSma === true && volRegime !== "high";
-
+    const regimeFields = computeRegime(spyBars);
+    if (regimeFields) {
       await db.from("regime_state").upsert(
         {
           as_of: today,
           index_symbol: "SPY",
-          above_200dma: aboveSma,
-          vol_regime: volRegime,
-          risk_on: riskOn,
+          above_200dma: regimeFields.above_200dma,
+          vol_regime: regimeFields.vol_regime,
+          risk_on: regimeFields.risk_on,
         },
         { onConflict: "as_of" },
       );

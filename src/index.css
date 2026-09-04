@@ -400,3 +400,39 @@ body {
   font-size: 0.78rem;
   font-style: italic;
 }
+
+.dossier-historical {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.dossier-historical-label {
+  color: var(--text-dim);
+}
+.dossier-historical-note {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.dossier-confirmations {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.confirmation-chip {
+  font-size: 0.76rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: default;
+}
+.confirmation-yes {
+  background: rgba(46, 204, 113, 0.12);
+  color: var(--green);
+}
+.confirmation-no {
+  background: rgba(139, 147, 167, 0.12);
+  color: var(--text-dim);
+}

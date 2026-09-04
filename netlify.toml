@@ -47,8 +47,11 @@
 # a safety check (intraday-bars-scan just returns whatever the date has,
 # which is empty outside trading hours anyway — harmless, not worth an
 # extra guard).
-# backfill-history is intentionally NOT scheduled — it's a one-time/as-
-# needed manual call (see the function's own comment), not a recurring job.
+# backfill-history and backtest-triggers are both intentionally NOT
+# scheduled — one-time/as-needed manual calls (see each function's own
+# comment), not recurring jobs. Re-run backtest-triggers whenever a
+# trigger's definition or the factor computation in dailySnapshot.ts
+# changes, so trigger_stats keeps reflecting what the triggers actually do.
 # ---------------------------------------------------------------------------
 [functions."eod-scan"]
   schedule = "30 21 * * 1-5"
