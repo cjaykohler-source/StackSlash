@@ -136,34 +136,36 @@ export function TriggerFeed() {
           <summary>
             {group.label} <span className="trigger-feed-day-count">({group.rows.length})</span>
           </summary>
-          <table className="trigger-feed">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Symbol</th>
-                <th>Trigger</th>
-                <th>Category</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {group.rows.map((row) => (
-                <tr key={row.id}>
-                  <td>{timeOnly(row.ts)}</td>
-                  <td>
-                    <Link to={`/symbol/${row.symbols?.ticker ?? row.symbol_id}`}>
-                      {row.symbols?.ticker ?? row.symbol_id}
-                    </Link>
-                  </td>
-                  <td>{row.triggers?.name ? triggerLabel(row.triggers.name) : row.trigger_id}</td>
-                  <td>{row.triggers?.name ? triggerCategoryLabel(row.triggers.name) : "—"}</td>
-                  <td>
-                    <span className={`status status-${row.status}`}>{row.status}</span>
-                  </td>
+          <div className="trigger-feed-scroll">
+            <table className="trigger-feed">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Symbol</th>
+                  <th>Trigger</th>
+                  <th className="col-category">Category</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {group.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{timeOnly(row.ts)}</td>
+                    <td>
+                      <Link to={`/symbol/${row.symbols?.ticker ?? row.symbol_id}`}>
+                        {row.symbols?.ticker ?? row.symbol_id}
+                      </Link>
+                    </td>
+                    <td>{row.triggers?.name ? triggerLabel(row.triggers.name) : row.trigger_id}</td>
+                    <td className="col-category">{row.triggers?.name ? triggerCategoryLabel(row.triggers.name) : "—"}</td>
+                    <td>
+                      <span className={`status status-${row.status}`}>{row.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </details>
       ))}
     </div>

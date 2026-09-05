@@ -66,7 +66,7 @@ export function About() {
           lastCategory = info.category;
 
           return (
-            <div key={name}>
+            <div key={name} className="trigger-info-item">
               {showCategoryHeader && <h2 className="trigger-category-header">{triggerCategoryLabel(name)}</h2>}
               <div className="trigger-info-card">
                 <div className="trigger-info-header">

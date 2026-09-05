@@ -24,7 +24,7 @@ body {
 }
 
 .page {
-  max-width: 960px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 24px 20px 64px;
 }
@@ -78,12 +78,14 @@ body {
 }
 
 .trigger-info-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 10px;
+  align-items: start;
 }
 
 .trigger-category-header {
+  grid-column: 1 / -1;
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -92,6 +94,10 @@ body {
 }
 .trigger-category-header:first-child {
   margin-top: 0;
+}
+
+.trigger-info-item {
+  display: contents;
 }
 
 .trigger-info-card {
@@ -229,6 +235,14 @@ body {
   color: var(--text-dim);
   font-size: 0.9rem;
 }
+.chart-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  margin: 0;
+  text-align: center;
+}
 
 .range-toggle {
   display: flex;
@@ -294,10 +308,19 @@ body {
   font-weight: 400;
 }
 
+.trigger-feed-scroll {
+  overflow-x: auto;
+}
+
 .trigger-feed {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
+}
+@media (max-width: 480px) {
+  .col-category {
+    display: none;
+  }
 }
 .trigger-feed th {
   text-align: left;
@@ -340,9 +363,10 @@ body {
 .dossier-list {
   list-style: none;
   padding: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: 12px;
+  align-items: start;
 }
 
 .dossier-card {

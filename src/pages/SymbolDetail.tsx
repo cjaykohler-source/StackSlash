@@ -195,9 +195,9 @@ export function SymbolDetail() {
           ))}
         </div>
         {loading ? (
-          <p className="empty-state">Loading…</p>
+          <p className="empty-state chart-empty-state">Loading…</p>
         ) : points.length === 0 ? (
-          <p className="empty-state">
+          <p className="empty-state chart-empty-state">
             No {range === "day" ? "intraday" : "daily"} bars yet for this symbol
             {range === "5y" ? " — try running backfill-history for it first." : "."}
           </p>
