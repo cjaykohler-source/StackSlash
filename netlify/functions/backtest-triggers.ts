@@ -29,6 +29,19 @@ import type { Bar } from "./lib/indicators";
  * its own forward-return horizon without erroring — acceptable for the
  * continuously-traded large-cap symbols currently in the universe, worth
  * revisiting if more thinly-traded names are added.
+ *
+ * Chunking: at S&P-500 scale a full run exceeds Netlify's execution
+ * timeout. The cross-sectional factors (momentum_rank_pct etc.) need
+ * every symbol present for a given day, so this can't be chunked by
+ * symbol the way backfill-history is — it's chunked by date range
+ * instead. Pass {"startDate": "...", "endDate": "..."} to scope a call to
+ * a sub-range of evalDates; omit both to use the full history (fine at
+ * small universe sizes, will time out at S&P-500 scale). Each call
+ * appends this range's real per-fire returns into backtest_returns_raw
+ * and re-finalizes trigger_stats from everything accumulated there so
+ * far — safe to call repeatedly across date-range chunks. Pass
+ * {"reset": true} on the first chunk of a fresh full run to clear
+ * previously-accumulated raw returns first.
  */
 
 const HORIZONS = [5, 10, 20];
@@ -42,7 +55,19 @@ export default async (req: Request) => {
 
   const db = getSupabaseAdmin();
 
+  let body: { startDate?: string; endDate?: string; reset?: boolean } = {};
+  try {
+    body = await req.json();
+  } catch {
+    // no body is fine — full-history single-call mode (small universes only)
+  }
+
   const result = await withJobRun(db, "backtest-triggers", async () => {
+    if (body.reset) {
+      const { error: resetErr } = await db.from("backtest_returns_raw").delete().gte("id", 0);
+      if (resetErr) throw resetErr;
+    }
+
     const { data: symbols, error: symErr } = await db.from("symbols").select("id, ticker").eq("active", true);
     if (symErr) throw symErr;
     if (!symbols?.length) return { rowsProcessed: 0, result: null };
@@ -86,9 +111,11 @@ export default async (req: Request) => {
 
     const spyBars = barsBySymbolId.get(spySymbol.id) ?? [];
     const maxHorizon = Math.max(...HORIZONS);
-    const evalDates = spyBars
+    let evalDates = spyBars
       .slice(MIN_HISTORY_BEFORE_EVAL, spyBars.length - maxHorizon)
       .map((b) => b.date);
+    if (body.startDate) evalDates = evalDates.filter((d) => d >= body.startDate!);
+    if (body.endDate) evalDates = evalDates.filter((d) => d <= body.endDate!);
 
     // --- Triggers to backtest ---
     const { data: triggers, error: trigErr } = await db
@@ -150,58 +177,33 @@ export default async (req: Request) => {
       }
     }
 
-    // --- Aggregate into trigger_stats ---
-    const statRows: Record<string, unknown>[] = [];
+    // --- Persist this chunk's real per-fire returns, then re-finalize
+    // trigger_stats from everything accumulated in backtest_returns_raw so
+    // far (this call's chunk plus any prior chunks of the same run). The
+    // aggregation math itself (win_rate, avg_return, median_return,
+    // cev_score — same expectancy formula as before: winRate*avgWin -
+    // (1-winRate)*avgLoss) lives in the finalize_backtest_stats() Postgres
+    // function so it's identical regardless of how many chunks fed it.
+    const rawRows: { trigger_id: number; horizon_days: number; return_value: number }[] = [];
     for (const [triggerId, byHorizon] of returnsByTriggerHorizon) {
       for (const [horizon, returns] of byHorizon) {
-        if (returns.length === 0) {
-          statRows.push({
-            trigger_id: triggerId,
-            horizon_days: horizon,
-            sample_size: 0,
-            win_rate: null,
-            avg_return: null,
-            median_return: null,
-            cev_score: null,
-          });
-          continue;
+        for (const r of returns) {
+          rawRows.push({ trigger_id: triggerId, horizon_days: horizon, return_value: r });
         }
-
-        const wins = returns.filter((r) => r > 0);
-        const losses = returns.filter((r) => r <= 0);
-        const winRate = wins.length / returns.length;
-        const avgReturn = mean(returns);
-        const sorted = [...returns].sort((a, b) => a - b);
-        const medianReturn = sorted[Math.floor(sorted.length / 2)];
-        const avgWin = wins.length ? mean(wins) : 0;
-        const avgLoss = losses.length ? Math.abs(mean(losses)) : 0;
-        // Standard expectancy formula — see the trigger_stats.cev_score
-        // column comment for why this isn't the paper's exact CEV.
-        const cevScore = winRate * avgWin - (1 - winRate) * avgLoss;
-
-        statRows.push({
-          trigger_id: triggerId,
-          horizon_days: horizon,
-          sample_size: returns.length,
-          win_rate: winRate,
-          avg_return: avgReturn,
-          median_return: medianReturn,
-          cev_score: cevScore,
-        });
       }
     }
 
-    if (statRows.length) {
-      const { error } = await db.from("trigger_stats").upsert(statRows, { onConflict: "trigger_id,horizon_days" });
+    const INSERT_BATCH = 1000;
+    for (let i = 0; i < rawRows.length; i += INSERT_BATCH) {
+      const { error } = await db.from("backtest_returns_raw").insert(rawRows.slice(i, i + INSERT_BATCH));
       if (error) throw error;
     }
 
-    return { rowsProcessed: evaluatedDays, result: { statRows: statRows.length } };
+    const { data: statRowCount, error: finalizeErr } = await db.rpc("finalize_backtest_stats");
+    if (finalizeErr) throw finalizeErr;
+
+    return { rowsProcessed: evaluatedDays, result: { firesThisChunk: rawRows.length, statRows: statRowCount } };
   });
 
   return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
 };
-
-function mean(values: number[]): number {
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
