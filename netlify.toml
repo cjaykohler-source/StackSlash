@@ -52,6 +52,13 @@
 # comment), not recurring jobs. Re-run backtest-triggers whenever a
 # trigger's definition or the factor computation in dailySnapshot.ts
 # changes, so trigger_stats keeps reflecting what the triggers actually do.
+#
+# prune-bars-intraday / prune-trigger-evaluations: once daily, alongside
+# eod-scan — 7-day rolling retention on the two tables that write on
+# every scan run regardless of universe size (see each function's own
+# comment for the measured cost that motivated this).
+# weekly-bars-scan: once weekly (Monday mornings) — aggregates bars_daily
+# into bars_weekly for longer-term trend context.
 # ---------------------------------------------------------------------------
 [functions."eod-scan"]
   schedule = "30 21 * * 1-5"
@@ -61,3 +68,12 @@
 
 [functions."intraday-bars-scan"]
   schedule = "*/5 13-20 * * 1-5"
+
+[functions."prune-bars-intraday"]
+  schedule = "45 21 * * 1-5"
+
+[functions."prune-trigger-evaluations"]
+  schedule = "45 21 * * 1-5"
+
+[functions."weekly-bars-scan"]
+  schedule = "0 6 * * 1"
