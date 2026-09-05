@@ -54,70 +54,70 @@ is the resulting design, verified against real data at every step.
 | Market data | Alpaca, **paper** keys (IEX feed) | No funded account needed for data-only use |
 | Alerts | Discord webhook, channel showing as `#heating_up` (bot name "HeatBot") | Working, verified with real fires |
 | Auth | Single Supabase Auth user, `cjaykohler@gmail.com` | Working |
-| Realtime outlier worker (`worker/`) | **Not currently running anywhere** | See "Worker status" below — this is the one loose end |
+| Realtime outlier worker (`worker/`) | Running via `launchd` on the confirmed always-on Mac mini | See "Worker status" below |
 
 Current DB snapshot at time of writing: 8 symbols, 11 triggers (all
 enabled), 10,040 `bars_daily` rows (5 years × 8 symbols, zero gaps),
 5 `trigger_events`, 27 `trigger_stats` rows, 0 open `shadow_positions`.
 
-### Worker status — the one thing left in a bad state, be specific here
+### Worker status — resolved this session, one manual step still pending
 
 `worker/` (the persistent Alpaca-websocket outlier detector) **must run
 on the one dedicated, always-on Mac mini the user described as "never
-sleeps"** — not on any laptop, not on this session's machine unless it
-genuinely *is* that box, and not on Netlify (see `worker/README.md` for
-why it structurally can't run there). **As of this commit, it is not
-running anywhere.**
+sleeps"** — not on any laptop, and not on Netlify (see `worker/README.md`
+for why it structurally can't run there).
 
-This session ran into a real, concrete problem: it touched (at least)
-two separate machines that both report the hostname
-`Chris-Ks-Mac-Mini`, which made "which box am I on" unreliable to
-answer from a terminal session alone. The worker was set up and
-verified working multiple times, but was shut down each time once it
-turned out to be the wrong physical machine. One of those machines was
-positively identified by hardware serial number
-**`V4WLRFYCVJ`** (captured via `system_profiler SPHardwareDataType`) —
-**that specific serial is a machine the user explicitly said was the
-wrong one; do not treat it as the target even if its hostname matches.**
-Which physical machine *is* the correct always-on host was never
-established by serial number in this session — only described verbally
-("an M2 Pro Mac mini that never sleeps"). Get that confirmed at the
-start of the next session, don't assume.
+A prior session hit a real, concrete problem: it touched (at least) two
+separate machines that both reported the hostname `Chris-Ks-Mac-Mini`,
+making "which box am I on" unreliable from a terminal session alone.
+Hardware serial `V4WLRFYCVJ` was positively identified as the *wrong*
+machine — that finding still stands, do not target it even if a
+hostname matches.
 
-**Before touching anything, verify identity, not just hostname:**
-```bash
-hostname                                            # NOT reliable alone — both machines matched
-system_profiler SPHardwareDataType | grep -E "Serial|Model"  # compare against V4WLRFYCVJ — if it matches, STOP, wrong machine
-uptime                                              # sanity-check against what the user expects for that box
-```
-Once confirmed correct, strongly consider giving it a distinct hostname
-immediately so this can't happen again:
-```bash
-sudo scutil --set ComputerName "StackSlash-Worker-Host"
-sudo scutil --set HostName "stackslash-worker-host"
-sudo scutil --set LocalHostName "stackslash-worker-host"
-```
+**This session confirmed the correct host directly with the user**
+(hostname `Mac-mini` at the time, serial `QLPQFQPRXP`, model Mac14,12 —
+an M2 Pro Mac mini) and set the worker up there from scratch:
 
-**Then set up the worker from scratch** (nothing on this correct machine
-has been touched yet, so there's no prior partial state to reconcile):
 ```bash
 git clone https://github.com/cjaykohler-source/StackSlash.git
 cd StackSlash/worker
 npm install && npm run build
 ```
-Create `worker/.env` (real values — pull from Netlify's env vars if not
-saved elsewhere: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-`ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY`, `DISCORD_WEBHOOK_URL`).
-Then edit `worker/launchd/com.stackslash.outlier-worker.plist` — its
-three absolute paths are hardcoded to `/Users/chriskohler/Desktop/...`
-and `/opt/homebrew/bin/node`; update them to match this machine's actual
-username/clone path/`which node` output before loading it:
+
+`worker/.env` was created with real values pulled from Netlify's env vars
+(`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ALPACA_API_KEY_ID`,
+`ALPACA_API_SECRET_KEY`, `DISCORD_WEBHOOK_URL`). The `realtime_outlier_zscore`
+trigger row was already seeded (`enabled = true`, `cooldown_minutes = 15`)
+from an earlier session — no migration needed.
+
+`worker/launchd/com.stackslash.outlier-worker.plist`'s three hardcoded
+paths (previously `/Users/chriskohler/Desktop/...`) were rewritten to
+this machine's actual clone path (`/Users/ckohler/StackSlash/worker`);
+`/opt/homebrew/bin/node` was already correct here. Loaded and verified:
+
 ```bash
-cp worker/launchd/com.stackslash.outlier-worker.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stackslash.outlier-worker.plist
-launchctl print gui/$(id -u)/com.stackslash.outlier-worker | grep -E "state|pid"   # confirm state = running
-tail -f ~/Library/Logs/stackslash-outlier-worker/stdout.log                        # confirm it connects/authenticates/subscribes
+launchctl print gui/$(id -u)/com.stackslash.outlier-worker | grep -E "state|pid"
+# state = running, pid = 4497
 ```
+
+Confirmed end to end, not just "process exists": the log shows a real
+Alpaca websocket connecting, authenticating, and subscribing to all 8
+symbols, and Supabase's own `job_runs` table shows a
+`realtime-outlier-worker` row with `status = running` and no
+`finished_at`, matching the launchd-managed process.
+
+**Still pending — needs an interactive terminal (sudo password), not
+something a session can run unattended:**
+```bash
+sudo scutil --set ComputerName "StackSlash-Worker-Host"
+sudo scutil --set HostName "stackslash-worker-host"
+sudo scutil --set LocalHostName "stackslash-worker-host"
+```
+Giving this box a distinct hostname is still worth doing so the
+two-machine hostname collision that caused the original confusion can't
+recur. Until it's done, re-verify by serial (`QLPQFQPRXP`), not
+hostname, if there's ever doubt again about which machine this is.
 
 ### Open decisions — need a human call, not a default
 
