@@ -3,9 +3,230 @@
 Two-tier market scanner: a wide, cheap Tier-1 surface over the whole
 universe, and Tier-2 triggers (momentum, earnings drift, technical entry
 timing, real-time outlier detection, regime kill-switch) that fire a
-deep-dive dossier and a dedup'd alert. See the design discussion in this
-project's chat history for the full research basis and architecture
-rationale.
+deep-dive dossier and a dedup'd alert.
+
+## Session handoff — full project state
+
+Written to stand on its own: a fresh conversation pointed at this repo
+shouldn't need the original chat history to pick this up. Everything
+below reflects the real, verified state of the system as of this commit
+— not aspirational.
+
+### The research this was built on
+
+Two document bundles were analyzed at the start of this project; the
+trigger set below is a direct translation of their findings, not
+generic technical-analysis folklore.
+
+**Bundle 1 — ~30 papers on technical indicators.** Key findings: single
+indicators (RSI, MACD on default settings) mostly failed to beat
+buy-and-hold once costs were included; *combinations* of indicators beat
+any single one; Bollinger Bands + RSI confluence had the strongest
+evidence across multiple papers; momentum outperformed moving-average
+rules in less-efficient markets; parameter tuning mattered more than
+indicator choice; only ~20% of candlestick patterns showed real signal;
+volume confirmation was consistently required; no single indicator set
+worked across all markets.
+
+**Bundle 2 — ~24 papers on asset pricing / quantitative finance.**
+Key findings: cross-sectional momentum (Jegadeesh & Titman — buy past
+12-1 month winners, hold 3-12 months) is the most robust, most-replicated
+anomaly in the literature; post-earnings-announcement drift is real but
+mechanistically tied to momentum; short-term (1-week) returns *reverse*
+rather than continue; penny-stock price/volume prediction via ML was
+statistically indistinguishable from random chance; market crashes/
+outliers occur far more often than a normal distribution predicts (fat
+tails); a volatility/trend regime filter measurably improved returns;
+raw expected value is misleading for skewed payoffs (motivates the
+skew-adjusted "CEV" scoring concept referenced in `trigger_stats`).
+
+The full back-and-forth reasoning, including the specific paper-by-paper
+extraction, lived in chat and was not re-transcribed here — what's below
+is the resulting design, verified against real data at every step.
+
+### Infrastructure, as deployed right now
+
+| Piece | Where | Status |
+|---|---|---|
+| Frontend + functions | Netlify, site `stackslash` → https://stackslash.netlify.app | Live, auto-deploys from GitHub `main` |
+| Repo | https://github.com/cjaykohler-source/StackSlash | Clean, pushed, matches what's deployed |
+| Database | Supabase project `wnzxvdfskmivbyqadtll` (org StackSlash) | Live — see current counts below |
+| Market data | Alpaca, **paper** keys (IEX feed) | No funded account needed for data-only use |
+| Alerts | Discord webhook, channel showing as `#heating_up` (bot name "HeatBot") | Working, verified with real fires |
+| Auth | Single Supabase Auth user, `cjaykohler@gmail.com` | Working |
+| Realtime outlier worker (`worker/`) | **Not currently running anywhere** | See "Worker status" below — this is the one loose end |
+
+Current DB snapshot at time of writing: 8 symbols, 11 triggers (all
+enabled), 10,040 `bars_daily` rows (5 years × 8 symbols, zero gaps),
+5 `trigger_events`, 27 `trigger_stats` rows, 0 open `shadow_positions`.
+
+### Worker status — the one thing left in a bad state, be specific here
+
+`worker/` (the persistent Alpaca-websocket outlier detector) **must run
+on the one dedicated, always-on Mac mini the user described as "never
+sleeps"** — not on any laptop, not on this session's machine unless it
+genuinely *is* that box, and not on Netlify (see `worker/README.md` for
+why it structurally can't run there). **As of this commit, it is not
+running anywhere.**
+
+This session ran into a real, concrete problem: it touched (at least)
+two separate machines that both report the hostname
+`Chris-Ks-Mac-Mini`, which made "which box am I on" unreliable to
+answer from a terminal session alone. The worker was set up and
+verified working multiple times, but was shut down each time once it
+turned out to be the wrong physical machine. One of those machines was
+positively identified by hardware serial number
+**`V4WLRFYCVJ`** (captured via `system_profiler SPHardwareDataType`) —
+**that specific serial is a machine the user explicitly said was the
+wrong one; do not treat it as the target even if its hostname matches.**
+Which physical machine *is* the correct always-on host was never
+established by serial number in this session — only described verbally
+("an M2 Pro Mac mini that never sleeps"). Get that confirmed at the
+start of the next session, don't assume.
+
+**Before touching anything, verify identity, not just hostname:**
+```bash
+hostname                                            # NOT reliable alone — both machines matched
+system_profiler SPHardwareDataType | grep -E "Serial|Model"  # compare against V4WLRFYCVJ — if it matches, STOP, wrong machine
+uptime                                              # sanity-check against what the user expects for that box
+```
+Once confirmed correct, strongly consider giving it a distinct hostname
+immediately so this can't happen again:
+```bash
+sudo scutil --set ComputerName "StackSlash-Worker-Host"
+sudo scutil --set HostName "stackslash-worker-host"
+sudo scutil --set LocalHostName "stackslash-worker-host"
+```
+
+**Then set up the worker from scratch** (nothing on this correct machine
+has been touched yet, so there's no prior partial state to reconcile):
+```bash
+git clone https://github.com/cjaykohler-source/StackSlash.git
+cd StackSlash/worker
+npm install && npm run build
+```
+Create `worker/.env` (real values — pull from Netlify's env vars if not
+saved elsewhere: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+`ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY`, `DISCORD_WEBHOOK_URL`).
+Then edit `worker/launchd/com.stackslash.outlier-worker.plist` — its
+three absolute paths are hardcoded to `/Users/chriskohler/Desktop/...`
+and `/opt/homebrew/bin/node`; update them to match this machine's actual
+username/clone path/`which node` output before loading it:
+```bash
+cp worker/launchd/com.stackslash.outlier-worker.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stackslash.outlier-worker.plist
+launchctl print gui/$(id -u)/com.stackslash.outlier-worker | grep -E "state|pid"   # confirm state = running
+tail -f ~/Library/Logs/stackslash-outlier-worker/stdout.log                        # confirm it connects/authenticates/subscribes
+```
+
+### Open decisions — need a human call, not a default
+
+1. **`momentum_rank_entry` (`>=0.95`) and `momentum_breakout` (`>=0.9`)
+   have mathematically unreachable thresholds at the current 8-symbol
+   universe** — `percentileRank`'s max value at n=8 is `7/8=0.875`. The
+   backtest confirmed 0 historical fires for exactly this reason, not
+   bad luck. Fix is either lowering the threshold to match this
+   universe size, or growing the universe — a real tradeoff, not
+   patched yet.
+2. **All three short/bearish triggers show negative historical
+   expectancy** in the backtest (`bb_rsi_confluence_short`,
+   `macd_bearish_cross`, `volatility_squeeze_breakout_short`) — over
+   this period, shorting "overbought" signals in this large-cap-tech-
+   heavy universe has been a losing bet. Worth deciding whether to
+   disable them, keep them for visibility only, or leave as-is.
+3. **Exit tracking (`shadow_positions`) only covers
+   `momentum_rank_entry`/`momentum_breakout`.** The other trigger
+   categories have different holding-period logic and were deliberately
+   left out (see chat's exit-trigger design discussion) — manual
+   position tracking (tying real trades to alerts) was the proposed
+   next step beyond the current auto-tracked "shadow" approach.
+4. **Universe is 8 symbols.** Fine for verifying the whole pipeline
+   works; thin for any of the cross-sectional percentile-rank logic
+   (issue #1 above is a direct symptom of this).
+5. **Fundamentals/estimates data source** (Polygon, Finnhub, etc.) is
+   still needed before `earnings_surprise_drift` can ever fire — Alpaca
+   doesn't cover this.
+
+### Outstanding items — everything not finished, in one place
+
+Action items (something to actually go do):
+- [ ] **Get the real always-on worker host running** — see "Worker
+  status" above for the specific serial-number gotcha and full setup
+  steps. This is the single most important outstanding item.
+- [ ] Decide + fix the unreachable `momentum_rank_entry`/`momentum_breakout`
+  thresholds (Open decisions #1)
+- [ ] Decide what to do with the three negative-expectancy short triggers
+  (Open decisions #2)
+- [ ] Add a fundamentals/estimates data vendor to unblock
+  `earnings_surprise_drift` (Open decisions #5)
+- [ ] Give the worker host a distinct hostname if it still shares one
+  with another machine (see Worker status)
+
+Design/scope decisions (need a call before building, not just a fix):
+- [ ] Expand the universe beyond 8 symbols (Open decisions #4) — and
+  re-run `backfill-history` + `backtest-triggers` for any new symbols
+- [ ] Extend exit tracking beyond momentum triggers, or move from
+  auto-tracked shadow positions to real manual position tracking (Open
+  decisions #3)
+
+Smaller known gaps (not blocking, called out in code comments):
+- [ ] `intraday-scan`'s volume-vs-average still uses the daily bar as a
+  proxy rather than the now-populated `bars_intraday` — a proper
+  same-time-of-day comparison is a real but minor improvement
+- [ ] Edge-function-level auth gating (`AuthGuard.tsx` TODO) — current
+  client-side + RLS gate is fine for single-user, not hardened for
+  multi-tenant
+- [ ] Outlier worker's small-sample z-score reliability at low tick
+  counts (`worker/README.md` has the tuning knobs)
+
+Backlog (research-identified, not started — see "Trigger backlog"
+section below for full detail):
+- [ ] Multi-Timeframe Trend Agreement
+- [ ] Candlestick Reversal at a Level
+- [ ] Estimate-Revision Breakout (blocked on the same fundamentals gap
+  as `earnings_surprise_drift` above)
+
+### Everything built, roughly in the order it happened
+
+1. Two research bundles analyzed → two-tier architecture designed (wide
+   Tier-1 surface + narrow Tier-2 triggers, entry/exit/regime-gated)
+2. Repo scaffolded: Vite+React frontend, Netlify Functions backend,
+   Supabase schema+RLS, seed universe/triggers, deployed and debugged
+   through several rounds of Netlify secrets-scanning false positives
+   (all resolved — see git history if the specifics matter)
+3. `eod-scan`/`intraday-scan` verified against real Alpaca data; found
+   and fixed a real bug where `intraday-scan`'s momentum-candidate gate
+   was being bypassed by `eod-scan` evaluating the same triggers
+   unrestricted
+4. 5-year historical backfill (`backfill-history.ts`) + chart range
+   toggle (Day/Week/Month/Year/5-Year) on the symbol page; `Day` needed
+   its own ingestion job (`intraday-bars-scan.ts`, 1-min bars, 5-min
+   cadence) added afterward
+5. Dossier display rebuilt from a raw JSON dump into readable labeled
+   cards (`DossierCard.tsx`)
+6. Trigger feed regrouped by day (collapsible, today expanded by
+   default), timestamps normalized to time-only
+7. Branding pass: logo, dark-navy theme (`#010e1f`), login panel
+   flattened into the background with a `#25e979` green stroke + glow
+8. Realtime outlier worker built (`worker/`) — persistent Alpaca
+   websocket, EWMA-based z-score outlier detection, verified firing
+   real Discord alerts through the same pipeline as everything else;
+   `launchd` deployment pattern established (see "Worker status" above
+   for its current state)
+9. Three more triggers added from the research backlog: Volatility
+   Squeeze Breakout, Momentum Breakout, MACD Cross (bullish/bearish)
+10. Exit triggers via auto-tracked `shadow_positions` (see "Open
+    decisions" #3) — closes on rank drop, a bad week, or 180 days held
+11. Plain-English trigger labels applied everywhere
+    (`lib/triggerInfo.ts`, single source of truth) + a new `/about` page
+    breaking down all 11 triggers in plain language with live
+    enabled/cooldown status
+12. Real backtest engine (`backtest-triggers.ts` + shared
+    `dailySnapshot.ts` factor module) replacing `deep-dive.ts`'s
+    placeholder score with actual historical win-rate/expectancy
+    (`trigger_stats`) blended with live multi-signal confirmation —
+    surfaced both open decisions #1 and #2 above as real findings, not
+    assumptions
 
 ## Stack
 
@@ -24,25 +245,37 @@ src/                      Frontend (Vite + React + Supabase client)
 
 netlify/functions/
   eod-scan.ts             Job A — daily bars, factor_state, momentum ranking,
-                           regime_state, non-technical trigger evaluation.
+                           regime_state, non-technical/non-exit trigger
+                           evaluation, shadow_positions open/close.
                            Scheduled ~30min after close.
   intraday-scan.ts        Job B — polls snapshots for top-momentum names,
                            evaluates technical-category triggers only, on that
                            candidate set only. Scheduled every 10min during
                            market hours.
+  intraday-bars-scan.ts   1-min bars, whole active universe, every 5min
+                           during market hours — populates the Day chart range.
   backfill-history.ts     Manually-triggered deep historical pull (default:
                            5 years back) for the 5-Year chart range. Not
                            scheduled — run once per symbol, or when adding one.
+  backtest-triggers.ts    Manually-triggered: replays every backtestable
+                           trigger against 5yr history, writes trigger_stats.
+                           Not scheduled — re-run when a trigger definition or
+                           dailySnapshot.ts changes.
   deep-dive.ts            Job C — HTTP-triggered by a Postgres trigger (see
                            "Wiring" below) on every trigger_events insert,
-                           from any source (eod-scan, intraday-scan, or the
-                           realtime worker). Writes a dossier and dispatches
-                           an alert.
+                           from any source (eod-scan, intraday-scan, the
+                           realtime worker, or a shadow_positions exit).
+                           Scores from trigger_stats + live confirmation,
+                           writes a dossier, dispatches an alert.
   send-alert.ts           Manual/test alert dispatch for an existing dossier.
   lib/
     supabaseAdmin.ts       Service-role client (server-only, bypasses RLS)
     alpaca.ts               Alpaca REST client (daily/intraday bars, snapshots)
-    indicators.ts            Pure math: returns, SMA/EMA, RSI, Bollinger, vol, percentile rank
+    indicators.ts            Pure math: returns, SMA/EMA, RSI, Bollinger, vol,
+                              percentile rank, MACD cross, 20d-high, etc.
+    dailySnapshot.ts          Shared factor computation — used live by
+                              eod-scan AND by backtest-triggers, so the two
+                              can't silently drift apart.
     triggers.ts               Declarative trigger definition evaluator
     notify.ts                  Telegram/Discord dispatch + dedup/cooldown
     jobRun.ts                   job_runs logging wrapper
@@ -146,8 +379,19 @@ yet built, roughly in priority order:
 
 ## Backtesting
 
-`netlify/functions/lib/indicators.ts` and `triggers.ts` have no I/O
-dependencies by design — a future `scripts/backtest.ts` can import them
-directly, replay historical `bars_daily` rows (now with 5 years of real
-history available), and evaluate the same trigger definitions to score
-hit rate / forward return before enabling a trigger live.
+Built: `backtest-triggers.ts` replays every backtestable trigger's real
+declarative definition against 5 years of `bars_daily` history via the
+shared `dailySnapshot.ts` factor module (also used live by `eod-scan`,
+so a backtest can't silently compute things differently than
+production), and writes real win-rate/expectancy numbers into
+`trigger_stats` — see "Everything built" #12 and "Open decisions" #1/#2
+above for what it already found. Not scheduled — re-run it manually
+whenever a trigger's definition or `dailySnapshot.ts` changes:
+
+```bash
+curl -X POST https://stackslash.netlify.app/.netlify/functions/backtest-triggers
+```
+
+`indicators.ts` and `triggers.ts` still have no I/O dependencies by
+design, which is exactly what made this reusable rather than a
+duplicated implementation.
