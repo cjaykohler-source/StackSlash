@@ -75,30 +75,54 @@ export default async (req: Request) => {
     const spySymbol = symbols.find((s) => s.ticker === "SPY");
     if (!spySymbol) throw new Error("SPY not found in symbols — needed as the regime/calendar reference.");
 
-    // --- Load full bars_daily history per symbol ---
+    // --- Load bars_daily history per symbol ---
     // Paginated explicitly rather than trusting a single large .limit() —
     // Supabase's default PostgREST row cap (commonly 1000) would silently
     // truncate a 1,255-row 5-year history otherwise, which would corrupt
     // every downstream calculation without ever raising an error.
-    const barsBySymbolId = new Map<number, Bar[]>();
-    const PAGE_SIZE = 1000;
-    for (const symbol of symbols) {
+    //
+    // Scoped by a calendar-date margin around the requested chunk when one
+    // is given (500 days back covers the ~300-bar lookback window even
+    // through weekends/holidays; 30 days forward covers the 20-bar max
+    // horizon) — cuts fetch volume for narrow chunks instead of always
+    // pulling all ~1,255 days/symbol regardless of what this call needs.
+    // Fetched with bounded concurrency (not one symbol at a time): at
+    // S&P-500 scale, 504 sequential per-symbol round trips was the
+    // dominant fixed cost that made every chunk time out uniformly,
+    // regardless of date-range size — the actual bottleneck this
+    // chunking work was meant to fix.
+    const fetchFrom = body.startDate ? addDays(body.startDate, -500) : undefined;
+    const fetchTo = body.endDate ? addDays(body.endDate, 30) : undefined;
+
+    async function fetchSymbolBars(symbolId: number): Promise<Bar[]> {
       const rows: { date: string; close: number; volume: number }[] = [];
+      const PAGE_SIZE = 1000;
       let from = 0;
       for (;;) {
-        const { data, error } = await db
+        let q = db
           .from("bars_daily")
           .select("date, close, volume")
-          .eq("symbol_id", symbol.id)
+          .eq("symbol_id", symbolId)
           .order("date", { ascending: true })
           .range(from, from + PAGE_SIZE - 1);
+        if (fetchFrom) q = q.gte("date", fetchFrom);
+        if (fetchTo) q = q.lte("date", fetchTo);
+        const { data, error } = await q;
         if (error) throw error;
         if (!data?.length) break;
         rows.push(...data.map((b) => ({ date: b.date, close: Number(b.close), volume: Number(b.volume) })));
         if (data.length < PAGE_SIZE) break;
         from += PAGE_SIZE;
       }
-      barsBySymbolId.set(symbol.id, rows);
+      return rows;
+    }
+
+    const barsBySymbolId = new Map<number, Bar[]>();
+    const FETCH_CONCURRENCY = 25;
+    for (let i = 0; i < symbols.length; i += FETCH_CONCURRENCY) {
+      const batch = symbols.slice(i, i + FETCH_CONCURRENCY);
+      const results = await Promise.all(batch.map((s) => fetchSymbolBars(s.id)));
+      batch.forEach((s, j) => barsBySymbolId.set(s.id, results[j]));
     }
 
     // date -> index, per symbol, for O(1) lookup while iterating SPY's calendar
@@ -207,3 +231,9 @@ export default async (req: Request) => {
 
   return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
 };
+
+function addDays(isoDate: string, days: number): string {
+  const d = new Date(isoDate + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
