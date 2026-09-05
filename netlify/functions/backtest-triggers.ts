@@ -55,11 +55,21 @@ export default async (req: Request) => {
 
   const db = getSupabaseAdmin();
 
-  let body: { startDate?: string; endDate?: string; reset?: boolean } = {};
+  let body: { startDate?: string; endDate?: string; reset?: boolean; skipFinalize?: boolean; finalizeOnly?: boolean } =
+    {};
   try {
     body = await req.json();
   } catch {
     // no body is fine — full-history single-call mode (small universes only)
+  }
+
+  if (body.finalizeOnly) {
+    const finalizeResult = await withJobRun(db, "backtest-triggers", async () => {
+      const { data: statRowCount, error } = await db.rpc("finalize_backtest_stats");
+      if (error) throw error;
+      return { rowsProcessed: 0, result: { statRows: statRowCount } };
+    });
+    return new Response(JSON.stringify(finalizeResult), { headers: { "Content-Type": "application/json" } });
   }
 
   const result = await withJobRun(db, "backtest-triggers", async () => {
@@ -223,8 +233,16 @@ export default async (req: Request) => {
       if (error) throw error;
     }
 
-    const { data: statRowCount, error: finalizeErr } = await db.rpc("finalize_backtest_stats");
-    if (finalizeErr) throw finalizeErr;
+    // Finalizing re-aggregates the whole accumulated backtest_returns_raw
+    // table, which gets slower every chunk as it grows — skip it here
+    // (pass {"skipFinalize": true}) and call once at the end instead
+    // (via {"finalizeOnly": true}) when chunking across many calls.
+    let statRowCount: number | null = null;
+    if (!body.skipFinalize) {
+      const { data, error: finalizeErr } = await db.rpc("finalize_backtest_stats");
+      if (finalizeErr) throw finalizeErr;
+      statRowCount = data;
+    }
 
     return { rowsProcessed: evaluatedDays, result: { firesThisChunk: rawRows.length, statRows: statRowCount } };
   });
