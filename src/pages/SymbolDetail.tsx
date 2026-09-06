@@ -102,12 +102,31 @@ export function SymbolDetail() {
   const loadChart = useCallback(async (symbolId: number, r: Range) => {
     setLoading(true);
     if (r === "day") {
-      const todayStart = new Date().toISOString().slice(0, 10) + "T00:00:00Z";
+      // "Day" means the most recent session with data, not literally
+      // today — when the market's closed (evenings, weekends, holidays,
+      // or just before today's first intraday-bars-scan run), today has
+      // no rows yet and showing an empty chart isn't a useful default.
+      // Find the latest bar first, then pull that whole calendar day.
+      const { data: latestRow } = await supabase
+        .from("bars_intraday")
+        .select("ts")
+        .eq("symbol_id", symbolId)
+        .order("ts", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!latestRow) {
+        setPoints([]);
+        setLoading(false);
+        return;
+      }
+      const dayStart = `${(latestRow as { ts: string }).ts.slice(0, 10)}T00:00:00Z`;
+      const dayEnd = new Date(new Date(dayStart).getTime() + 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from("bars_intraday")
         .select("ts, price")
         .eq("symbol_id", symbolId)
-        .gte("ts", todayStart)
+        .gte("ts", dayStart)
+        .lt("ts", dayEnd)
         .order("ts", { ascending: true })
         .limit(1000);
       const rows = (data as { ts: string; price: number }[] | null) ?? [];
