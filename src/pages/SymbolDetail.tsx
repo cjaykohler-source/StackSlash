@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { supabase } from "../lib/supabaseClient";
 import { DossierCard } from "../components/DossierCard";
+import { SymbolProfile } from "../components/SymbolProfile";
 
 type Range = "day" | "week" | "month" | "year" | "5y";
 
@@ -88,6 +89,7 @@ export function SymbolDetail() {
   const [points, setPoints] = useState<ChartPoint[]>([]);
   const [dossiers, setDossiers] = useState<DossierRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [symbolId, setSymbolId] = useState<number | null>(null);
 
   const loadDossiers = useCallback(async (symbolId: number) => {
     const { data } = await supabase
@@ -162,6 +164,7 @@ export function SymbolDetail() {
         .eq("ticker", ticker)
         .maybeSingle();
       if (!symbol || cancelled) return;
+      setSymbolId(symbol.id);
       await Promise.all([loadChart(symbol.id, range), loadDossiers(symbol.id)]);
     }
     init();
@@ -232,6 +235,12 @@ export function SymbolDetail() {
           </ResponsiveContainer>
         )}
       </section>
+
+      {symbolId !== null && (
+        <section>
+          <SymbolProfile symbolId={symbolId} />
+        </section>
+      )}
 
       <section>
         <h2>Dossiers</h2>
