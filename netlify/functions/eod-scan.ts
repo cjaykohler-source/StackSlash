@@ -52,24 +52,44 @@ export default async () => {
     const end = new Date().toISOString().slice(0, 10);
     const start = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    const barsBySymbol = new Map<string, Bar[]>();
-    // Alpaca allows up to a few hundred symbols per request; chunk to be safe.
+    // Alpaca allows up to a few hundred symbols per request; chunk to be
+    // safe. Chunks run concurrently — pagination *within* a chunk has to
+    // stay sequential (each page's token depends on the previous
+    // response), but different chunks are fully independent. At 8
+    // symbols this was 1 chunk either way and invisible; at ~500+
+    // symbols (~5-6 chunks, each potentially several pages for a 400-day
+    // window) running them one at a time serialized every page of every
+    // chunk behind every other — confirmed via job_runs to never
+    // complete at this scale (stuck at "running" for 200+ seconds,
+    // factor_state never got a single write past the fetch step). Same
+    // fetch-should-be-parallel-not-sequential fix already applied twice
+    // elsewhere this session (backfill-history's batch driver,
+    // backtest-triggers' per-symbol fetch).
     const chunkSize = 100;
+    const chunks: string[][] = [];
     for (let i = 0; i < tickers.length; i += chunkSize) {
-      const chunk = tickers.slice(i, i + chunkSize);
+      chunks.push(tickers.slice(i, i + chunkSize));
+    }
+
+    async function fetchChunk(chunk: string[]): Promise<[string, Bar[]][]> {
+      const chunkBars = new Map<string, Bar[]>();
       let pageToken: string | undefined;
       do {
         const { bars, nextPageToken } = await fetchDailyBars(chunk, start, end, pageToken);
         for (const [ticker, tickerBars] of Object.entries(bars)) {
-          const existing = barsBySymbol.get(ticker) ?? [];
+          const existing = chunkBars.get(ticker) ?? [];
           existing.push(
             ...tickerBars.map((b) => ({ date: b.t.slice(0, 10), close: b.c, volume: b.v })),
           );
-          barsBySymbol.set(ticker, existing);
+          chunkBars.set(ticker, existing);
         }
         pageToken = nextPageToken ?? undefined;
       } while (pageToken);
+      return [...chunkBars.entries()];
     }
+
+    const chunkResults = await Promise.all(chunks.map(fetchChunk));
+    const barsBySymbol = new Map<string, Bar[]>(chunkResults.flat());
 
     // --- 2. Upsert bars_daily ---
     const barRows = [];

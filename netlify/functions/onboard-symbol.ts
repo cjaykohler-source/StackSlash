@@ -54,6 +54,33 @@ export default async (req: Request) => {
     });
   }
 
+  // Guard against overlapping eod-scan runs — nothing else in this
+  // codebase prevented two from executing concurrently, and a single
+  // retried onboarding request produced exactly that (confirmed via
+  // job_runs during this feature's own testing): two eod-scan calls
+  // racing on the same bars_daily/factor_state upserts and, worse, both
+  // potentially inserting duplicate trigger_events/dossiers/alerts for
+  // the same real fires. Time-windowed (not just "any running row")
+  // so a genuinely stuck/killed run from a past crash can't permanently
+  // block onboarding forever — 3 minutes is comfortably above eod-scan's
+  // real duration at full universe scale, even generously.
+  const guardCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+  const { data: inFlight, error: inFlightErr } = await db
+    .from("job_runs")
+    .select("job_name, started_at")
+    .in("job_name", ["eod-scan", "onboard-symbol"])
+    .eq("status", "running")
+    .gte("started_at", guardCutoff)
+    .limit(1)
+    .maybeSingle();
+  if (inFlightErr) throw inFlightErr;
+  if (inFlight) {
+    return new Response(
+      JSON.stringify({ error: "A scan is already in progress — try again in a minute." }),
+      { status: 409, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   try {
     const result = await withJobRun(db, "onboard-symbol", async () => {
       const valid = await validateSymbol(ticker);
