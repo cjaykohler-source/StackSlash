@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { triggerLabel, triggerCategoryLabel } from "../lib/triggerInfo";
+import { computeConfluence } from "../lib/confluence";
 
 interface FeedRow {
   id: number;
@@ -113,13 +114,9 @@ export function TriggerFeed() {
     return [...byDay.entries()]
       .sort(([a], [b]) => (a < b ? 1 : -1)) // newest day first
       .map(([key, dayRows]) => {
-        const triggerNamesBySymbol = new Map<number, Set<string>>();
-        for (const row of dayRows) {
-          if (!row.triggers?.name) continue;
-          const existing = triggerNamesBySymbol.get(row.symbol_id) ?? new Set<string>();
-          existing.add(row.triggers.name);
-          triggerNamesBySymbol.set(row.symbol_id, existing);
-        }
+        const triggerNamesBySymbol = computeConfluence(
+          dayRows.map((r) => ({ symbol_id: r.symbol_id, triggerName: r.triggers?.name })),
+        );
         const confluenceBySymbol = new Map<number, number>();
         for (const [symbolId, names] of triggerNamesBySymbol) confluenceBySymbol.set(symbolId, names.size);
         return { key, label: dayLabel(key), rows: dayRows, confluenceBySymbol };

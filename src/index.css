@@ -129,6 +129,32 @@ body {
   color: var(--red);
 }
 
+.report-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.report-controls input[type="date"] {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.report-canvas {
+  display: block;
+  width: 100%;
+  max-width: 1200px;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.report-canvas-empty {
+  display: none;
+}
+
 .about-intro {
   color: var(--text-dim);
   font-size: 0.9rem;

@@ -4,6 +4,7 @@ import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { SymbolDetail } from "./pages/SymbolDetail";
 import { About } from "./pages/About";
+import { Reports } from "./pages/Reports";
 
 export function App() {
   return (
@@ -30,6 +31,14 @@ export function App() {
         element={
           <AuthGuard>
             <About />
+          </AuthGuard>
+        }
+      />
+      <Route
+        path="/reports"
+        element={
+          <AuthGuard>
+            <Reports />
           </AuthGuard>
         }
       />
