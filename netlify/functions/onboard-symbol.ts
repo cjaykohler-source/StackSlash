@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 import { validateSymbol } from "./lib/alpaca";
-import { backfillSymbolBars } from "./lib/backfillSymbol";
+import { backfillSymbolBars, backfillLatestIntradaySession } from "./lib/backfillSymbol";
 import runEodScan from "./eod-scan";
 
 /**
@@ -100,6 +100,11 @@ export default async (req: Request) => {
       const start = fiveYearsAgo.toISOString().slice(0, 10);
       const end = new Date().toISOString().slice(0, 10);
       const rowsBackfilled = await backfillSymbolBars(db, inserted.id, ticker, start, end);
+
+      // Without this, the new symbol's "Day" chart shows an empty state
+      // until the next scheduled intraday-bars-scan run during market
+      // hours — see the function's own comment.
+      await backfillLatestIntradaySession(db, inserted.id, ticker);
 
       // Real eod-scan run across the whole active universe (now including
       // this symbol) — see the module comment for why this isn't scoped to
