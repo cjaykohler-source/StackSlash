@@ -100,8 +100,20 @@ export default async () => {
         barRows.push({ symbol_id: symbolId, date: b.date, close: b.close, volume: b.volume });
       }
     }
-    if (barRows.length) {
-      const { error } = await db.from("bars_daily").upsert(barRows, { onConflict: "symbol_id,date" });
+    // Chunked rather than one giant upsert: at ~505 symbols x up to 400
+    // days, barRows can run past 100,000 rows in a single request — a
+    // real, previously-untested-at-this-scale bottleneck distinct from
+    // the fetch-side one already fixed above (confirmed via job_runs:
+    // even after parallelizing the fetch, eod-scan still hung with
+    // factor_state never getting a single write, meaning it never even
+    // got past this step). Sequential chunks of 5,000, same batch-write
+    // pattern already proven in backtest-triggers.ts's raw-returns
+    // insert loop.
+    const UPSERT_BATCH = 5000;
+    for (let i = 0; i < barRows.length; i += UPSERT_BATCH) {
+      const { error } = await db
+        .from("bars_daily")
+        .upsert(barRows.slice(i, i + UPSERT_BATCH), { onConflict: "symbol_id,date" });
       if (error) throw error;
     }
 
