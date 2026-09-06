@@ -229,7 +229,7 @@ export function SymbolDetail() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="x" minTickGap={40} />
               <YAxis domain={["auto", "auto"]} />
-              <Tooltip />
+              <Tooltip labelStyle={{ color: "#000" }} />
               <Line type="monotone" dataKey="y" dot={false} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
