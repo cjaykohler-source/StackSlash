@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
-import { fetchDailyBars } from "./lib/alpaca";
+import { backfillSymbolBars } from "./lib/backfillSymbol";
 
 /**
  * One-time (or as-needed) deep historical backfill for the 5-Year chart
@@ -53,38 +53,11 @@ export default async (req: Request) => {
     let totalRows = 0;
     const perSymbol: Record<string, number> = {};
 
-    // One symbol at a time rather than the 100-per-request chunking
-    // eod-scan uses: a 5+ year daily-bar history per symbol can span many
-    // pages, and doing that for 100 symbols concurrently in one request
-    // makes failures harder to isolate and retry. This runs once, not
-    // daily, so the extra requests are a non-issue against the 200/min
-    // Alpaca budget.
     for (const ticker of tickers) {
       const symbolId = byTicker.get(ticker);
       if (!symbolId) continue;
 
-      let pageToken: string | undefined;
-      let rowsForSymbol = 0;
-      do {
-        const { bars, nextPageToken } = await fetchDailyBars([ticker], start, end, pageToken);
-        const tickerBars = bars[ticker] ?? [];
-        if (tickerBars.length) {
-          const rows = tickerBars.map((b) => ({
-            symbol_id: symbolId,
-            date: b.t.slice(0, 10),
-            open: b.o,
-            high: b.h,
-            low: b.l,
-            close: b.c,
-            volume: b.v,
-          }));
-          const { error } = await db.from("bars_daily").upsert(rows, { onConflict: "symbol_id,date" });
-          if (error) throw error;
-          rowsForSymbol += rows.length;
-        }
-        pageToken = nextPageToken ?? undefined;
-      } while (pageToken);
-
+      const rowsForSymbol = await backfillSymbolBars(db, symbolId, ticker, start, end);
       perSymbol[ticker] = rowsForSymbol;
       totalRows += rowsForSymbol;
     }

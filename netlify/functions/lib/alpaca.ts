@@ -73,6 +73,34 @@ async function fetchBars(
  * paginates via next_page_token — this handles one page fetch; callers
  * should loop on next_page_token for large universes/date ranges.
  */
+// Alpaca's trading/broker API — a different host than dataBaseUrl()'s
+// market-data host. Hardcoded to the paper host rather than a new env
+// var: this project is paper-only by design throughout (see every other
+// function's own comments), and the assets endpoint is paper/live-
+// specific in a way the market-data API isn't.
+const TRADING_BASE_URL = "https://paper-api.alpaca.markets";
+
+/**
+ * Checks whether a ticker is a real, currently-tradable US equity —
+ * used when a user searches for a symbol not yet in our `symbols` table,
+ * before adding it and pulling history. Deliberately conservative: only
+ * true for an exact-symbol match that Alpaca marks tradable AND
+ * class="us_equity" (excludes crypto/OTC/etc. this project isn't built
+ * for), same check used (via manual curl) to validate the S&P 500 seed
+ * list earlier in this project's history.
+ */
+export async function validateSymbol(ticker: string): Promise<boolean> {
+  const res = await fetch(`${TRADING_BASE_URL}/v2/assets/${encodeURIComponent(ticker)}`, {
+    headers: authHeaders(),
+  });
+  if (res.status === 404) return false;
+  if (!res.ok) {
+    throw new Error(`Alpaca asset lookup failed: ${res.status} ${await res.text()}`);
+  }
+  const asset = (await res.json()) as { tradable?: boolean; class?: string };
+  return asset.tradable === true && asset.class === "us_equity";
+}
+
 export async function fetchDailyBars(
   symbols: string[],
   start: string, // YYYY-MM-DD

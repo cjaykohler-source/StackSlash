@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { RegimeBanner } from "../components/RegimeBanner";
 import { TriggerFeed } from "../components/TriggerFeed";
+import { SymbolSearch } from "../components/SymbolSearch";
 import logo from "../assets/SS_SingleLine_Logo.png";
 
 export function Dashboard() {
@@ -9,6 +10,7 @@ export function Dashboard() {
     <div className="page">
       <header className="page-header">
         <img src={logo} alt="StackSlash" className="brand-logo" />
+        <SymbolSearch />
         <div className="header-actions">
           <Link to="/about" className="link-button">
             About
