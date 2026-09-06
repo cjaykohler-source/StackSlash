@@ -135,6 +135,16 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
         })}
       </div>
 
+      {profileTriggers && profileTriggers.filter((p) => p.satisfied).length >= 2 && (
+        <div className="confluence-banner">
+          <strong>Confluence: {profileTriggers.filter((p) => p.satisfied).length} signals agree right now</strong> —{" "}
+          {profileTriggers
+            .filter((p) => p.satisfied)
+            .map((p) => triggerLabel(p.trigger.name))
+            .join(", ")}
+        </div>
+      )}
+
       <h3 className="profile-subheading">Trigger status</h3>
       {!profileTriggers || profileTriggers.length === 0 ? (
         <p className="empty-state">No evaluable triggers configured.</p>

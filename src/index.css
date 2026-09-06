@@ -396,6 +396,28 @@ body {
   color: var(--accent);
   text-decoration: none;
 }
+.confluence-badge {
+  margin-left: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(46, 204, 113, 0.15);
+  color: var(--green);
+  white-space: nowrap;
+}
+.confluence-banner {
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 8px 0 16px;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+.confluence-banner strong {
+  color: var(--green);
+}
 
 .status {
   padding: 2px 8px;

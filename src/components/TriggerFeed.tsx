@@ -17,6 +17,10 @@ interface DayGroup {
   key: string; // YYYY-MM-DD, local time
   label: string; // e.g. "Friday, September 4, 2026"
   rows: FeedRow[];
+  // symbol_id -> count of *distinct* trigger names that fired for it this
+  // day (not distinct rows — the same trigger re-firing after its
+  // cooldown isn't confluence, two different triggers agreeing is).
+  confluenceBySymbol: Map<number, number>;
 }
 
 // en-CA locale conveniently formats as YYYY-MM-DD — used purely as a
@@ -108,7 +112,18 @@ export function TriggerFeed() {
     }
     return [...byDay.entries()]
       .sort(([a], [b]) => (a < b ? 1 : -1)) // newest day first
-      .map(([key, dayRows]) => ({ key, label: dayLabel(key), rows: dayRows }));
+      .map(([key, dayRows]) => {
+        const triggerNamesBySymbol = new Map<number, Set<string>>();
+        for (const row of dayRows) {
+          if (!row.triggers?.name) continue;
+          const existing = triggerNamesBySymbol.get(row.symbol_id) ?? new Set<string>();
+          existing.add(row.triggers.name);
+          triggerNamesBySymbol.set(row.symbol_id, existing);
+        }
+        const confluenceBySymbol = new Map<number, number>();
+        for (const [symbolId, names] of triggerNamesBySymbol) confluenceBySymbol.set(symbolId, names.size);
+        return { key, label: dayLabel(key), rows: dayRows, confluenceBySymbol };
+      });
   }, [rows]);
 
   if (rows.length === 0) {
@@ -148,13 +163,20 @@ export function TriggerFeed() {
                 </tr>
               </thead>
               <tbody>
-                {group.rows.map((row) => (
+                {group.rows.map((row) => {
+                  const confluenceCount = group.confluenceBySymbol.get(row.symbol_id) ?? 0;
+                  return (
                   <tr key={row.id}>
                     <td>{timeOnly(row.ts)}</td>
                     <td>
                       <Link to={`/symbol/${row.symbols?.ticker ?? row.symbol_id}`}>
                         {row.symbols?.ticker ?? row.symbol_id}
                       </Link>
+                      {confluenceCount >= 2 && (
+                        <span className="confluence-badge" title={`${confluenceCount} distinct triggers fired for this symbol today`}>
+                          {confluenceCount} signals
+                        </span>
+                      )}
                     </td>
                     <td>{row.triggers?.name ? triggerLabel(row.triggers.name) : row.trigger_id}</td>
                     <td className="col-category">{row.triggers?.name ? triggerCategoryLabel(row.triggers.name) : "—"}</td>
@@ -162,7 +184,8 @@ export function TriggerFeed() {
                       <span className={`status status-${row.status}`}>{row.status}</span>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
