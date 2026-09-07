@@ -312,6 +312,39 @@ body {
   background: rgba(231, 76, 60, 0.1);
   color: var(--red);
 }
+.market-breadth {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+.market-breadth-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.market-breadth-label {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.market-breadth-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.market-breadth-value.up {
+  color: var(--green);
+}
+.market-breadth-value.down {
+  color: var(--red);
+}
+
 .regime-unknown {
   color: var(--text-dim);
 }
