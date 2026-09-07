@@ -61,8 +61,19 @@ export function MarketBreadth() {
       const [latest, prior] = dates;
 
       const [factorRes, barsRes] = await Promise.all([
-        supabase.from("factor_state").select("symbol_id, dist_sma200, ret_1w"),
-        supabase.from("bars_daily").select("symbol_id, date, close").in("date", [latest, prior]),
+        // Under the 1,000-row PostgREST default cap today (~510 active
+        // symbols), but explicit for the same reason as the bars_daily
+        // query below — don't silently truncate again as the universe
+        // grows.
+        supabase.from("factor_state").select("symbol_id, dist_sma200, ret_1w").limit(5000),
+        // Explicit limit well above 2x the active universe size —
+        // PostgREST's default row cap (1000) would otherwise silently
+        // truncate the ~1,000+ rows two dates x 500+ symbols needs,
+        // undercounting advancers/decliners without ever raising an
+        // error (confirmed happening: real data showed 180/329, the
+        // unbounded query rendered 178/320). Same class of bug already
+        // documented in backtest-triggers.ts's own comments.
+        supabase.from("bars_daily").select("symbol_id, date, close").in("date", [latest, prior]).limit(5000),
       ]);
       if (cancelled) return;
 
