@@ -249,15 +249,16 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
                   <p className="trigger-profile-note">No backtested history yet.</p>
                 ) : (
                   <div className="trigger-profile-stats">
-                    {realStats.map((s) => (
+                    {realStats.map((s, i) => (
                       <span key={s.horizon_days} className="trigger-profile-stat">
+                        {i > 0 && <span className="trigger-profile-sep"> | </span>}
                         <InfoTooltip
-                          text={`Backtested outcomes across every historical fire of this trigger, looking ${s.horizon_days} trading day${s.horizon_days === 1 ? "" : "s"} ahead: the share of fires that were profitable, and the average return.`}
+                          text={`Backtested outcomes across every historical fire of this trigger (${s.sample_size} samples), looking ${s.horizon_days} trading day${s.horizon_days === 1 ? "" : "s"} ahead: the share of fires that were profitable, and the average return.`}
                         >
-                          {s.horizon_days}d
+                          {s.horizon_days}D
                         </InfoTooltip>
-                        : {pct(s.win_rate ?? 0, 0)} win rate ({s.sample_size} samples), avg{" "}
-                        {pct(s.avg_return ?? 0)}
+                        : {pct(s.win_rate ?? 0, 0)} <span className="trigger-profile-sep">|</span> AVG{" "}
+                        {pct(s.avg_return ?? 0, 2)}
                       </span>
                     ))}
                   </div>
