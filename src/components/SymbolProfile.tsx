@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "../lib/triggerEval";
+import { computeProximity } from "../lib/triggerProximity";
 import { triggerLabel, triggerCategoryLabel, humanize, TRIGGER_INFO } from "../lib/triggerInfo";
 import { FIELD_META, HIDDEN_FIELDS, pct } from "../lib/factorFormat";
 import type { FactorState, RegimeState, Trigger } from "../lib/types";
 import { InfoTooltip } from "./InfoTooltip";
+import { ProximityBar } from "./ProximityBar";
 
 interface TriggerStatRow {
   trigger_id: number;
@@ -18,6 +20,36 @@ interface ProfileTrigger {
   trigger: Trigger;
   satisfied: boolean;
   stats: TriggerStatRow[];
+  proximity: number | null;
+  variant: "entry" | "exit";
+}
+
+interface OpenShadowPosition {
+  entry_date: string;
+}
+
+/**
+ * momentum_exit isn't a declarative {all:[...]} trigger — its three
+ * sub-conditions (rank dropped below the top third, a bottom-decile
+ * week, or a 180-day max hold) are OR'd together directly in eod-scan.ts
+ * against an open shadow_positions row, not evaluated by triggers.ts.
+ * This mirrors that logic for the proximity bar only: overall proximity
+ * is the *max* of the three (OR semantics — whichever sub-condition is
+ * closest determines how close the exit as a whole is), matching the
+ * *min*-across-AND-conditions approach computeProximity() uses for every
+ * other trigger, just flipped for OR.
+ */
+function momentumExitProximity(position: OpenShadowPosition, factor: FactorState): number | null {
+  const rankPct = factor.momentum_rank_pct;
+  const ret1wRankPct = factor.ret_1w_rank_pct;
+  if (rankPct === null || rankPct === undefined || ret1wRankPct === null || ret1wRankPct === undefined) return null;
+
+  const rankDroppedProximity = (1 - rankPct) / (1 - 0.67);
+  const weeklyReversalProximity = (1 - ret1wRankPct) / (1 - 0.1);
+  const daysHeld = Math.floor((Date.now() - new Date(`${position.entry_date}T00:00:00Z`).getTime()) / 86_400_000);
+  const maxHoldProximity = daysHeld / 180;
+
+  return Math.max(rankDroppedProximity, weeklyReversalProximity, maxHoldProximity);
 }
 
 /**
@@ -50,7 +82,7 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
 
     async function load() {
       setLoading(true);
-      const [factorRes, regimeRes, triggersRes] = await Promise.all([
+      const [factorRes, regimeRes, triggersRes, exitTriggerRes, openPositionRes] = await Promise.all([
         supabase
           .from("factor_state")
           .select("*")
@@ -60,12 +92,23 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
           .maybeSingle(),
         supabase.from("regime_state").select("*").order("as_of", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("triggers").select("*").eq("enabled", true).not("category", "in", "(outlier,exit)"),
+        supabase.from("triggers").select("*").eq("name", "momentum_exit").maybeSingle(),
+        supabase
+          .from("shadow_positions")
+          .select("entry_date")
+          .eq("symbol_id", symbolId)
+          .eq("status", "open")
+          .order("entry_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
       if (cancelled) return;
 
       const factor = factorRes.data as FactorState | null;
       const regime = regimeRes.data as RegimeState | null;
       const triggers = (triggersRes.data as Trigger[] | null) ?? [];
+      const exitTrigger = exitTriggerRes.data as Trigger | null;
+      const openPosition = openPositionRes.data as OpenShadowPosition | null;
 
       setFactorState(factor);
 
@@ -75,7 +118,7 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
         return;
       }
 
-      const triggerIds = triggers.map((t) => t.id);
+      const triggerIds = triggers.map((t) => t.id).concat(exitTrigger ? [exitTrigger.id] : []);
       const { data: statsData } = await supabase
         .from("trigger_stats")
         .select("trigger_id, horizon_days, sample_size, win_rate, avg_return")
@@ -96,7 +139,23 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
         trigger: t,
         satisfied: evaluateTrigger(t.definition as unknown as TriggerDefinition, inputs),
         stats: (statsByTrigger.get(t.id) ?? []).sort((a, b) => a.horizon_days - b.horizon_days),
+        proximity: computeProximity(t.definition as unknown as TriggerDefinition, inputs),
+        variant: "entry",
       }));
+
+      // momentum_exit only ever applies while this symbol has an open
+      // shadow position — with none open there's nothing to be "close to
+      // exiting" from, so it's simply absent from the list rather than
+      // shown at a meaningless 0%.
+      if (exitTrigger && openPosition) {
+        results.unshift({
+          trigger: exitTrigger,
+          satisfied: false, // eod-scan.ts closes the position the instant this is true — an open one is by definition not (yet) satisfied
+          stats: (statsByTrigger.get(exitTrigger.id) ?? []).sort((a, b) => a.horizon_days - b.horizon_days),
+          proximity: momentumExitProximity(openPosition, factor),
+          variant: "exit",
+        });
+      }
 
       setProfileTriggers(results);
       setLoading(false);
@@ -159,8 +218,15 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
         <p className="empty-state">No evaluable triggers configured.</p>
       ) : (
         <div className="trigger-profile-list">
-          {profileTriggers.map(({ trigger, satisfied, stats }) => {
+          {profileTriggers.map(({ trigger, satisfied, stats, proximity, variant }) => {
             const realStats = stats.filter((s) => s.sample_size > 0);
+            const statusText = variant === "exit" ? "Position open" : satisfied ? "Satisfied now" : "Not satisfied";
+            const statusTooltip =
+              variant === "exit"
+                ? "This symbol has an open hypothetical position from an earlier entry trigger — the bar below shows how close it is to the exit condition."
+                : satisfied
+                  ? "This trigger's condition is true right now, based on the latest factor snapshot."
+                  : "This trigger's condition is not currently true for this symbol.";
             return (
               <div className="trigger-profile-row" key={trigger.id}>
                 <div className="trigger-profile-header">
@@ -173,18 +239,12 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
                   </span>
                   <span className="trigger-profile-category">{triggerCategoryLabel(trigger.name)}</span>
                   <span className={`trigger-profile-status ${satisfied ? "satisfied" : "unsatisfied"}`}>
-                    <InfoTooltip
-                      underline={false}
-                      text={
-                        satisfied
-                          ? "This trigger's condition is true right now, based on the latest factor snapshot."
-                          : "This trigger's condition is not currently true for this symbol."
-                      }
-                    >
-                      {satisfied ? "Satisfied now" : "Not satisfied"}
+                    <InfoTooltip underline={false} text={statusTooltip}>
+                      {statusText}
                     </InfoTooltip>
                   </span>
                 </div>
+                <ProximityBar proximity={proximity} variant={variant} />
                 {realStats.length === 0 ? (
                   <p className="trigger-profile-note">No backtested history yet.</p>
                 ) : (

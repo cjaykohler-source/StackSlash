@@ -12,6 +12,7 @@ import {
 import { supabase } from "../lib/supabaseClient";
 import { DossierCard } from "../components/DossierCard";
 import { SymbolProfile } from "../components/SymbolProfile";
+import { CompanyDescription } from "../components/CompanyDescription";
 
 type Range = "day" | "week" | "month" | "year" | "5y";
 
@@ -90,6 +91,7 @@ export function SymbolDetail() {
   const [dossiers, setDossiers] = useState<DossierRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
+  const [symbolName, setSymbolName] = useState<string | null>(null);
 
   const loadDossiers = useCallback(async (symbolId: number) => {
     const { data } = await supabase
@@ -160,11 +162,12 @@ export function SymbolDetail() {
     async function init() {
       const { data: symbol } = await supabase
         .from("symbols")
-        .select("id")
+        .select("id, name")
         .eq("ticker", ticker)
         .maybeSingle();
       if (!symbol || cancelled) return;
       setSymbolId(symbol.id);
+      setSymbolName(symbol.name);
       await Promise.all([loadChart(symbol.id, range), loadDossiers(symbol.id)]);
     }
     init();
@@ -200,7 +203,13 @@ export function SymbolDetail() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>{ticker}</h1>
+        <div className="symbol-header-title">
+          <h1>
+            {ticker}
+            {symbolName && <span className="symbol-company-name"> ({symbolName})</span>}
+          </h1>
+          <CompanyDescription name={symbolName} />
+        </div>
         <Link to="/">← back to feed</Link>
       </header>
 

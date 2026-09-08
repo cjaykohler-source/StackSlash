@@ -83,14 +83,14 @@ export default async (req: Request) => {
 
   try {
     const result = await withJobRun(db, "onboard-symbol", async () => {
-      const valid = await validateSymbol(ticker);
-      if (!valid) {
+      const asset = await validateSymbol(ticker);
+      if (!asset.valid) {
         throw new Error(`${ticker} isn't a valid, currently-tradable US equity symbol.`);
       }
 
       const { data: inserted, error: insertErr } = await db
         .from("symbols")
-        .upsert({ ticker, active: true }, { onConflict: "ticker" })
+        .upsert({ ticker, name: asset.name, active: true }, { onConflict: "ticker" })
         .select("id")
         .single();
       if (insertErr) throw insertErr;

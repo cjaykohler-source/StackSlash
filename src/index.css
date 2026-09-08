@@ -43,6 +43,31 @@ body {
   margin: 0;
 }
 
+.symbol-header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.symbol-company-name {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.company-description {
+  margin: 0;
+  max-width: 640px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.company-description-unavailable {
+  font-style: italic;
+}
+
 .brand-logo {
   height: 36px; /* 28px + 30% */
   width: auto;
@@ -573,6 +598,31 @@ body {
   font-size: 0.8rem;
   color: var(--text-dim);
   font-style: italic;
+}
+.proximity-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.proximity-bar-track {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.proximity-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+.proximity-bar-label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
 }
 
 .dossier-list {

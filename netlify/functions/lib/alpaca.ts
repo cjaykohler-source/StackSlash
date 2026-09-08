@@ -89,16 +89,27 @@ const TRADING_BASE_URL = "https://paper-api.alpaca.markets";
  * for), same check used (via manual curl) to validate the S&P 500 seed
  * list earlier in this project's history.
  */
-export async function validateSymbol(ticker: string): Promise<boolean> {
+export interface AssetLookup {
+  valid: boolean;
+  /** Company name from Alpaca's own asset record — same lookup this
+   *  already had to make to validate the ticker, so onboarding a new
+   *  symbol can populate symbols.name for free. */
+  name: string | null;
+}
+
+export async function validateSymbol(ticker: string): Promise<AssetLookup> {
   const res = await fetch(`${TRADING_BASE_URL}/v2/assets/${encodeURIComponent(ticker)}`, {
     headers: authHeaders(),
   });
-  if (res.status === 404) return false;
+  if (res.status === 404) return { valid: false, name: null };
   if (!res.ok) {
     throw new Error(`Alpaca asset lookup failed: ${res.status} ${await res.text()}`);
   }
-  const asset = (await res.json()) as { tradable?: boolean; class?: string };
-  return asset.tradable === true && asset.class === "us_equity";
+  const asset = (await res.json()) as { tradable?: boolean; class?: string; name?: string };
+  return {
+    valid: asset.tradable === true && asset.class === "us_equity",
+    name: asset.name ?? null,
+  };
 }
 
 export async function fetchDailyBars(
