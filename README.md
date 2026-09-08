@@ -250,7 +250,20 @@ Smaller known gaps (not blocking):
   proxy rather than the populated `bars_intraday`
 - [ ] Edge-function-level auth gating (`AuthGuard.tsx` TODO) — current
   client-side + RLS gate is fine for single-user, not hardened for
-  multi-tenant
+  multi-tenant. RLS audit 2026-09-08: all 18 tables have RLS on,
+  every read policy is `authenticated`-only, no `anon` access;
+  `tracked_symbols` insert/delete use `USING (true)` (single-user trust
+  model — needs `user_id = auth.uid()` scoping for multi-tenant, the way
+  the unused legacy `watchlists` table already does it). Fixed the same
+  day: 4 internal functions (`notify_deep_dive`, `rls_auto_enable`,
+  `finalize_backtest_stats`, `refresh_bars_weekly`) were exposed as
+  public PostgREST RPCs — `EXECUTE` revoked from anon/authenticated;
+  `search_path` pinned on the two that lacked it; `bars_weekly` given
+  the standard `authenticated read` policy.
+- [ ] Drop the orphaned `public.watchlists` table (0 rows, nothing
+  references it — the Tracking panel uses `tracked_symbols`). One-liner,
+  just needs running: `drop table public.watchlists;`
+- [ ] Enable Supabase Auth leaked-password protection (dashboard toggle)
 - [ ] Outlier worker's small-sample z-score reliability at low tick
   counts (`worker/README.md` has the tuning knobs)
 
