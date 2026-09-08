@@ -183,32 +183,36 @@ export default async () => {
 
     // --- 2b. Load the full factor window from bars_daily ---
     // (the recent Alpaca pull above is just the last few sessions; the
-    // 400-day history computeFactors needs lives in the DB now).
+    // 400-day history computeFactors needs lives in the DB now.)
+    // Per-symbol reads with bounded concurrency, NOT one big ordered scan
+    // with .range() — offset pagination over a 1M+ row ordered set makes
+    // every later page re-sort the whole thing and grinds to a halt (hit
+    // this the hard way: eod-scan hung >15 min at ~5,000 symbols). Same
+    // per-symbol approach backtest-triggers.ts uses.
     const today = end;
     const barsBySymbolId = new Map<number, Bar[]>();
-    {
+    await mapWithConcurrency(symbols, 24, async (s) => {
+      const rows: Bar[] = [];
       const PAGE = 1000;
-      let from = 0;
+      let fromRow = 0;
       for (;;) {
         const { data, error } = await db
           .from("bars_daily")
-          .select("symbol_id, date, close, volume")
+          .select("date, close, volume")
+          .eq("symbol_id", s.id)
           .gte("date", factorWindowStart)
-          .order("symbol_id", { ascending: true })
           .order("date", { ascending: true })
-          .range(from, from + PAGE - 1);
+          .range(fromRow, fromRow + PAGE - 1);
         if (error) throw error;
         if (!data?.length) break;
-        for (const r of data as { symbol_id: number; date: string; close: number; volume: number }[]) {
-          const list = barsBySymbolId.get(r.symbol_id);
-          const bar = { date: r.date, close: Number(r.close), volume: Number(r.volume) };
-          if (list) list.push(bar);
-          else barsBySymbolId.set(r.symbol_id, [bar]);
+        for (const r of data as { date: string; close: number; volume: number }[]) {
+          rows.push({ date: r.date, close: Number(r.close), volume: Number(r.volume) });
         }
         if (data.length < PAGE) break;
-        from += PAGE;
+        fromRow += PAGE;
       }
-    }
+      if (rows.length) barsBySymbolId.set(s.id, rows);
+    });
 
     // --- 3. Compute factor_state via the shared dailySnapshot module ---
     // (also used by backtest-triggers.ts, so live behavior and backtested

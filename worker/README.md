@@ -113,6 +113,23 @@ tail -f ~/Library/Logs/stackslash-outlier-worker/stdout.log  # live output
 launchctl bootout gui/$(id -u)/com.stackslash.outlier-worker.plist  # stop
 ```
 
+## eod-scan also runs here
+
+This same host runs `eod-scan` on a launchd timer (`com.stackslash.eod-scan`,
+17:45 ET weekdays) — Netlify's scheduled function times out at the
+~5,000-symbol universe. It's independent of the worker:
+
+```bash
+cp ../scripts/launchd/com.stackslash.eod-scan.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stackslash.eod-scan.plist
+launchctl kickstart gui/$(id -u)/com.stackslash.eod-scan     # run it now
+tail -f ~/Library/Logs/stackslash-eod-scan/eod-scan.log
+```
+
+`scripts/run-eod-scan.sh` sources the repo-root `.env` and runs the
+function via `npx tsx`. No build step (unlike the worker) — it runs the
+`.ts` directly. Pull the repo before relying on a fresh run.
+
 ## Deploying (Fly.io)
 
 ```bash

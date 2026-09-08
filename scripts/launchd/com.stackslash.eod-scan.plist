@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.eod-scan</string>
+
+    <!-- Runs eod-scan on this always-on host. Netlify's scheduled
+         function has a ~3-4 min platform timeout that eod-scan blows
+         past at the ~5,000-symbol scale; this doesn't. Edit the paths
+         if the repo isn't at /Users/ckohler/StackSlash on this machine. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/scripts/run-eod-scan.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+
+    <!-- 17:45 on weekdays. The host is on America/New_York and
+         StartCalendarInterval uses LOCAL time, so this is ~1h45m after
+         the 16:00 ET market close year-round (DST-safe) and after the
+         Netlify 21:30 UTC cron has had its shot. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-eod-scan/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-eod-scan/launchd.err.log</string>
+</dict>
+</plist>
