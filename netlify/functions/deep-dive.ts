@@ -48,7 +48,7 @@ export default async (req: Request) => {
 
   const { data: event, error } = await db
     .from("trigger_events")
-    .select("id, snapshot, symbol_id, trigger_id, symbols(ticker), triggers(name, cooldown_minutes)")
+    .select("id, snapshot, symbol_id, trigger_id, priority, symbols(ticker), triggers(name, cooldown_minutes)")
     .eq("id", triggerEventId)
     .single();
   if (error || !event) {
@@ -64,14 +64,47 @@ export default async (req: Request) => {
       ?.cooldown_minutes ?? 1440;
 
   const snapshot = event.snapshot as Record<string, unknown>;
+  const priority =
+    ((event as unknown as { priority?: string }).priority as "normal" | "high" | undefined) ?? "normal";
+
+  // Confluence metadata, when this event was promoted by the confluence
+  // gate (lib/confluenceGate.ts). `trigger_id` above is the cluster's
+  // primary trigger; `confluence.triggers` is the full contributing set.
+  const confluence = (snapshot.confluence ?? null) as {
+    count: number;
+    direction: "long" | "short";
+    tier: "normal" | "high";
+    triggers: { id: number; name: string | null }[];
+  } | null;
 
   // --- 1. Historical expectancy, if there's enough of it to trust ---
-  const { data: stats } = await db
+  // For a confluence event, blend the historical win rate across every
+  // contributing trigger (sample-size weighted) rather than reading only
+  // the primary trigger's stats — the whole point of the cluster is that
+  // more than one signal agreed.
+  const statTriggerIds = confluence?.triggers.length
+    ? confluence.triggers.map((t) => t.id)
+    : [event.trigger_id];
+  const { data: statRows } = await db
     .from("trigger_stats")
-    .select("sample_size, win_rate, avg_return, cev_score")
-    .eq("trigger_id", event.trigger_id)
-    .eq("horizon_days", HISTORICAL_HORIZON_DAYS)
-    .maybeSingle();
+    .select("trigger_id, sample_size, win_rate, avg_return, cev_score")
+    .in("trigger_id", statTriggerIds)
+    .eq("horizon_days", HISTORICAL_HORIZON_DAYS);
+
+  const usableStats = (statRows ?? []).filter((s) => (s.sample_size ?? 0) > 0 && s.win_rate !== null);
+  const totalSample = usableStats.reduce((a, s) => a + (s.sample_size ?? 0), 0);
+  const stats =
+    usableStats.length > 0
+      ? {
+          sample_size: totalSample,
+          win_rate: usableStats.reduce((a, s) => a + (s.win_rate ?? 0) * (s.sample_size ?? 0), 0) / totalSample,
+          avg_return:
+            usableStats.reduce((a, s) => a + (s.avg_return ?? 0) * (s.sample_size ?? 0), 0) / totalSample,
+          cev_score:
+            usableStats.reduce((a, s) => a + (s.cev_score ?? 0) * (s.sample_size ?? 0), 0) / totalSample,
+          blended_from: usableStats.length,
+        }
+      : null;
 
   const hasReliableHistory = (stats?.sample_size ?? 0) >= MIN_RELIABLE_SAMPLE;
 
@@ -122,6 +155,14 @@ export default async (req: Request) => {
   const analysis = {
     trigger: triggerName,
     ticker,
+    priority,
+    confluence: confluence
+      ? {
+          count: confluence.count,
+          direction: confluence.direction,
+          triggers: confluence.triggers.map((t) => t.name).filter(Boolean),
+        }
+      : null,
     fired_on: snapshot,
     historical: hasReliableHistory
       ? {
@@ -148,6 +189,7 @@ export default async (req: Request) => {
       symbol_id: event.symbol_id,
       analysis,
       score,
+      priority,
     })
     .select("id")
     .single();
@@ -155,11 +197,23 @@ export default async (req: Request) => {
 
   await db.from("trigger_events").update({ status: "dossier_ready" }).eq("id", event.id);
 
+  // High-priority (3+ confluent triggers) gets a visible tag and its own
+  // dedup tier, so an escalation still pings even if the normal-tier alert
+  // for one of the contributing triggers already went out in the window.
+  const confluentNames = confluence?.triggers.map((t) => t.name).filter(Boolean) ?? [];
+  const headline =
+    priority === "high"
+      ? `🔴 *HIGH PRIORITY* — *${ticker}*`
+      : `*${ticker}* — ${triggerName}`;
+  const confluenceLine = confluentNames.length
+    ? `\n${confluentNames.length} signals: ${confluentNames.join(", ")}`
+    : "";
+
   const alertResult = await dispatchAlert(db, {
     dossierId: dossier.id,
-    dedupKey: `${event.trigger_id}:${event.symbol_id}`,
+    dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}`,
     cooldownMinutes,
-    message: `*${ticker}* — ${triggerName}\nscore: ${score.toFixed(2)}`,
+    message: `${headline}${confluenceLine}\nscore: ${score.toFixed(2)}`,
   });
 
   if (alertResult.status === "sent") {

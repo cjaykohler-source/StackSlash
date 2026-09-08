@@ -13,6 +13,7 @@ import { supabase } from "../lib/supabaseClient";
 import { DossierCard } from "../components/DossierCard";
 import { SymbolProfile } from "../components/SymbolProfile";
 import { CompanyDescription } from "../components/CompanyDescription";
+import { QuoteTag, useQuotes } from "../components/QuoteTag";
 
 type Range = "day" | "week" | "month" | "year" | "5y";
 
@@ -92,6 +93,7 @@ export function SymbolDetail() {
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
   const [symbolName, setSymbolName] = useState<string | null>(null);
+  const quotes = useQuotes(ticker ? [ticker] : []);
 
   const loadDossiers = useCallback(async (symbolId: number) => {
     const { data } = await supabase
@@ -207,6 +209,7 @@ export function SymbolDetail() {
           <h1>
             {ticker}
             {symbolName && <span className="symbol-company-name"> ({symbolName})</span>}
+            {ticker && <QuoteTag quote={quotes.get(ticker)} />}
           </h1>
           <CompanyDescription name={symbolName} />
         </div>

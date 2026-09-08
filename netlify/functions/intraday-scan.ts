@@ -3,6 +3,7 @@ import { withJobRun } from "./lib/jobRun";
 import { fetchSnapshots } from "./lib/alpaca";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 import { filterByCooldown } from "./lib/cooldown";
+import { stageAndPromote } from "./lib/confluenceGate";
 
 /**
  * Job B — intraday polling scan.
@@ -51,11 +52,14 @@ export default async () => {
 
     const { data: triggers, error: trigErr } = await db
       .from("triggers")
-      .select("id, definition, cooldown_minutes")
+      .select("id, definition, cooldown_minutes, direction")
       .eq("enabled", true)
       .eq("category", "technical");
     if (trigErr) throw trigErr;
     const cooldownByTriggerId = new Map((triggers ?? []).map((t) => [t.id, t.cooldown_minutes] as const));
+    const directionByTriggerId = new Map(
+      (triggers ?? []).map((t) => [t.id, (t.direction as "long" | "short" | null) ?? "long"] as const),
+    );
 
     const { data: regime } = await db
       .from("regime_state")
@@ -104,12 +108,24 @@ export default async () => {
     // shouldn't create a fresh trigger_event/dossier/alert on every
     // 10-minute poll.
     const coolableFires = await filterByCooldown(db, fires, cooldownByTriggerId);
-    if (coolableFires.length) {
-      const { error } = await db.from("trigger_events").insert(coolableFires);
-      if (error) throw error;
-    }
 
-    return { rowsProcessed: candidates.length, result: null };
+    // Confluence gate — a technical fire here only becomes a trigger_event
+    // (dossier + alert) if it lands in a cluster of >= 2 distinct same-
+    // direction triggers for the symbol within the rolling window; today's
+    // eod-scan / realtime fires count toward that cluster too. Lone fires
+    // stay in pending_fires. See lib/confluenceGate.ts.
+    const promoted = await stageAndPromote(
+      db,
+      coolableFires.map((f) => ({
+        symbol_id: f.symbol_id,
+        trigger_id: f.trigger_id,
+        direction: directionByTriggerId.get(f.trigger_id) ?? "long",
+        snapshot: f.snapshot,
+      })),
+      { source: "intraday-scan", tradeDate: today },
+    );
+
+    return { rowsProcessed: candidates.length, result: { promoted: promoted.length } };
   });
 
   return new Response("ok");

@@ -47,6 +47,8 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
   const analysis = dossier.analysis as {
     trigger?: string;
     ticker?: string;
+    priority?: "normal" | "high";
+    confluence?: { count: number; direction: "long" | "short"; triggers: string[] } | null;
     fired_on?: Record<string, unknown>;
     note?: string; // legacy placeholder-era dossiers only
     historical?: HistoricalStats;
@@ -55,16 +57,29 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
 
   const displayLabel = analysis.trigger ? triggerLabel(analysis.trigger) : "Unknown trigger";
   const triggerSummary = analysis.trigger ? TRIGGER_INFO[analysis.trigger]?.summary : undefined;
+  const confluence = analysis.confluence ?? null;
+  const isHighPriority = analysis.priority === "high";
 
   const fields = Object.entries(analysis.fired_on ?? {}).filter(([key]) => !HIDDEN_FIELDS.has(key));
 
   return (
-    <div className="dossier-card">
+    <div className={`dossier-card${isHighPriority ? " dossier-card-high" : ""}`}>
       <div className="dossier-card-header">
         <div>
           <div className="dossier-trigger-name">
+            {isHighPriority && (
+              <InfoTooltip text="Three or more independent triggers fired for this symbol in the same direction within the confluence window — the strongest class of signal this scanner produces.">
+                <span className="dossier-priority-badge">HIGH PRIORITY</span>
+              </InfoTooltip>
+            )}
             {triggerSummary ? <InfoTooltip text={triggerSummary}>{displayLabel}</InfoTooltip> : displayLabel}
           </div>
+          {confluence && (
+            <div className="dossier-confluence">
+              {confluence.count} {confluence.direction} signals:{" "}
+              {confluence.triggers.map((t) => triggerLabel(t)).join(", ")}
+            </div>
+          )}
           <div className="dossier-timestamp">{new Date(dossier.ts).toLocaleString()}</div>
         </div>
         <div className="dossier-score" title="Conviction score">

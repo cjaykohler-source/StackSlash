@@ -2,11 +2,14 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { triggerLabel } from "../lib/triggerInfo";
-import { computeConfluence } from "../lib/confluence";
 
 interface RawEvent {
   symbol_id: number;
   trigger_id: number;
+  priority: "normal" | "high" | null;
+  snapshot: {
+    confluence?: { count: number; direction: "long" | "short"; triggers: { name: string | null }[] } | null;
+  } | null;
   symbols: { ticker: string } | null;
   triggers: { name: string } | null;
 }
@@ -23,6 +26,7 @@ interface TriggerBreakdown {
 interface ConfluentSymbol {
   ticker: string;
   triggerNames: string[];
+  highPriority: boolean;
 }
 
 interface ReportData {
@@ -160,9 +164,9 @@ function measureAndDraw(canvas: HTMLCanvasElement, data: ReportData) {
     y += rowH;
   } else {
     for (const c of data.confluent) {
-      ctx.fillStyle = COLORS.text;
+      ctx.fillStyle = c.highPriority ? COLORS.red : COLORS.text;
       ctx.font = "bold 14px -apple-system, Helvetica, Arial, sans-serif";
-      ctx.fillText(c.ticker, MARGIN, y + 14);
+      ctx.fillText(c.highPriority ? `${c.ticker}  ●` : c.ticker, MARGIN, y + 14);
       ctx.fillStyle = COLORS.textDim;
       ctx.font = "14px -apple-system, Helvetica, Arial, sans-serif";
       ctx.fillText(c.triggerNames.join(", "), MARGIN + 90, y + 14);
@@ -222,7 +226,7 @@ export function Reports() {
       const [eventsRes, regimeRes] = await Promise.all([
         supabase
           .from("trigger_events")
-          .select("symbol_id, trigger_id, symbols(ticker), triggers(name)")
+          .select("symbol_id, trigger_id, priority, snapshot, symbols(ticker), triggers(name)")
           .gte("ts", dayStart)
           .lt("ts", dayEnd),
         supabase
@@ -244,14 +248,18 @@ export function Reports() {
         if (e.triggers?.name) triggerNameById.set(e.trigger_id, e.triggers.name);
       }
 
-      const confluenceMap = computeConfluence(
-        rawEvents.map((e) => ({ symbol_id: e.symbol_id, triggerName: e.triggers?.name })),
-      );
-      const confluent: ConfluentSymbol[] = [...confluenceMap.entries()]
-        .filter(([, names]) => names.size >= 2)
-        .map(([symbolId, names]) => ({
-          ticker: tickerBySymbol.get(symbolId) ?? String(symbolId),
-          triggerNames: [...names].map((n) => triggerLabel(n)),
+      // Every promoted trigger_event already carries its confluence
+      // cluster (the gate only promotes clusters of >= 2) — read that
+      // rather than re-deriving it from multiple rows.
+      const confluent: ConfluentSymbol[] = rawEvents
+        .filter((e) => (e.snapshot?.confluence?.count ?? 0) >= 2)
+        .map((e) => ({
+          ticker: e.symbols?.ticker ?? tickerBySymbol.get(e.symbol_id) ?? String(e.symbol_id),
+          triggerNames: (e.snapshot!.confluence!.triggers ?? [])
+            .map((t) => t.name)
+            .filter((n): n is string => !!n)
+            .map((n) => triggerLabel(n)),
+          highPriority: e.priority === "high",
         }));
 
       const triggerCounts = new Map<number, number>();

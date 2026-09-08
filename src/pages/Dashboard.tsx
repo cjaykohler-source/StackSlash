@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { RegimeBanner } from "../components/RegimeBanner";
-import { MarketBreadth } from "../components/MarketBreadth";
 import { TriggerFeed } from "../components/TriggerFeed";
 import { SymbolSearch } from "../components/SymbolSearch";
 import logo from "../assets/SS_SingleLine_Logo.png";
@@ -25,7 +24,6 @@ export function Dashboard() {
         </div>
       </header>
       <RegimeBanner />
-      <MarketBreadth />
       <section>
         <h2>Trigger feed</h2>
         <TriggerFeed />
