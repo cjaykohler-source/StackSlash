@@ -47,7 +47,8 @@ improved returns; raw expected value is misleading for skewed payoffs
 | Market data | Alpaca, **paper** keys (IEX feed) | No funded account needed for data-only use |
 | Alerts | Discord webhook, channel showing as `#heating_up` (bot name "HeatBot") | Working, verified with real fires |
 | Auth | Single Supabase Auth user, `cjaykohler@gmail.com` | Working |
-| Realtime outlier worker (`worker/`) | Running via `launchd` on the always-on Mac mini (hostname `stackslash-worker-host`, serial `QLPQFQPRXP`) | Redeployed 2026-09-08 on the confluence-gate code; watches the top ~28 by liquidity + any tracked symbols (Alpaca free IEX websocket caps subscriptions ~30 — it can't watch the whole universe). Fires route through `confluence-gate`, verified via `pending_fires` |
+| Realtime outlier worker (`worker/`) | `launchd` on the always-on Mac mini (`stackslash-worker-host`, serial `QLPQFQPRXP`) | On the confluence-gate code; watches top ~28 by liquidity + tracked symbols (Alpaca free IEX websocket caps subs ~30). Fires route through `confluence-gate` |
+| eod-scan | ALSO `launchd` on the same Mac mini (`com.stackslash.eod-scan`, 17:45 ET weekdays) | Moved off Netlify — the scheduled function times out (~3-4 min) well before eod-scan finishes at ~5,000 symbols. `scripts/run-eod-scan.sh` + `scripts/launchd/`. |
 
 Current DB snapshot: **~5,000 active symbols** (NYSE 1,744 + NASDAQ 3,024
 + AMEX 231), `bars_daily` held to a rolling ~18-month window (Supabase

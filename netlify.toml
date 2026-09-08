@@ -53,16 +53,18 @@
 # trigger's definition or the factor computation in dailySnapshot.ts
 # changes, so trigger_stats keeps reflecting what the triggers actually do.
 #
-# prune-bars-intraday / prune-trigger-evaluations: once daily, alongside
-# eod-scan — 7-day rolling retention on the two tables that write on
-# every scan run regardless of universe size (see each function's own
-# comment for the measured cost that motivated this).
+# prune-bars-intraday / prune-trigger-evaluations / prune-bars-daily:
+# once daily after close — rolling retention on the tables that would
+# otherwise grow unbounded (see each function's own comment).
 # weekly-bars-scan: once weekly (Monday mornings) — aggregates bars_daily
 # into bars_weekly for longer-term trend context.
+#
+# eod-scan is NOT scheduled here. At the ~5,000-symbol universe it runs
+# well past Netlify's ~3-4 min platform timeout — it runs via launchd on
+# the always-on worker host instead (scripts/run-eod-scan.sh,
+# scripts/launchd/com.stackslash.eod-scan.plist). Still callable manually
+# as a function (onboard-symbol invokes it in-process for one symbol).
 # ---------------------------------------------------------------------------
-[functions."eod-scan"]
-  schedule = "30 21 * * 1-5"
-
 [functions."intraday-scan"]
   schedule = "*/10 13-20 * * 1-5"
 
