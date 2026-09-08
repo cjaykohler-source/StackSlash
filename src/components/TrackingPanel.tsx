@@ -131,23 +131,64 @@ function TrackedCard({
   onRemove: () => void;
 }) {
   const [series, setSeries] = useState<Point[]>([]);
+  const [intraday, setIntraday] = useState(true);
   const cancelledRef = useRef(false);
 
   useEffect(() => {
     cancelledRef.current = false;
+
+    const fromIntradayRows = (rows: { ts: string; price: number }[]) =>
+      rows.map((r) => ({ t: new Date(r.ts).getTime(), price: Number(r.price) }));
+
     async function loadSeries() {
-      const dayStart = new Date();
-      dayStart.setUTCHours(0, 0, 0, 0);
+      // Most recent session's 1-min bars from bars_intraday.
+      const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from("bars_intraday")
         .select("ts, price")
         .eq("symbol_id", tracked.symbol_id)
-        .gte("ts", dayStart.toISOString())
+        .gte("ts", cutoff)
         .order("ts", { ascending: false })
-        .limit(400);
+        .limit(500);
       if (cancelledRef.current) return;
-      const rows = (data as { ts: string; price: number }[] | null) ?? [];
-      setSeries(rows.reverse().map((r) => ({ t: new Date(r.ts).getTime(), price: Number(r.price) })));
+      let rows = ((data as { ts: string; price: number }[] | null) ?? []).reverse();
+      // Keep just the latest session present.
+      if (rows.length) {
+        const lastDay = rows[rows.length - 1].ts.slice(0, 10);
+        rows = rows.filter((r) => r.ts.slice(0, 10) === lastDay);
+      }
+      if (rows.length >= 2) {
+        setIntraday(true);
+        setSeries(fromIntradayRows(rows));
+        return;
+      }
+
+      // Not in intraday-bars-scan's priority set — pull the most recent
+      // session on demand (session-bars stores it, so this is one-time).
+      try {
+        const res = await fetch(`/.netlify/functions/session-bars?symbol=${encodeURIComponent(tracked.ticker)}`);
+        const body = (await res.json()) as { bars?: { ts: string; price: number }[] };
+        if (cancelledRef.current) return;
+        if ((body.bars?.length ?? 0) >= 2) {
+          setIntraday(true);
+          setSeries(fromIntradayRows(body.bars!));
+          return;
+        }
+      } catch {
+        /* fall through to daily */
+      }
+
+      // Truly no intraday data (delisted / no IEX prints) — daily line.
+      const { data: daily } = await supabase
+        .from("bars_daily")
+        .select("date, close")
+        .eq("symbol_id", tracked.symbol_id)
+        .order("date", { ascending: false })
+        .limit(30);
+      if (cancelledRef.current) return;
+      const drows = (daily as { date: string; close: number }[] | null) ?? [];
+      setIntraday(false);
+      setSeries(drows.reverse().map((r) => ({ t: new Date(`${r.date}T00:00:00Z`).getTime(), price: Number(r.close) })));
     }
     loadSeries();
     const id = setInterval(loadSeries, REFRESH_MS);
@@ -155,18 +196,17 @@ function TrackedCard({
       cancelledRef.current = true;
       clearInterval(id);
     };
-  }, [tracked.symbol_id]);
+  }, [tracked.symbol_id, tracked.ticker]);
 
-  // Live tip: append the current quote price as the latest point so the
-  // line's end moves every minute even between 5-min bar ingests.
+  // On an intraday series, append the current quote as the latest point
+  // so the line's tip moves between 5-min bar ingests. Don't do this on
+  // the daily fallback series (would leave a huge time gap).
   const points = [...series];
-  if (quote && (points.length === 0 || quote.price !== points[points.length - 1].price)) {
+  if (intraday && quote && (points.length === 0 || quote.price !== points[points.length - 1].price)) {
     points.push({ t: Date.now(), price: quote.price });
   }
 
-  const changePct =
-    quote?.changePct ??
-    (points.length >= 2 && points[0].price > 0 ? points[points.length - 1].price / points[0].price - 1 : null);
+  const changePct = quote?.changePct ?? null;
   const price = quote?.price ?? (points.length ? points[points.length - 1].price : null);
   const dir = changePct == null ? "" : changePct > 0 ? "up" : changePct < 0 ? "down" : "";
   const stroke = dir === "up" ? "#25e979" : dir === "down" ? "#e74c3c" : "#8b93a7";
@@ -191,20 +231,23 @@ function TrackedCard({
       </div>
       <div className="tracked-chart">
         {points.length < 2 ? (
-          <span className="tracked-chart-empty">No intraday data yet</span>
+          <span className="tracked-chart-empty">No chart data</span>
         ) : (
-          <ResponsiveContainer width="100%" height={72}>
-            <LineChart data={points} margin={{ top: 4, bottom: 4, left: 0, right: 0 }}>
-              <YAxis hide domain={["dataMin", "dataMax"]} />
-              <Tooltip
-                labelFormatter={() => ""}
-                formatter={(v: number) => [`$${v.toFixed(2)}`, ""]}
-                contentStyle={{ fontSize: "0.75rem", padding: "2px 6px" }}
-                labelStyle={{ color: "#000" }}
-              />
-              <Line type="monotone" dataKey="price" stroke={stroke} strokeWidth={1.75} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          <>
+            <ResponsiveContainer width="100%" height={72}>
+              <LineChart data={points} margin={{ top: 4, bottom: 4, left: 0, right: 0 }}>
+                <YAxis hide domain={["dataMin", "dataMax"]} />
+                <Tooltip
+                  labelFormatter={() => ""}
+                  formatter={(v: number) => [`$${v.toFixed(2)}`, ""]}
+                  contentStyle={{ fontSize: "0.75rem", padding: "2px 6px" }}
+                  labelStyle={{ color: "#000" }}
+                />
+                <Line type="monotone" dataKey="price" stroke={stroke} strokeWidth={1.75} dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+            {!intraday && <span className="tracked-chart-tag">~30d daily</span>}
+          </>
         )}
       </div>
       {tracked.name && <div className="tracked-name">{tracked.name}</div>}

@@ -527,7 +527,8 @@ body {
     display: none;
   }
 }
-.trigger-feed a {
+.trigger-feed a,
+.trigger-feed a:visited {
   color: var(--accent);
   text-decoration: none;
 }
@@ -601,12 +602,17 @@ h1 .quote-tag {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  max-height: calc(100vh - 32px);
 }
 .top-movers-section {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
   padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 }
 .top-movers-title {
   margin: 0 0 8px;
@@ -624,6 +630,8 @@ h1 .quote-tag {
   list-style: none;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
+  min-height: 0;
 }
 .top-movers-row {
   display: grid;
@@ -637,8 +645,11 @@ h1 .quote-tag {
 .top-movers-row + .top-movers-row {
   border-top: 1px solid var(--border);
 }
-.top-movers-ticker {
+.top-movers-ticker,
+.top-movers-ticker:visited {
   font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -719,7 +730,8 @@ h1 .quote-tag {
   align-items: center;
   justify-content: space-between;
 }
-.tracked-ticker {
+.tracked-ticker,
+.tracked-ticker:visited {
   font-weight: 700;
   font-size: 0.95rem;
   text-decoration: none;
@@ -763,10 +775,21 @@ h1 .quote-tag {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 .tracked-chart-empty {
   color: var(--text-dim);
   font-size: 0.75rem;
+}
+.tracked-chart-tag {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  background: var(--panel);
+  padding: 0 3px;
+  border-radius: 3px;
 }
 .tracked-name {
   color: var(--text-dim);
