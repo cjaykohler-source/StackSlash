@@ -60,6 +60,22 @@ export function MarketBreadth() {
       }
       const [latest, prior] = dates;
 
+      // factor_state keeps one row per (symbol, as_of) — a new day's
+      // eod-scan run inserts a fresh row rather than overwriting the
+      // last one, so fetching without a date filter mixes multiple
+      // days together per symbol (confirmed happening: with_dist grew
+      // to 1026 across three different as_of dates, not ~510 for one
+      // current snapshot — same "find the real latest, don't assume
+      // it's the only row" principle SymbolProfile.tsx already applies
+      // to its own factor_state read).
+      const { data: latestFactorAsOf } = await supabase
+        .from("factor_state")
+        .select("as_of")
+        .order("as_of", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const factorAsOf = (latestFactorAsOf as { as_of: string } | null)?.as_of;
+
       // PostgREST enforces a hard server-side row cap (commonly 1000,
       // a `db-max-rows` config, not a client-overridable default) —
       // confirmed the hard way: even an explicit `.limit(5000)` still
@@ -89,8 +105,9 @@ export function MarketBreadth() {
         return rows;
       }
 
+      const factorQuery = supabase.from("factor_state").select("symbol_id, dist_sma200, ret_1w").limit(5000);
       const [factorRes, barsRows] = await Promise.all([
-        supabase.from("factor_state").select("symbol_id, dist_sma200, ret_1w").limit(5000),
+        factorAsOf ? factorQuery.eq("as_of", factorAsOf) : factorQuery,
         fetchAllBarsForDates(),
       ]);
       if (cancelled) return;
