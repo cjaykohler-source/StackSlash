@@ -509,6 +509,24 @@ body {
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
 }
+.trigger-feed th.col-num,
+.trigger-feed td.col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.trigger-feed td.col-num.up {
+  color: var(--green);
+}
+.trigger-feed td.col-num.down {
+  color: var(--red);
+}
+@media (max-width: 560px) {
+  .trigger-feed th.col-num,
+  .trigger-feed td.col-num {
+    display: none;
+  }
+}
 .trigger-feed a {
   color: var(--accent);
   text-decoration: none;

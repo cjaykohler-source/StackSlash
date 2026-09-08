@@ -3,7 +3,14 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { triggerLabel, triggerCategoryLabel, TRIGGER_INFO } from "../lib/triggerInfo";
 import { InfoTooltip } from "./InfoTooltip";
-import { QuoteTag, useQuotes } from "./QuoteTag";
+import { useQuotes } from "./QuoteTag";
+
+// Feed is deliberately a focused view: only symbols where >= 2 distinct
+// triggers cluster (what the confluence gate promotes) AND trading at
+// $20/share or less. Rows we can't price yet stay visible until a quote
+// lands.
+const MIN_CONFLUENCE = 2;
+const MAX_PRICE = 20;
 
 interface ConfluenceMeta {
   count: number;
@@ -70,6 +77,12 @@ function timeOnly(iso: string): string {
  * "digging" the two-tier design promised: everything here already passed
  * a trigger, nothing here is the raw wide-net Tier-1 data.
  *
+ * Deliberately narrowed to a single view: rows where >= 2 distinct
+ * triggers clustered (MIN_CONFLUENCE) AND the symbol trades at MAX_PRICE
+ * ($20) or less. Older single-trigger events and momentum_exit events
+ * (no confluence metadata) don't appear here. Price/change come from the
+ * quote batch and are their own columns.
+ *
  * Grouped into a collapsible section per day (native <details>, so it's
  * keyboard/accessible-tree friendly for free) since the timestamp column
  * only needs to show time-of-day once it's filed under its date's
@@ -89,7 +102,7 @@ export function TriggerFeed() {
         .from("trigger_events")
         .select("id, ts, status, priority, symbol_id, trigger_id, snapshot, symbols(ticker), triggers(name, category)")
         .order("ts", { ascending: false })
-        .limit(200);
+        .limit(500);
       if (cancelled) return;
       const loaded = (data as unknown as FeedRow[]) ?? [];
       setRows(loaded);
@@ -117,9 +130,18 @@ export function TriggerFeed() {
 
   const quotes = useQuotes(rows.map((r) => r.symbols?.ticker ?? "").filter(Boolean));
 
+  const visibleRows = useMemo(() => {
+    return rows.filter((row) => {
+      if ((row.snapshot?.confluence?.count ?? 0) < MIN_CONFLUENCE) return false;
+      const q = row.symbols?.ticker ? quotes.get(row.symbols.ticker) : undefined;
+      if (q && q.price > MAX_PRICE) return false;
+      return true;
+    });
+  }, [rows, quotes]);
+
   const groups = useMemo<DayGroup[]>(() => {
     const byDay = new Map<string, FeedRow[]>();
-    for (const row of rows) {
+    for (const row of visibleRows) {
       const key = dayKey(row.ts);
       const existing = byDay.get(key);
       if (existing) existing.push(row);
@@ -128,10 +150,18 @@ export function TriggerFeed() {
     return [...byDay.entries()]
       .sort(([a], [b]) => (a < b ? 1 : -1)) // newest day first
       .map(([key, dayRows]) => ({ key, label: dayLabel(key), rows: dayRows }));
-  }, [rows]);
+  }, [visibleRows]);
 
   if (rows.length === 0) {
     return <p className="empty-state">No trigger events yet — once eod-scan and intraday-scan are running, fires will show up here live.</p>;
+  }
+  if (visibleRows.length === 0) {
+    return (
+      <p className="empty-state">
+        Nothing in the recent feed matches the current view (≥{MIN_CONFLUENCE} agreeing triggers, ${MAX_PRICE}/share or
+        less).
+      </p>
+    );
   }
 
   function toggleDay(key: string, isOpen: boolean) {
@@ -161,6 +191,8 @@ export function TriggerFeed() {
                 <tr>
                   <th>Time</th>
                   <th>Symbol</th>
+                  <th className="col-num">Price</th>
+                  <th className="col-num">Change</th>
                   <th>Trigger</th>
                   <th className="col-category">Category</th>
                   <th>Status</th>
@@ -170,6 +202,9 @@ export function TriggerFeed() {
                 {group.rows.map((row) => {
                   const confluenceCount = row.snapshot?.confluence?.count ?? 0;
                   const isHigh = row.priority === "high";
+                  const quote = row.symbols?.ticker ? quotes.get(row.symbols.ticker) : undefined;
+                  const pct = quote ? Number((quote.changePct * 100).toFixed(1)) : null;
+                  const pctDir = pct === null ? "" : pct > 0 ? "up" : pct < 0 ? "down" : "";
                   return (
                   <tr key={row.id} className={isHigh ? "trigger-feed-row-high" : undefined}>
                     <td>{timeOnly(row.ts)}</td>
@@ -177,7 +212,6 @@ export function TriggerFeed() {
                       <Link to={`/symbol/${row.symbols?.ticker ?? row.symbol_id}`}>
                         {row.symbols?.ticker ?? row.symbol_id}
                       </Link>
-                      {row.symbols?.ticker && <QuoteTag quote={quotes.get(row.symbols.ticker)} />}
                       {isHigh ? (
                         <span
                           className="confluence-badge confluence-badge-high"
@@ -186,15 +220,17 @@ export function TriggerFeed() {
                           {confluenceCount} signals
                         </span>
                       ) : (
-                        confluenceCount >= 2 && (
-                          <span
-                            className="confluence-badge"
-                            title={`${confluenceCount} independent triggers agreed for this symbol`}
-                          >
-                            {confluenceCount} signals
-                          </span>
-                        )
+                        <span
+                          className="confluence-badge"
+                          title={`${confluenceCount} independent triggers agreed for this symbol`}
+                        >
+                          {confluenceCount} signals
+                        </span>
                       )}
+                    </td>
+                    <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
+                    <td className={`col-num ${pctDir}`}>
+                      {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
                     </td>
                     <td>
                       {row.triggers?.name && TRIGGER_INFO[row.triggers.name]?.summary ? (

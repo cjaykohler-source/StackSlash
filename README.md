@@ -333,11 +333,19 @@ Backlog (research-identified, not started):
     (`200-DAY MAΔ`, `BMP 6MO`); `src/lib/confluence.ts` (client-side
     confluence) retired.
 20. **Per-symbol quote tags** (`quotes.ts` function → Alpaca snapshots,
-    `QuoteTag.tsx` + `useQuotes`) — `$price | ±x%` (since the open, green
-    up / red down) next to every ticker in the trigger feed and on the
-    symbol page. The `MarketBreadth` panel was pulled off the dashboard
-    for now (component kept, just not rendered — see `Dashboard.tsx`); it
-    had first been moved to a cached + manual-refresh load.
+    `QuoteTag.tsx` + `useQuotes`) — `$price` / `±x%` since the open, green
+    up / red down. On the symbol page it's a combined tag next to the
+    ticker; in the trigger feed the price and change are their own
+    columns. The `MarketBreadth` panel was pulled off the dashboard for
+    now (component kept, just not rendered — see `Dashboard.tsx`); it had
+    first been moved to a cached + manual-refresh load.
+21. **Dashboard live sidebar + focused feed.** `TopMovers` (right-hand
+    column): the day's Top-20 gainers / Top-20 losers via the
+    `top_movers()` Postgres RPC over `bars_intraday` (% from the open,
+    ~1-min refresh, no Alpaca call, ~900-name coverage). The trigger feed
+    is now filtered to a single view — rows with ≥2 clustered triggers
+    AND a share price of $20 or less; `momentum_exit` and any pre-gate
+    single-trigger events no longer show there.
 
 ## Stack
 
