@@ -353,6 +353,7 @@ src/                      Frontend (Vite + React + Supabase client)
   pages/                  Login, Dashboard, SymbolDetail, Reports, About
   components/             AuthGuard, RegimeBanner, TriggerFeed, DossierCard,
                            SymbolSearch, SymbolProfile, QuoteTag (+useQuotes),
+                           TopMovers (dashboard sidebar, via top_movers() RPC),
                            MarketBreadth (built, not currently rendered),
                            InfoTooltip, ProximityBar, CompanyDescription
   lib/                    Supabase client, shared TS types, triggerEval.ts
@@ -500,9 +501,11 @@ blended across the cluster; `trigger_stats` re-run against the
 noticeably vs the S&P-500-only run, ~0.55 → ~0.53, the bigger/noisier
 universe diluting the edge); symbol search/on-demand onboarding; per-symbol profile
 workups with live proximity bars; PNG performance reports; per-symbol
-`$price | ±x%` quote tags (feed + symbol page); hover tooltips; company
-name/description. (Market breadth is built but pulled from the dashboard
-for now.)
+`$price | ±x%` quote tags (feed + symbol page); the dashboard's live
+Top-20 gainers / Top-20 losers sidebar (`top_movers()` Postgres function
+over `bars_intraday`, % from the open, ~1-min refresh, ~900-name
+coverage); hover tooltips; company name/description. (Market breadth is
+built but pulled from the dashboard for now.)
 
 **Placeholder / not yet built:** `factor_state.sue`/`est_revision_30d`/
 `book_to_market` etc. never populated (no fundamentals vendor) —

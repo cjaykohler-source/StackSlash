@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { RegimeBanner } from "../components/RegimeBanner";
 import { TriggerFeed } from "../components/TriggerFeed";
+import { TopMovers } from "../components/TopMovers";
 import { SymbolSearch } from "../components/SymbolSearch";
 import logo from "../assets/SS_SingleLine_Logo.png";
 
@@ -24,10 +25,15 @@ export function Dashboard() {
         </div>
       </header>
       <RegimeBanner />
-      <section>
-        <h2>Trigger feed</h2>
-        <TriggerFeed />
-      </section>
+      <div className="dashboard-body">
+        <main className="dashboard-main">
+          <section>
+            <h2>Trigger feed</h2>
+            <TriggerFeed />
+          </section>
+        </main>
+        <TopMovers />
+      </div>
     </div>
   );
 }
