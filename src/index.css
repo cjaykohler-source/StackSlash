@@ -338,14 +338,47 @@ body {
   color: var(--red);
 }
 .market-breadth {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
   padding: 12px 14px;
   border-radius: 8px;
   margin-bottom: 20px;
   border: 1px solid var(--border);
   background: var(--panel);
+}
+.market-breadth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.market-breadth-title {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.market-breadth-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.market-breadth-updated {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+.market-breadth-refresh {
+  font-size: 0.72rem;
+  padding: 3px 10px;
+}
+.market-breadth-stale {
+  color: var(--red);
+  font-size: 0.72rem;
+  margin-bottom: 8px;
+}
+.market-breadth-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
 }
 .market-breadth-metric {
   display: flex;

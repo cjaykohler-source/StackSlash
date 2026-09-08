@@ -98,10 +98,10 @@ export const FIELD_META: Record<string, FieldMeta> = {
   rsi14: { label: "RSI (14)", format: (v) => num(v, 1), description: "14-day Relative Strength Index. Below 30 is typically read as oversold, above 70 as overbought." },
   rsi2: { label: "RSI (2)", format: (v) => num(v, 1), description: "2-day Relative Strength Index — a much faster, noisier version of RSI used to catch very short-term extremes." },
   dist_ema20: { label: "Distance from 20-day EMA", format: (v) => pct(v), description: "How far the current price is from its 20-day exponential moving average." },
-  dist_sma200: { label: "Distance from 200-day MA", format: (v) => pct(v), description: "How far the current price is from its 200-day simple moving average — positive means the stock is in a long-term uptrend." },
+  dist_sma200: { label: "200-DAY MAΔ", format: (v) => pct(v), description: "How far the current price is from its 200-day simple moving average — positive means the stock is in a long-term uptrend." },
   risk_on: { label: "Regime", format: (v) => (v ? "Risk-On" : "Risk-Off"), description: "Whether the overall market is judged to be in a healthy uptrend right now — gates whether new long momentum/technical triggers are allowed to fire." },
   bb_width_percentile_126d: {
-    label: "Band Width Percentile (6mo)",
+    label: "BMP 6MO",
     format: (v) => `${Math.round(Number(v) * 100)}th percentile`,
     description: "Where today's Bollinger Band width ranks against this stock's own last 6 months — low means an unusually tight 'squeeze'.",
   },
