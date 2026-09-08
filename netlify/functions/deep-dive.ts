@@ -53,11 +53,23 @@ export default async (req: Request) => {
 
   const { data: event, error } = await db
     .from("trigger_events")
-    .select("id, snapshot, symbol_id, trigger_id, priority, symbols(ticker), triggers(name, cooldown_minutes)")
+    .select(
+      "id, snapshot, symbol_id, trigger_id, priority, symbols(ticker, alert_excluded), triggers(name, cooldown_minutes)",
+    )
     .eq("id", triggerEventId)
     .single();
   if (error || !event) {
     return new Response(`trigger_event not found: ${error?.message ?? triggerEventId}`, { status: 404 });
+  }
+
+  // Mega-cap blue chips are excluded from all signal output. The gate
+  // already won't promote them; this also covers non-gated paths
+  // (momentum_exit) that insert a trigger_event directly.
+  if ((event as unknown as { symbols: { alert_excluded?: boolean } | null }).symbols?.alert_excluded) {
+    await db.from("trigger_events").update({ status: "dismissed" }).eq("id", event.id);
+    return new Response(JSON.stringify({ skipped: "alert_excluded symbol" }), {
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const ticker = (event as unknown as { symbols: { ticker: string } | null }).symbols?.ticker ?? "?";

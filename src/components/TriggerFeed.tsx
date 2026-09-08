@@ -96,12 +96,14 @@ export function TriggerFeed() {
       const [eventsRes, pendingRes] = await Promise.all([
         supabase
           .from("trigger_events")
-          .select("id, ts, status, priority, symbol_id, trigger_id, snapshot, symbols(ticker), triggers(name)")
+          .select(
+            "id, ts, status, priority, symbol_id, trigger_id, snapshot, symbols(ticker, alert_excluded), triggers(name)",
+          )
           .order("ts", { ascending: false })
           .limit(500),
         supabase
           .from("pending_fires")
-          .select("id, created_at, symbol_id, trigger_id, symbols(ticker), triggers(name)")
+          .select("id, created_at, symbol_id, trigger_id, symbols(ticker, alert_excluded), triggers(name)")
           .is("promoted_at", null)
           .order("created_at", { ascending: false })
           .limit(300),
@@ -116,18 +118,20 @@ export function TriggerFeed() {
         symbol_id: number;
         trigger_id: number;
         snapshot: { confluence?: ConfluenceMeta | null } | null;
-        symbols: { ticker: string } | null;
+        symbols: { ticker: string; alert_excluded: boolean } | null;
         triggers: { name: string } | null;
       };
       type RawPending = {
         id: number;
         created_at: string;
         symbol_id: number;
-        symbols: { ticker: string } | null;
+        symbols: { ticker: string; alert_excluded: boolean } | null;
         triggers: { name: string } | null;
       };
 
-      const events: FeedRow[] = ((eventsRes.data as unknown as RawEvent[]) ?? []).map((r) => {
+      const events: FeedRow[] = ((eventsRes.data as unknown as RawEvent[]) ?? [])
+        .filter((r) => !r.symbols?.alert_excluded)
+        .map((r) => {
         const conf = r.snapshot?.confluence ?? null;
         const names = conf?.triggers.map((t) => t.name).filter((n): n is string => !!n) ?? [];
         return {
@@ -143,7 +147,9 @@ export function TriggerFeed() {
         };
       });
 
-      const pending: FeedRow[] = ((pendingRes.data as unknown as RawPending[]) ?? []).map((r) => ({
+      const pending: FeedRow[] = ((pendingRes.data as unknown as RawPending[]) ?? [])
+        .filter((r) => !r.symbols?.alert_excluded)
+        .map((r) => ({
         key: `p${r.id}`,
         ts: r.created_at,
         symbol_id: r.symbol_id,

@@ -361,6 +361,18 @@ Backlog (research-identified, not started):
     and `pending_fires` added to the realtime publication (only
     `tracked_symbols` was in it — the feed had only ever refreshed on
     mount).
+23. **Alert exclusion list** (`symbols.alert_excluded`). Flagged symbols
+    — seeded with 22 mega-cap blue chips (NVDA, MSFT, AAPL, AMZN, GOOGL,
+    GOOG, META, TSLA, AVGO, BRK.B, LLY, JPM, V, WMT, MA, XOM, JNJ, PG,
+    HD, COST, ORCL, NFLX) — never produce a promoted `trigger_event`,
+    dossier, Discord alert, or feed row, and the realtime worker skips
+    streaming them. One-liner to edit:
+    `update symbols set alert_excluded = <bool> where ticker = 'XYZ'`
+    then restart the worker. Enforced in `confluenceGate.promotePending`,
+    `deep-dive` (covers the non-gated `momentum_exit` path), `TriggerFeed`,
+    and the worker's symbol selection. `TopMovers` / quote tags / symbol
+    pages are unaffected — the exclusion is about signal output, not
+    market data.
 22. **Tracking panel** (`tracked_symbols` table, `TrackingPanel.tsx`).
     Above the trigger feed: search a ticker, hit Track, and it gets a
     persisted card with a live mini price chart that repolls every 60s
