@@ -47,7 +47,7 @@ improved returns; raw expected value is misleading for skewed payoffs
 | Market data | Alpaca, **paper** keys (IEX feed) | No funded account needed for data-only use |
 | Alerts | Discord webhook, channel showing as `#heating_up` (bot name "HeatBot") | Working, verified with real fires |
 | Auth | Single Supabase Auth user, `cjaykohler@gmail.com` | Working |
-| Realtime outlier worker (`worker/`) | Running via `launchd` on the confirmed always-on Mac mini (serial `QLPQFQPRXP`) | Was verified subscribing to the old 8-symbol list — **not yet re-verified against the current ~1,911-symbol universe**, see below |
+| Realtime outlier worker (`worker/`) | Running via `launchd` on the always-on Mac mini (hostname `stackslash-worker-host`, serial `QLPQFQPRXP`) | Redeployed 2026-09-08 on the confluence-gate code; watches the top ~28 by liquidity + any tracked symbols (Alpaca free IEX websocket caps subscriptions ~30 — it can't watch the whole universe). Fires route through `confluence-gate`, verified via `pending_fires` |
 
 Current DB snapshot (live query, not from memory):
 **1,911 active symbols**, 2,222,635 `bars_daily` rows (443 MB total DB
@@ -203,12 +203,19 @@ Action items:
 - [x] **Verify `eod-scan` completes cleanly at the ~1,911-symbol scale
   and commit the pending fixes** — done: fixes committed in `0abdbb2`,
   clean run confirmed 2026-09-08 (`job_runs` id 416).
-- [ ] Re-verify the realtime worker's websocket subscription covers the
-  current full active universe, not just the original 8 symbols. **Extra
-  reason now:** the worker was changed to POST its fires to
-  `confluence-gate` instead of inserting `trigger_events` directly —
-  needs a real end-to-end check once redeployed (see `worker/README.md`).
-- [ ] Give the worker host a distinct hostname (see "Worker status")
+- [x] Redeploy the realtime worker on the confluence-gate code and give
+  it a sane subscription set — done 2026-09-08. It had been streaming
+  only the original 8 mega-caps (subscribed back when the universe *was*
+  8 symbols and never re-queried); asking for all ~1,900 got the Alpaca
+  free-IEX stream rejected ("symbol limit exceeded"). Now watches
+  `WORKER_MAX_STREAM_SYMBOLS` (28): tracked symbols + top dollar-volume.
+  Fires confirmed routing through `confluence-gate` → `pending_fires`.
+  Open sub-item: a paid Alpaca SIP plan would lift the ~30-symbol cap if
+  full-universe realtime coverage is ever wanted.
+- [x] Give the worker host a distinct hostname — done (`stackslash-worker-host`).
+- [ ] Clean up stale `job_runs` row id 365 (`realtime-outlier-worker`,
+  stuck at `status='running'` from a failed 12:02 UTC process on
+  2026-09-08 — a one-line `update job_runs set status='error' …`).
 - [ ] Add a fundamentals/estimates data vendor to unblock
   `earnings_surprise_drift` (still the only enabled trigger with no
   backtest history, and now also the only long trigger that can never be

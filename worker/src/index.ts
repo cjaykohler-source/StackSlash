@@ -11,18 +11,53 @@ function log(msg: string) {
 async function main() {
   log("starting realtime outlier worker");
 
-  // Same universe as eod-scan/intraday-scan — one table, one source of
-  // truth for "what symbols does this whole system care about."
-  const { data: symbols, error: symErr } = await supabase
-    .from("symbols")
-    .select("id, ticker")
-    .eq("active", true);
-  if (symErr) throw symErr;
-  if (!symbols?.length) throw new Error("No active symbols in `symbols` table.");
+  // Alpaca's free IEX websocket caps concurrent trade subscriptions (30
+  // on the free plan), so this can't watch the whole ~1,900-symbol
+  // universe the scheduled scans cover — asking for all of them gets the
+  // stream rejected wholesale ("symbol limit exceeded"). Watch a bounded
+  // set instead: every user-tracked symbol first, then the most liquid
+  // names (highest 20-day dollar volume from the latest factor_state) to
+  // fill the budget. Picked once at startup; restart to refresh.
+  const budget = config.maxStreamSymbols;
 
-  const symbolIdByTicker = new Map(symbols.map((s) => [s.ticker, s.id] as const));
-  const tickers = symbols.map((s) => s.ticker);
-  log(`watching ${tickers.length} symbols: ${tickers.join(", ")}`);
+  const { data: trackedRows } = await supabase
+    .from("tracked_symbols")
+    .select("symbol_id, symbols(ticker)");
+  const tracked = ((trackedRows ?? []) as unknown as { symbol_id: number; symbols: { ticker: string } | null }[])
+    .filter((r) => r.symbols?.ticker)
+    .map((r) => ({ id: r.symbol_id, ticker: r.symbols!.ticker }));
+
+  const { data: asOfRow } = await supabase
+    .from("factor_state")
+    .select("as_of")
+    .order("as_of", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let liquid: { id: number; ticker: string }[] = [];
+  if (asOfRow?.as_of) {
+    const { data: liquidRows, error: liqErr } = await supabase
+      .from("factor_state")
+      .select("symbol_id, dollar_vol_20d, symbols(ticker)")
+      .eq("as_of", asOfRow.as_of)
+      .not("dollar_vol_20d", "is", null)
+      .order("dollar_vol_20d", { ascending: false })
+      .limit(budget);
+    if (liqErr) throw liqErr;
+    liquid = ((liquidRows ?? []) as unknown as { symbol_id: number; symbols: { ticker: string } | null }[])
+      .filter((r) => r.symbols?.ticker)
+      .map((r) => ({ id: r.symbol_id, ticker: r.symbols!.ticker }));
+  }
+
+  const symbolIdByTicker = new Map<string, number>();
+  const tickers: string[] = [];
+  for (const s of [...tracked, ...liquid]) {
+    if (symbolIdByTicker.has(s.ticker) || tickers.length >= budget) continue;
+    symbolIdByTicker.set(s.ticker, s.id);
+    tickers.push(s.ticker);
+  }
+  if (!tickers.length) throw new Error("No symbols to watch — factor_state empty and nothing tracked?");
+  log(`watching ${tickers.length} symbols (${tracked.length} tracked + liquidity fill): ${tickers.join(", ")}`);
 
   // The trigger row this worker fires into. Seeded via migration (see
   // README) — not evaluated through triggers.ts's declarative evaluator

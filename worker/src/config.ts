@@ -22,5 +22,8 @@ export const config = {
   ewmaAlpha: Number(process.env.EWMA_ALPHA ?? "0.05"),
   zScoreThreshold: Number(process.env.Z_SCORE_THRESHOLD ?? "3.0"),
   minTicksBeforeEval: Number(process.env.MIN_TICKS_BEFORE_EVAL ?? "30"),
+  // Alpaca free IEX websocket allows 30 concurrent trade subscriptions;
+  // stay just under it. Tracked symbols + top-liquidity fill.
+  maxStreamSymbols: Number(process.env.WORKER_MAX_STREAM_SYMBOLS ?? "28"),
   heartbeatIntervalMs: Number(process.env.HEARTBEAT_INTERVAL_MS ?? "60000"),
 };
