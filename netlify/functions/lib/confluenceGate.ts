@@ -85,6 +85,7 @@ export interface PendingRow {
   trigger_event_id: number | null;
   created_at: string;
   triggers: { name: string; cooldown_minutes: number } | null;
+  symbols: { alert_excluded: boolean } | null;
 }
 
 /**
@@ -220,12 +221,14 @@ export async function promotePending(db: SupabaseClient): Promise<PromotedEvent[
   const { data, error } = await db
     .from("pending_fires")
     .select(
-      "id, symbol_id, trigger_id, direction, snapshot, promoted_at, trigger_event_id, created_at, triggers(name, cooldown_minutes)",
+      "id, symbol_id, trigger_id, direction, snapshot, promoted_at, trigger_event_id, created_at, triggers(name, cooldown_minutes), symbols(alert_excluded)",
     )
     .gte("created_at", windowStart)
     .order("created_at", { ascending: true });
   if (error) throw error;
-  const pending = (data as unknown as PendingRow[] | null) ?? [];
+  // alert_excluded symbols (mega-cap blue chips) never promote — a fire on
+  // one stays in pending_fires, produces no trigger_event / dossier / alert.
+  const pending = ((data as unknown as PendingRow[] | null) ?? []).filter((r) => !r.symbols?.alert_excluded);
   if (!pending.length) return [];
 
   const promoted: PromotedEvent[] = [];

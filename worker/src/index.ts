@@ -20,10 +20,15 @@ async function main() {
   // fill the budget. Picked once at startup; restart to refresh.
   const budget = config.maxStreamSymbols;
 
+  // alert_excluded symbols (mega-cap blue chips) produce no signal output,
+  // so there's no point spending a subscription slot streaming them.
   const { data: trackedRows } = await supabase
     .from("tracked_symbols")
-    .select("symbol_id, symbols(ticker)");
-  const tracked = ((trackedRows ?? []) as unknown as { symbol_id: number; symbols: { ticker: string } | null }[])
+    .select("symbol_id, symbols!inner(ticker, alert_excluded)")
+    .eq("symbols.alert_excluded", false);
+  const tracked = (
+    (trackedRows ?? []) as unknown as { symbol_id: number; symbols: { ticker: string } | null }[]
+  )
     .filter((r) => r.symbols?.ticker)
     .map((r) => ({ id: r.symbol_id, ticker: r.symbols!.ticker }));
 
@@ -38,8 +43,9 @@ async function main() {
   if (asOfRow?.as_of) {
     const { data: liquidRows, error: liqErr } = await supabase
       .from("factor_state")
-      .select("symbol_id, dollar_vol_20d, symbols(ticker)")
+      .select("symbol_id, dollar_vol_20d, symbols!inner(ticker, alert_excluded)")
       .eq("as_of", asOfRow.as_of)
+      .eq("symbols.alert_excluded", false)
       .not("dollar_vol_20d", "is", null)
       .order("dollar_vol_20d", { ascending: false })
       .limit(budget);
