@@ -11,7 +11,7 @@ export interface Quote {
  * when the distinct sorted ticker set changes. Returns a Map keyed by
  * ticker; missing entries just render nothing.
  */
-export function useQuotes(tickers: string[]): Map<string, Quote> {
+export function useQuotes(tickers: string[], pollMs?: number): Map<string, Quote> {
   const [quotes, setQuotes] = useState<Map<string, Quote>>(new Map());
   const key = [...new Set(tickers.filter(Boolean))].sort().join(",");
 
@@ -21,18 +21,23 @@ export function useQuotes(tickers: string[]): Map<string, Quote> {
       return;
     }
     let cancelled = false;
-    fetch(`/.netlify/functions/quotes?symbols=${encodeURIComponent(key)}`)
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((data: Record<string, Quote>) => {
-        if (!cancelled) setQuotes(new Map(Object.entries(data)));
-      })
-      .catch(() => {
-        /* quotes are non-critical chrome — leave the last set on failure */
-      });
+    const fetchQuotes = () =>
+      fetch(`/.netlify/functions/quotes?symbols=${encodeURIComponent(key)}`)
+        .then((r) => (r.ok ? r.json() : {}))
+        .then((data: Record<string, Quote>) => {
+          if (!cancelled) setQuotes(new Map(Object.entries(data)));
+        })
+        .catch(() => {
+          /* quotes are non-critical chrome — leave the last set on failure */
+        });
+
+    fetchQuotes();
+    const id = pollMs ? setInterval(fetchQuotes, pollMs) : undefined;
     return () => {
       cancelled = true;
+      if (id) clearInterval(id);
     };
-  }, [key]);
+  }, [key, pollMs]);
 
   return quotes;
 }

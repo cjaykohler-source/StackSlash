@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { RegimeBanner } from "../components/RegimeBanner";
+import { TrackingPanel } from "../components/TrackingPanel";
 import { TriggerFeed } from "../components/TriggerFeed";
 import { TopMovers } from "../components/TopMovers";
 import { SymbolSearch } from "../components/SymbolSearch";
@@ -25,6 +26,7 @@ export function Dashboard() {
         </div>
       </header>
       <RegimeBanner />
+      <TrackingPanel />
       <div className="dashboard-body">
         <main className="dashboard-main">
           <section>
