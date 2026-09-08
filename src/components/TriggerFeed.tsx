@@ -7,10 +7,11 @@ import { useQuotes } from "./QuoteTag";
 
 // Feed is deliberately a focused view: only symbols where >= 2 distinct
 // triggers cluster (what the confluence gate promotes) AND trading at
-// $20/share or less. Rows we can't price yet stay visible until a quote
-// lands.
+// $50/share or less. Rows we can't price yet stay visible until a quote
+// lands. Anything triggering under $5 gets an extra high-priority flag.
 const MIN_CONFLUENCE = 2;
-const MAX_PRICE = 20;
+const MAX_PRICE = 50;
+const SUB_PENNY_FLAG_PRICE = 5;
 
 interface ConfluenceMeta {
   count: number;
@@ -205,26 +206,30 @@ export function TriggerFeed() {
                   const quote = row.symbols?.ticker ? quotes.get(row.symbols.ticker) : undefined;
                   const pct = quote ? Number((quote.changePct * 100).toFixed(1)) : null;
                   const pctDir = pct === null ? "" : pct > 0 ? "up" : pct < 0 ? "down" : "";
+                  const subFive = quote != null && quote.price < SUB_PENNY_FLAG_PRICE;
                   return (
-                  <tr key={row.id} className={isHigh ? "trigger-feed-row-high" : undefined}>
+                  <tr key={row.id} className={isHigh || subFive ? "trigger-feed-row-high" : undefined}>
                     <td>{timeOnly(row.ts)}</td>
                     <td>
                       <Link to={`/symbol/${row.symbols?.ticker ?? row.symbol_id}`}>
                         {row.symbols?.ticker ?? row.symbol_id}
                       </Link>
-                      {isHigh ? (
+                      <span
+                        className={`confluence-badge${isHigh ? " confluence-badge-high" : ""}`}
+                        title={
+                          isHigh
+                            ? `High priority — ${confluenceCount} independent triggers agreed`
+                            : `${confluenceCount} independent triggers agreed for this symbol`
+                        }
+                      >
+                        {confluenceCount} signals
+                      </span>
+                      {subFive && (
                         <span
-                          className="confluence-badge confluence-badge-high"
-                          title={`High priority — ${confluenceCount} independent triggers agreed`}
+                          className="confluence-badge confluence-badge-subfive"
+                          title={`Trading under $${SUB_PENNY_FLAG_PRICE}/share — flagged high priority`}
                         >
-                          {confluenceCount} signals
-                        </span>
-                      ) : (
-                        <span
-                          className="confluence-badge"
-                          title={`${confluenceCount} independent triggers agreed for this symbol`}
-                        >
-                          {confluenceCount} signals
+                          UNDER ${SUB_PENNY_FLAG_PRICE}
                         </span>
                       )}
                     </td>

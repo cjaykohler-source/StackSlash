@@ -541,6 +541,21 @@ body {
   color: var(--green);
   white-space: nowrap;
 }
+.confluence-badge-high {
+  background: rgba(231, 76, 60, 0.18);
+  color: var(--red);
+}
+.confluence-badge-subfive {
+  background: var(--amber);
+  color: #04121f;
+  letter-spacing: 0.03em;
+}
+.trigger-feed-row-high td {
+  background: rgba(231, 76, 60, 0.06);
+}
+.trigger-feed-row-high td:first-child {
+  box-shadow: inset 3px 0 0 var(--red);
+}
 .quote-tag {
   margin-left: 8px;
   font-size: 0.8rem;
@@ -641,6 +656,127 @@ h1 .quote-tag {
 .top-movers-pct.down {
   color: var(--red);
 }
+
+/* Tracking panel (above the trigger feed) */
+.tracking {
+  margin-bottom: 20px;
+}
+.tracking-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.tracking-head h2 {
+  margin: 0;
+}
+.tracking-add {
+  display: flex;
+  gap: 6px;
+}
+.tracking-add input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+  color: var(--text);
+  font-size: 0.85rem;
+  width: 130px;
+}
+.tracking-add button {
+  background: var(--accent);
+  color: #04121f;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.tracking-add button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tracking-error {
+  color: var(--red);
+  font-size: 0.82rem;
+  margin: 0 0 12px;
+}
+.tracking-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.tracked-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px 12px;
+}
+.tracked-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tracked-ticker {
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: none;
+  color: var(--accent);
+}
+.tracked-remove {
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.tracked-remove:hover {
+  color: var(--red);
+}
+.tracked-quote {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 2px 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+.tracked-price {
+  font-weight: 700;
+  font-size: 1rem;
+}
+.tracked-change {
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+.tracked-change.up {
+  color: var(--green);
+}
+.tracked-change.down {
+  color: var(--red);
+}
+.tracked-chart {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tracked-chart-empty {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+.tracked-name {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .confluence-banner {
   background: rgba(46, 204, 113, 0.1);
   border: 1px solid var(--green);
@@ -805,6 +941,10 @@ h1 .quote-tag {
   font-weight: 700;
   letter-spacing: 0.04em;
   vertical-align: 1px;
+}
+.dossier-priority-badge-subprice {
+  background: var(--amber);
+  color: #04121f;
 }
 .dossier-confluence {
   color: var(--text-dim);

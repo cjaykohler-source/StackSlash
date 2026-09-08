@@ -1,5 +1,10 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { dispatchAlert } from "./lib/notify";
+import { fetchSnapshots } from "./lib/alpaca";
+
+// Anything trading below this gets an extra "high priority" flag in the
+// dossier and the alert, on top of whatever the confluence tier is.
+const SUB_PRICE_FLAG = 5;
 
 /**
  * Job C — deep-dive worker.
@@ -66,6 +71,17 @@ export default async (req: Request) => {
   const snapshot = event.snapshot as Record<string, unknown>;
   const priority =
     ((event as unknown as { priority?: string }).priority as "normal" | "high" | undefined) ?? "normal";
+
+  // Current share price — one snapshot call, best-effort. Used only for
+  // the sub-$5 flag; a failure here must not block the dossier/alert.
+  let currentPrice: number | null = null;
+  try {
+    const snap = (await fetchSnapshots([ticker]))[ticker];
+    currentPrice = snap?.latestTrade?.p ?? snap?.dailyBar?.c ?? null;
+  } catch {
+    /* non-critical */
+  }
+  const subPriceFlag = currentPrice != null && currentPrice < SUB_PRICE_FLAG;
 
   // Confluence metadata, when this event was promoted by the confluence
   // gate (lib/confluenceGate.ts). `trigger_id` above is the cluster's
@@ -163,6 +179,8 @@ export default async (req: Request) => {
           triggers: confluence.triggers.map((t) => t.name).filter(Boolean),
         }
       : null,
+    price: currentPrice,
+    sub_price_flag: subPriceFlag,
     fired_on: snapshot,
     historical: hasReliableHistory
       ? {
@@ -205,15 +223,16 @@ export default async (req: Request) => {
     priority === "high"
       ? `🔴 *HIGH PRIORITY* — *${ticker}*`
       : `*${ticker}* — ${triggerName}`;
+  const subPriceLine = subPriceFlag ? `\n🔻 *UNDER $${SUB_PRICE_FLAG}* — trading at $${currentPrice!.toFixed(2)}` : "";
   const confluenceLine = confluentNames.length
     ? `\n${confluentNames.length} signals: ${confluentNames.join(", ")}`
     : "";
 
   const alertResult = await dispatchAlert(db, {
     dossierId: dossier.id,
-    dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}`,
+    dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}${subPriceFlag ? ":sub" : ""}`,
     cooldownMinutes,
-    message: `${headline}${confluenceLine}\nscore: ${score.toFixed(2)}`,
+    message: `${headline}${subPriceLine}${confluenceLine}\nscore: ${score.toFixed(2)}`,
   });
 
   if (alertResult.status === "sent") {

@@ -343,9 +343,19 @@ Backlog (research-identified, not started):
     column): the day's Top-20 gainers / Top-20 losers via the
     `top_movers()` Postgres RPC over `bars_intraday` (% from the open,
     ~1-min refresh, no Alpaca call, ~900-name coverage). The trigger feed
-    is now filtered to a single view — rows with ≥2 clustered triggers
-    AND a share price of $20 or less; `momentum_exit` and any pre-gate
-    single-trigger events no longer show there.
+    is filtered to a single view — rows with ≥2 clustered triggers AND a
+    share price of **$50 or less**; anything under **$5** additionally
+    gets an `UNDER $5` flag (feed badge, dossier badge, and a `🔻 UNDER $5`
+    line in the Discord alert — deep-dive does one snapshot call for the
+    price). `momentum_exit` and pre-gate single-trigger events don't show
+    in the feed.
+22. **Tracking panel** (`tracked_symbols` table, `TrackingPanel.tsx`).
+    Above the trigger feed: search a ticker, hit Track, and it gets a
+    persisted card with a live mini price chart that repolls every 60s
+    (history from `bars_intraday`, live tip from the `quotes` function).
+    `tracked_symbols` is the first client-writable table — RLS
+    `to authenticated` for select/insert/delete, single-user trust model.
+    `useQuotes` gained an optional `pollMs`.
 
 ## Stack
 
@@ -361,7 +371,8 @@ src/                      Frontend (Vite + React + Supabase client)
   pages/                  Login, Dashboard, SymbolDetail, Reports, About
   components/             AuthGuard, RegimeBanner, TriggerFeed, DossierCard,
                            SymbolSearch, SymbolProfile, QuoteTag (+useQuotes),
-                           TopMovers (dashboard sidebar, via top_movers() RPC),
+                           TopMovers (sidebar, top_movers() RPC),
+                           TrackingPanel (watchlist + live mini charts),
                            MarketBreadth (built, not currently rendered),
                            InfoTooltip, ProximityBar, CompanyDescription
   lib/                    Supabase client, shared TS types, triggerEval.ts
