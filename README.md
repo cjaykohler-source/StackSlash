@@ -10,223 +10,294 @@ deep-dive dossier and a dedup'd alert.
 Written to stand on its own: a fresh conversation pointed at this repo
 shouldn't need the original chat history to pick this up. Everything
 below reflects the real, verified state of the system as of this commit
-— not aspirational.
+— not aspirational. Where something is fixed-but-not-yet-confirmed, it
+says so explicitly rather than claiming success.
 
 ### The research this was built on
 
 Two document bundles were analyzed at the start of this project; the
-trigger set below is a direct translation of their findings, not
-generic technical-analysis folklore.
+trigger set is a direct translation of their findings, not generic
+technical-analysis folklore.
 
-**Bundle 1 — ~30 papers on technical indicators.** Key findings: single
-indicators (RSI, MACD on default settings) mostly failed to beat
-buy-and-hold once costs were included; *combinations* of indicators beat
-any single one; Bollinger Bands + RSI confluence had the strongest
-evidence across multiple papers; momentum outperformed moving-average
-rules in less-efficient markets; parameter tuning mattered more than
-indicator choice; only ~20% of candlestick patterns showed real signal;
-volume confirmation was consistently required; no single indicator set
-worked across all markets.
+**Bundle 1 — ~30 papers on technical indicators.** Single indicators
+(RSI, MACD on default settings) mostly failed to beat buy-and-hold once
+costs were included; *combinations* of indicators beat any single one;
+Bollinger Bands + RSI confluence had the strongest evidence across
+multiple papers; momentum outperformed moving-average rules in
+less-efficient markets; only ~20% of candlestick patterns showed real
+signal; volume confirmation was consistently required.
 
 **Bundle 2 — ~24 papers on asset pricing / quantitative finance.**
-Key findings: cross-sectional momentum (Jegadeesh & Titman — buy past
-12-1 month winners, hold 3-12 months) is the most robust, most-replicated
-anomaly in the literature; post-earnings-announcement drift is real but
+Cross-sectional momentum (Jegadeesh & Titman — buy past 12-1 month
+winners, hold 3-12 months) is the most robust, most-replicated anomaly
+in the literature; post-earnings-announcement drift is real but
 mechanistically tied to momentum; short-term (1-week) returns *reverse*
-rather than continue; penny-stock price/volume prediction via ML was
-statistically indistinguishable from random chance; market crashes/
-outliers occur far more often than a normal distribution predicts (fat
-tails); a volatility/trend regime filter measurably improved returns;
-raw expected value is misleading for skewed payoffs (motivates the
-skew-adjusted "CEV" scoring concept referenced in `trigger_stats`).
-
-The full back-and-forth reasoning, including the specific paper-by-paper
-extraction, lived in chat and was not re-transcribed here — what's below
-is the resulting design, verified against real data at every step.
+rather than continue; a volatility/trend regime filter measurably
+improved returns; raw expected value is misleading for skewed payoffs
+(motivates the skew-adjusted "CEV" scoring concept referenced in
+`trigger_stats`).
 
 ### Infrastructure, as deployed right now
 
 | Piece | Where | Status |
 |---|---|---|
 | Frontend + functions | Netlify, site `stackslash` → https://stackslash.netlify.app | Live, auto-deploys from GitHub `main` |
-| Repo | https://github.com/cjaykohler-source/StackSlash | Clean, pushed, matches what's deployed |
+| Repo | https://github.com/cjaykohler-source/StackSlash | Two uncommitted local fixes pending — see "Immediate next step" below |
 | Database | Supabase project `wnzxvdfskmivbyqadtll` (org StackSlash) | Live — see current counts below |
 | Market data | Alpaca, **paper** keys (IEX feed) | No funded account needed for data-only use |
 | Alerts | Discord webhook, channel showing as `#heating_up` (bot name "HeatBot") | Working, verified with real fires |
 | Auth | Single Supabase Auth user, `cjaykohler@gmail.com` | Working |
-| Realtime outlier worker (`worker/`) | Running via `launchd` on the confirmed always-on Mac mini | See "Worker status" below |
+| Realtime outlier worker (`worker/`) | Running via `launchd` on the confirmed always-on Mac mini (serial `QLPQFQPRXP`) | Was verified subscribing to the old 8-symbol list — **not yet re-verified against the current ~1,911-symbol universe**, see below |
 
-Current DB snapshot at time of writing: 8 symbols, 11 triggers (all
-enabled), 10,040 `bars_daily` rows (5 years × 8 symbols, zero gaps),
-5 `trigger_events`, 27 `trigger_stats` rows, 0 open `shadow_positions`.
+Current DB snapshot (live query, not from memory):
+**1,911 active symbols**, 2,222,635 `bars_daily` rows (443 MB total DB
+size), 9 enabled triggers, 228 `trigger_events`, 27 `trigger_stats`
+rows, 21 open `shadow_positions`.
 
-### Worker status — resolved this session, one manual step still pending
+### Universe — S&P 500 + NYSE common stock (grown from 8 → 512 → 1,911 across this project's history)
+
+The universe started at 8 hand-picked tickers, was expanded to the full
+S&P 500 (512 symbols) in an earlier session, and most recently to
+**all NYSE-listed common stock** (1,399 additional symbols, ingested
+this session).
+
+**Data quality caveat, by design, not an oversight:** Alpaca's asset API
+has no security-type field anywhere — common stock, ETFs, closed-end
+funds, SPAC shells, LPs, and preferred shares are all indistinguishable
+except by parsing the company name string. The NYSE ingestion used a
+best-effort name-keyword filter (excludes "preferred", "fund", "trust",
+"etf", "acquisition corp", "merger corp", bond/note/certificate
+language, etc.) that got ~1,737 of 2,924 raw NYSE assets down to
+plausible common stock. It's known to still leak a small number of
+edge cases (e.g. one structured-note ticker slipped through) and could
+theoretically exclude a legitimate name that happens to match a filter
+keyword. The user explicitly chose to ship this heuristic list over
+pausing to add a proper security-master data vendor — see chat history
+for that decision. `symbols.name` is populated for all 1,911 via
+Alpaca's asset endpoint (that part is reliable, unlike security type).
+
+One known real gap: **`BRK.A`** (Berkshire Hathaway Class A) returns
+zero bars from Alpaca's free IEX feed at any date range tested —
+confirmed via direct API calls, not a bug in this project's code. Its
+extreme per-share price likely puts it outside IEX's free-tier
+coverage. No fix applied; flagging so it isn't mistaken for a pipeline
+bug later.
+
+### Immediate next step — verify `eod-scan` at the new ~1,911-symbol scale
+
+**Two real bugs were found and fixed in `netlify/functions/eod-scan.ts`
+and `netlify/functions/lib/alpaca.ts` this session, but the fixes are
+UNCOMMITTED locally and their end-to-end success has NOT been
+confirmed** — every manual verification attempt this session hit
+Alpaca's rate limit (429) before completing, most likely cumulative
+load from ~6 back-to-back full-scale manual runs plus the historical
+backfill in a short window, not a flaw in the fixes themselves. This is
+the single most important thing for the next session to pick up.
+
+**Bug 1 — PostgREST's silent ~1,000-row cap** (the exact same class of
+bug already found once this session in `MarketBreadth.tsx`): `eod-scan`'s
+initial `symbols` query had no `.range()` pagination, so at 1,911 active
+symbols it silently returned only ~1,000 of them with no error. Fixed
+with the same `.range()`-loop pattern already used elsewhere in this
+codebase.
+
+**Bug 2 — unbatched `trigger_evaluations` insert**: at the new scale
+this is ~8,000-9,500 rows per run, each carrying a full factor_state
+JSON snapshot, inserted as one unbatched statement — confirmed hitting
+Postgres's `statement timeout` (error code `57014`) once bug 1 was
+fixed and the full universe actually flowed through. Chunked into
+5,000-row batches, same pattern already used for `bars_daily`.
+
+**Also changed** (defensive, not confirmed necessary on their own,
+but reasonable given the same investigation): the Alpaca chunk-fetch
+step's concurrency was unbounded (`Promise.all` over every chunk at
+once) — capped at 3 concurrent via a small `mapWithConcurrency` helper.
+`fetchBars` in `lib/alpaca.ts` had zero retry logic — a single
+transient 429 used to abort the *entire* scan, throwing away every
+chunk already fetched; it now retries with exponential backoff before
+failing. Chunk size was also dropped from 100 to 25 tickers after
+directly observing that very-large-multi-symbol/many-page Alpaca
+requests silently returned incomplete symbol coverage (confirmed via
+direct API calls: a 100-ticker chunk returned data for only ~52% of its
+own tickers with no error and a `next_page_token` still present, while
+the exact same tickers requeried as a 10-symbol/3-page request all came
+back complete) — this may turn out to be redundant with bug 1's fix
+once verified, but was evidence-based at the time and is safe either way.
+
+**To pick this up:**
+1. `git status` — confirm whether these fixes are still uncommitted (they were as of this handoff) and review the diff before committing.
+2. Wait for Alpaca's rate limit to clearly be clear (a fresh session, or a good 10-15+ minutes of no API activity on this account), then run a full `eod-scan` and check `job_runs` for `status='ok'`.
+3. Verify `select count(*) from factor_state where as_of = <today>` is close to 1,911 (a small shortfall is fine — some symbols may have too little Alpaca history — but it should not be capped near 1,000 or any other suspiciously round number).
+4. If it succeeds cleanly, commit the two fixes (and the defensive changes) and push.
+5. If it still fails, the regularly scheduled cron (`30 21 * * 1-5`, ~30 min after market close) will also attempt it — check `job_runs` the next morning either way.
+
+Note: this can also be tested by running the function locally (bypasses
+Netlify's scheduled-function access restriction — direct HTTP calls to
+`/.netlify/functions/eod-scan` return 403 for non-Netlify-internal
+callers, which is correct security behavior, not a bug):
+```bash
+npx tsx -e "import runEodScan from './netlify/functions/eod-scan'; runEodScan().then(r=>r.text()).then(console.log).catch(console.error)"
+```
+(needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ALPACA_API_KEY_ID`,
+`ALPACA_API_SECRET_KEY` in the environment — source `.env` first).
+
+### Worker status — resolved in an earlier session, one manual step still pending, one re-check needed
 
 `worker/` (the persistent Alpaca-websocket outlier detector) **must run
-on the one dedicated, always-on Mac mini the user described as "never
-sleeps"** — not on any laptop, and not on Netlify (see `worker/README.md`
-for why it structurally can't run there).
+on the one dedicated, always-on Mac mini** — not on any laptop, and not
+on Netlify (see `worker/README.md` for why it structurally can't run
+there). A prior session hit a real hostname collision between two
+machines both reporting `Chris-Ks-Mac-Mini`; the correct host was
+positively identified as hostname `Mac-mini`, serial `QLPQFQPRXP`,
+model Mac14,12 (M2 Pro). Re-verify by serial, not hostname, if there's
+ever doubt again.
 
-A prior session hit a real, concrete problem: it touched (at least) two
-separate machines that both reported the hostname `Chris-Ks-Mac-Mini`,
-making "which box am I on" unreliable from a terminal session alone.
-Hardware serial `V4WLRFYCVJ` was positively identified as the *wrong*
-machine — that finding still stands, do not target it even if a
-hostname matches.
-
-**This session confirmed the correct host directly with the user**
-(hostname `Mac-mini` at the time, serial `QLPQFQPRXP`, model Mac14,12 —
-an M2 Pro Mac mini) and set the worker up there from scratch:
-
-```bash
-git clone https://github.com/cjaykohler-source/StackSlash.git
-cd StackSlash/worker
-npm install && npm run build
-```
-
-`worker/.env` was created with real values pulled from Netlify's env vars
-(`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ALPACA_API_KEY_ID`,
-`ALPACA_API_SECRET_KEY`, `DISCORD_WEBHOOK_URL`). The `realtime_outlier_zscore`
-trigger row was already seeded (`enabled = true`, `cooldown_minutes = 15`)
-from an earlier session — no migration needed.
-
-`worker/launchd/com.stackslash.outlier-worker.plist`'s three hardcoded
-paths (previously `/Users/chriskohler/Desktop/...`) were rewritten to
-this machine's actual clone path (`/Users/ckohler/StackSlash/worker`);
-`/opt/homebrew/bin/node` was already correct here. Loaded and verified:
-
-```bash
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stackslash.outlier-worker.plist
-launchctl print gui/$(id -u)/com.stackslash.outlier-worker | grep -E "state|pid"
-# state = running, pid = 4497
-```
-
-Confirmed end to end, not just "process exists": the log shows a real
-Alpaca websocket connecting, authenticating, and subscribing to all 8
-symbols, and Supabase's own `job_runs` table shows a
-`realtime-outlier-worker` row with `status = running` and no
-`finished_at`, matching the launchd-managed process.
-
-**Still pending — needs an interactive terminal (sudo password), not
-something a session can run unattended:**
+**Still pending — needs an interactive terminal (sudo password):**
 ```bash
 sudo scutil --set ComputerName "StackSlash-Worker-Host"
 sudo scutil --set HostName "stackslash-worker-host"
 sudo scutil --set LocalHostName "stackslash-worker-host"
 ```
-Giving this box a distinct hostname is still worth doing so the
-two-machine hostname collision that caused the original confusion can't
-recur. Until it's done, re-verify by serial (`QLPQFQPRXP`), not
-hostname, if there's ever doubt again about which machine this is.
+
+**Newly relevant given the universe expansion:** the worker was last
+verified subscribing to Alpaca's websocket for the original 8-symbol
+list. Whether it subscribes to the *current* active universe (now
+1,911 symbols) dynamically or needs a restart/resubscribe logic check
+has not been re-verified since the S&P 500 or NYSE expansions — worth
+confirming its subscription list matches `symbols` before trusting
+`realtime_outlier_zscore` fires across the full universe.
 
 ### Open decisions — need a human call, not a default
 
-1. **`momentum_rank_entry` (`>=0.95`) and `momentum_breakout` (`>=0.9`)
-   have mathematically unreachable thresholds at the current 8-symbol
-   universe** — `percentileRank`'s max value at n=8 is `7/8=0.875`. The
-   backtest confirmed 0 historical fires for exactly this reason, not
-   bad luck. Fix is either lowering the threshold to match this
-   universe size, or growing the universe — a real tradeoff, not
-   patched yet.
-2. **All three short/bearish triggers show negative historical
-   expectancy** in the backtest (`bb_rsi_confluence_short`,
-   `macd_bearish_cross`, `volatility_squeeze_breakout_short`) — over
-   this period, shorting "overbought" signals in this large-cap-tech-
-   heavy universe has been a losing bet. Worth deciding whether to
-   disable them, keep them for visibility only, or leave as-is.
+1. **NYSE ingestion's name-keyword filter is imperfect** (see "Universe"
+   above) — ship as-is and clean up noise if/when it shows up in the
+   feed, or invest in a real security-master data source later.
+2. **Fundamentals/estimates data source** (Polygon, Finnhub, etc.) is
+   still needed before `earnings_surprise_drift` can ever fire — Alpaca
+   doesn't cover this.
 3. **Exit tracking (`shadow_positions`) only covers
    `momentum_rank_entry`/`momentum_breakout`.** The other trigger
    categories have different holding-period logic and were deliberately
-   left out (see chat's exit-trigger design discussion) — manual
-   position tracking (tying real trades to alerts) was the proposed
-   next step beyond the current auto-tracked "shadow" approach.
-4. **Universe is 8 symbols.** Fine for verifying the whole pipeline
-   works; thin for any of the cross-sectional percentile-rank logic
-   (issue #1 above is a direct symptom of this).
-5. **Fundamentals/estimates data source** (Polygon, Finnhub, etc.) is
-   still needed before `earnings_surprise_drift` can ever fire — Alpaca
-   doesn't cover this.
+   left out — manual position tracking (tying real trades to alerts)
+   was the proposed next step beyond the current auto-tracked "shadow"
+   approach.
+4. **Two of the three short/bearish triggers are now disabled**
+   (`bb_rsi_confluence_short`, one other) after the backtest showed
+   negative historical expectancy for shorting "overbought" signals in
+   this universe — `volatility_squeeze_breakout_short` (squeeze) was
+   left enabled per an explicit user call. Revisit if the backtest
+   picture changes with the much larger universe.
 
 ### Outstanding items — everything not finished, in one place
 
-Action items (something to actually go do):
-- [ ] **Get the real always-on worker host running** — see "Worker
-  status" above for the specific serial-number gotcha and full setup
-  steps. This is the single most important outstanding item.
-- [ ] Decide + fix the unreachable `momentum_rank_entry`/`momentum_breakout`
-  thresholds (Open decisions #1)
-- [ ] Decide what to do with the three negative-expectancy short triggers
-  (Open decisions #2)
+Action items:
+- [ ] **Verify `eod-scan` completes cleanly at the ~1,911-symbol scale
+  and commit the pending fixes** — see "Immediate next step" above.
+  This is the single most important outstanding item.
+- [ ] Re-verify the realtime worker's websocket subscription covers the
+  current full active universe, not just the original 8 symbols
+- [ ] Give the worker host a distinct hostname (see "Worker status")
 - [ ] Add a fundamentals/estimates data vendor to unblock
-  `earnings_surprise_drift` (Open decisions #5)
-- [ ] Give the worker host a distinct hostname if it still shares one
-  with another machine (see Worker status)
+  `earnings_surprise_drift`
+- [ ] Run `backtest-triggers` against the full expanded universe once
+  `eod-scan` is confirmed populating `factor_state` for all of it — the
+  existing 27 `trigger_stats` rows predate the NYSE expansion
 
-Design/scope decisions (need a call before building, not just a fix):
-- [ ] Expand the universe beyond 8 symbols (Open decisions #4) — and
-  re-run `backfill-history` + `backtest-triggers` for any new symbols
-- [ ] Extend exit tracking beyond momentum triggers, or move from
-  auto-tracked shadow positions to real manual position tracking (Open
-  decisions #3)
+Design/scope decisions (need a call before building):
+- [ ] Whether to invest in a real security-type data source to clean up
+  the NYSE universe's name-keyword-filter noise (Open decisions #1)
+- [ ] Extend exit tracking beyond momentum triggers, or move to real
+  manual position tracking (Open decisions #3)
 
-Smaller known gaps (not blocking, called out in code comments):
+Smaller known gaps (not blocking):
 - [ ] `intraday-scan`'s volume-vs-average still uses the daily bar as a
-  proxy rather than the now-populated `bars_intraday` — a proper
-  same-time-of-day comparison is a real but minor improvement
+  proxy rather than the populated `bars_intraday`
 - [ ] Edge-function-level auth gating (`AuthGuard.tsx` TODO) — current
   client-side + RLS gate is fine for single-user, not hardened for
   multi-tenant
 - [ ] Outlier worker's small-sample z-score reliability at low tick
   counts (`worker/README.md` has the tuning knobs)
 
-Backlog (research-identified, not started — see "Trigger backlog"
-section below for full detail):
+Backlog (research-identified, not started):
 - [ ] Multi-Timeframe Trend Agreement
 - [ ] Candlestick Reversal at a Level
-- [ ] Estimate-Revision Breakout (blocked on the same fundamentals gap
-  as `earnings_surprise_drift` above)
+- [ ] Estimate-Revision Breakout (blocked on the fundamentals gap above)
 
 ### Everything built, roughly in the order it happened
 
-1. Two research bundles analyzed → two-tier architecture designed (wide
-   Tier-1 surface + narrow Tier-2 triggers, entry/exit/regime-gated)
+1. Two research bundles analyzed → two-tier architecture designed
 2. Repo scaffolded: Vite+React frontend, Netlify Functions backend,
-   Supabase schema+RLS, seed universe/triggers, deployed and debugged
-   through several rounds of Netlify secrets-scanning false positives
-   (all resolved — see git history if the specifics matter)
-3. `eod-scan`/`intraday-scan` verified against real Alpaca data; found
-   and fixed a real bug where `intraday-scan`'s momentum-candidate gate
-   was being bypassed by `eod-scan` evaluating the same triggers
-   unrestricted
-4. 5-year historical backfill (`backfill-history.ts`) + chart range
-   toggle (Day/Week/Month/Year/5-Year) on the symbol page; `Day` needed
-   its own ingestion job (`intraday-bars-scan.ts`, 1-min bars, 5-min
-   cadence) added afterward
-5. Dossier display rebuilt from a raw JSON dump into readable labeled
-   cards (`DossierCard.tsx`)
-6. Trigger feed regrouped by day (collapsible, today expanded by
-   default), timestamps normalized to time-only
-7. Branding pass: logo, dark-navy theme (`#010e1f`), login panel
-   flattened into the background with a `#25e979` green stroke + glow
-8. Realtime outlier worker built (`worker/`) — persistent Alpaca
-   websocket, EWMA-based z-score outlier detection, verified firing
-   real Discord alerts through the same pipeline as everything else;
-   `launchd` deployment pattern established (see "Worker status" above
-   for its current state)
-9. Three more triggers added from the research backlog: Volatility
-   Squeeze Breakout, Momentum Breakout, MACD Cross (bullish/bearish)
-10. Exit triggers via auto-tracked `shadow_positions` (see "Open
-    decisions" #3) — closes on rank drop, a bad week, or 180 days held
-11. Plain-English trigger labels applied everywhere
-    (`lib/triggerInfo.ts`, single source of truth) + a new `/about` page
-    breaking down all 11 triggers in plain language with live
-    enabled/cooldown status
-12. Real backtest engine (`backtest-triggers.ts` + shared
-    `dailySnapshot.ts` factor module) replacing `deep-dive.ts`'s
-    placeholder score with actual historical win-rate/expectancy
-    (`trigger_stats`) blended with live multi-signal confirmation —
-    surfaced both open decisions #1 and #2 above as real findings, not
-    assumptions
+   Supabase schema+RLS, 8-symbol seed universe+triggers, deployed
+3. `eod-scan`/`intraday-scan` verified against real data; fixed a bug
+   where `intraday-scan`'s momentum-candidate gate was bypassed by
+   `eod-scan` evaluating the same triggers unrestricted
+4. 5-year historical backfill + full chart range toggle
+   (Day/Week/Month/Year/5-Year); Day needed its own ingestion job
+   (`intraday-bars-scan.ts`)
+5. Dossier display rebuilt into readable labeled cards; trigger feed
+   regrouped by day; branding pass (dark-navy theme, logo)
+6. Realtime outlier worker built (`worker/`) — persistent websocket,
+   EWMA z-score outlier detection, `launchd` deployment
+7. Three more triggers from the research backlog: Volatility Squeeze
+   Breakout, Momentum Breakout, MACD Cross (bullish/bearish)
+8. Exit triggers via auto-tracked `shadow_positions`; plain-English
+   trigger labels (`lib/triggerInfo.ts`) + `/about` page
+9. Real backtest engine (`backtest-triggers.ts` + shared
+   `dailySnapshot.ts`) replacing a placeholder score with actual
+   historical win-rate/expectancy, blended with live confirmation —
+   surfaced the (now-resolved) unreachable-threshold issue and the
+   negative-expectancy short triggers as real findings
+10. **Universe expanded to the full S&P 500** (512 symbols) — storage/
+    retention math done first, then the expansion + a full backfill +
+    backtest re-run
+11. UI polish pass: symbol search with on-demand onboarding
+    (`SymbolSearch.tsx`, `onboard-symbol.ts` — validates via Alpaca,
+    backfills history, runs a real `eod-scan` in-process so a newly
+    searched symbol gets correctly cross-sectionally-ranked factors
+    immediately), a live "profile workup" per symbol
+    (`SymbolProfile.tsx` — current factor snapshot + real backtested
+    stats per trigger), Day-chart last-open-session fallback, viewport
+    centering/spacing pass
+12. Confluence scoring (`lib/confluence.ts` — flags when multiple
+    distinct triggers fire for the same symbol same day) + disabled the
+    two negative-expectancy short triggers per an explicit user
+    decision, left the squeeze short enabled
+13. Dark-themed PNG performance report generator (`Reports.tsx`, manual
+    Canvas API drawing, no new dependency)
+14. Market breadth indicators on the dashboard (`MarketBreadth.tsx` —
+    % above 200DMA, advancers/decliners, avg 1-week return) — surfaced
+    and fixed the PostgREST 1000-row silent cap for the first time
+    (client-side `.range()` pagination)
+15. **Root-caused and fixed a real duplicate-data bug**: `eod-scan.ts`
+    had a comment claiming a cooldown check happened per-fire, but no
+    such check existed in code — every repeated scan re-inserted
+    `trigger_events` unconditionally. Found via CIEN showing multiple
+    identical dossiers with only the timestamp differing; confirmed 326
+    of 407 `trigger_events` were redundant (125 had already gone out as
+    duplicate Discord alerts); cleaned up via a `ROW_NUMBER()`-based
+    migration (kept newest per symbol+trigger, cascaded to dossiers/
+    alerts/shadow_positions); built `lib/cooldown.ts` and wired it into
+    both `eod-scan.ts` and `intraday-scan.ts` as the real fix; verified
+    the fix holds by onboarding a fresh symbol (re-triggering a full
+    scan, the same mechanism that caused the bug) and confirming
+    duplicate counts stayed flat
+16. Hover tooltips across the UI for trigger names and factor/market
+    metrics (`InfoTooltip.tsx` — portal-rendered + `position: fixed` so
+    it isn't clipped by any scrolling container, pulling text from the
+    existing `FIELD_META`/`TRIGGER_INFO` single sources of truth rather
+    than new hardcoded strings)
+17. Trigger status proximity bars (`ProximityBar.tsx`,
+    `lib/triggerProximity.ts` — continuous "how close to firing" reading
+    per trigger, dark→bright green for entry triggers, dark maroon→
+    bright red for `momentum_exit`, shown whenever a symbol has an open
+    shadow position) + company name/description on the symbol page
+    (`CompanyDescription.tsx`, Wikipedia's free summary API, no new
+    paid vendor) — `symbols.name` backfilled for all symbols via Alpaca
+18. **Universe expanded again to all NYSE-listed common stock**
+    (1,399 more symbols, name-keyword-filtered from Alpaca's raw NYSE
+    listing) + full 5-year historical backfill (1.59M rows) — see
+    "Universe" and "Immediate next step" above for the full story,
+    including the two real `eod-scan` scale bugs this surfaced
 
 ## Stack
 
@@ -239,44 +310,59 @@ section below for full detail):
 
 ```
 src/                      Frontend (Vite + React + Supabase client)
-  pages/                  Login, Dashboard (trigger feed + regime banner), SymbolDetail (chart + dossiers)
-  components/             AuthGuard, RegimeBanner, TriggerFeed
-  lib/                    Supabase client, shared TS types (mirrors the DB schema)
+  pages/                  Login, Dashboard, SymbolDetail, Reports, About
+  components/             AuthGuard, RegimeBanner, TriggerFeed, DossierCard,
+                           SymbolSearch, SymbolProfile, MarketBreadth,
+                           InfoTooltip, ProximityBar, CompanyDescription
+  lib/                    Supabase client, shared TS types, triggerEval.ts
+                           (client-side port of triggers.ts, display-only),
+                           triggerProximity.ts, triggerInfo.ts (plain-English
+                           labels, single source of truth), factorFormat.ts
+                           (field labels/formatters, shared with dossiers),
+                           confluence.ts
 
 netlify/functions/
   eod-scan.ts             Job A — daily bars, factor_state, momentum ranking,
                            regime_state, non-technical/non-exit trigger
-                           evaluation, shadow_positions open/close.
-                           Scheduled ~30min after close.
+                           evaluation, shadow_positions open/close, cooldown-
+                           gated trigger_events insert. Scheduled ~30min
+                           after close. See "Immediate next step" above for
+                           its current unverified-at-scale state.
   intraday-scan.ts        Job B — polls snapshots for top-momentum names,
                            evaluates technical-category triggers only, on that
-                           candidate set only. Scheduled every 10min during
-                           market hours.
+                           candidate set only, cooldown-gated. Scheduled every
+                           10min during market hours.
   intraday-bars-scan.ts   1-min bars, whole active universe, every 5min
                            during market hours — populates the Day chart range.
+  onboard-symbol.ts       On-demand symbol onboarding (search box) — validates
+                           via Alpaca, backfills history, runs eod-scan
+                           in-process so the new symbol gets real
+                           cross-sectionally-ranked factors immediately.
   backfill-history.ts     Manually-triggered deep historical pull (default:
-                           5 years back) for the 5-Year chart range. Not
-                           scheduled — run once per symbol, or when adding one.
+                           5 years back) for the 5-Year chart range.
   backtest-triggers.ts    Manually-triggered: replays every backtestable
                            trigger against 5yr history, writes trigger_stats.
-                           Not scheduled — re-run when a trigger definition or
-                           dailySnapshot.ts changes.
-  deep-dive.ts            Job C — HTTP-triggered by a Postgres trigger (see
-                           "Wiring" below) on every trigger_events insert,
-                           from any source (eod-scan, intraday-scan, the
-                           realtime worker, or a shadow_positions exit).
-                           Scores from trigger_stats + live confirmation,
-                           writes a dossier, dispatches an alert.
+  deep-dive.ts            Job C — HTTP-triggered by a Postgres trigger on
+                           every trigger_events insert. Scores from
+                           trigger_stats + live confirmation, writes a
+                           dossier, dispatches an alert.
   send-alert.ts           Manual/test alert dispatch for an existing dossier.
   lib/
     supabaseAdmin.ts       Service-role client (server-only, bypasses RLS)
-    alpaca.ts               Alpaca REST client (daily/intraday bars, snapshots)
-    indicators.ts            Pure math: returns, SMA/EMA, RSI, Bollinger, vol,
-                              percentile rank, MACD cross, 20d-high, etc.
-    dailySnapshot.ts          Shared factor computation — used live by
-                              eod-scan AND by backtest-triggers, so the two
-                              can't silently drift apart.
+    alpaca.ts               Alpaca REST client — bars, snapshots, asset
+                             lookup (validateSymbol, now also returns name);
+                             fetchBars retries with backoff on 429
+    indicators.ts           Pure math: returns, SMA/EMA, RSI, Bollinger, vol,
+                             percentile rank, MACD cross, 20d-high, etc.
+    dailySnapshot.ts         Shared factor computation — used live by
+                             eod-scan AND by backtest-triggers
     triggers.ts               Declarative trigger definition evaluator
+    cooldown.ts                filterByCooldown() — real cooldown enforcement
+                                against the most recent trigger_event per
+                                (symbol, trigger), used by eod-scan and
+                                intraday-scan
+    backfillSymbol.ts           backfillSymbolBars/backfillLatestIntradaySession
+                                — shared by backfill-history and onboard-symbol
     notify.ts                  Telegram/Discord dispatch + dedup/cooldown
     jobRun.ts                   job_runs logging wrapper
 
@@ -312,81 +398,67 @@ worker/                   Separate deployable — persistent Alpaca websocket,
    ```
    This serves the Vite frontend and the Netlify Functions together so
    `fetch('/.netlify/functions/...')` calls resolve. Scheduled functions
-   don't fire automatically in dev — invoke them directly, e.g.:
-   ```bash
-   curl -X POST http://localhost:8888/.netlify/functions/eod-scan
-   curl -X POST http://localhost:8888/.netlify/functions/backfill-history
-   ```
+   don't fire automatically in dev and also refuse direct external HTTP
+   calls even in production (403) — invoke them by importing and calling
+   the default export directly (see "Immediate next step" above for the
+   exact `tsx` one-liner), not via curl.
 
 5. **Deploy.** Connect this repo to a new Netlify site (or `netlify init`),
    set the env vars in the Netlify UI, and push. `netlify.toml` already
-   defines the build command, publish dir, SPA redirect, and the two
-   scheduled-function cron expressions.
+   defines the build command, publish dir, SPA redirect, and the scheduled-
+   function cron expressions.
 
-6. **The deep-dive webhook is already wired — nothing to do here.** Unlike a
-   typical Supabase Database Webhook (which needs a one-time dashboard setup
-   the `supabase_functions` schema doesn't bootstrap on this project), this
-   was built directly with `pg_net`: a Postgres trigger
-   (`deep_dive_webhook` → `public.notify_deep_dive()`) fires on every
-   `trigger_events` insert and POSTs to the deployed `deep-dive` function.
-   It's part of the Supabase migration history, not a manual step. If you
-   ever move the site to a different URL, update the hardcoded URL inside
-   `public.notify_deep_dive()` (via a new migration) to match.
+6. **The deep-dive webhook is already wired — nothing to do here.** Built
+   directly with `pg_net`: a Postgres trigger (`deep_dive_webhook` →
+   `public.notify_deep_dive()`) fires on every `trigger_events` insert and
+   POSTs to the deployed `deep-dive` function. Part of the Supabase
+   migration history, not a manual step.
 
 ## What's real vs. placeholder
 
-**Real and functional:**
-- Schema, RLS, seed universe (SPY + 7 tickers) and 11 seed triggers spanning momentum/earnings/technical/outlier/breakout/exit categories
-- `eod-scan`: real Alpaca bars, real momentum/vol/technical/breakout factors, cross-sectional ranking (momentum, 20-day ROC, 1-week return), a real (if simple) SPY-based regime signal, evaluates non-technical/non-exit triggers, opens/closes shadow_positions
-- `intraday-scan`: real snapshots, technical-category triggers only, restricted to the momentum-filtered candidate set (this restriction was a real bug once — `eod-scan` was evaluating technical triggers unrestricted too; fixed)
-- `intraday-bars-scan`: real 1-min bars, whole active universe, every 5 min during market hours — the **"Day" chart range** is populated, not a placeholder
-- `backfill-history` + the 5-Year chart range: verified against real data — 1,255 clean daily bars/symbol, 2021-09 through today
-- `worker/`: a genuinely separate, persistent process — real Alpaca websocket, real EWMA-based z-score outlier detection, verified firing real alerts through the same pipeline
-- **Shadow positions + `momentum_exit`**: auto-tracked hypothetical positions opened by `momentum_rank_entry`/`momentum_breakout` fires, closed when momentum rank drops, a bottom-decile week hits, or 180 days pass — verified end to end against real data, including the exit alert flowing through the same dossier/pipeline with zero new alert code
-- The `deep_dive_webhook` → dossier → dedup'd alert chain, end to end, for every trigger source
-- **`backtest-triggers` + real `deep-dive.ts` scoring**: replays every backtestable trigger's actual declarative definition against 5 years of real `bars_daily` history via a shared `dailySnapshot.ts` module (also used live by `eod-scan`, so backtested numbers can't drift from what the live triggers actually do), stores real win-rate/expectancy per trigger in `trigger_stats`. `deep-dive.ts` combines that historical base rate with live multi-signal confirmation (trend, volume, regime) instead of the old flat `0.5`. Verified against real data — score math, historical stats, and confirmations all checked out exactly.
-- Auth-gated dashboard: live (Realtime) trigger feed, regime banner, symbol drill-down with all five chart ranges
+**Real and functional:** schema/RLS/1,911-symbol universe across 9 enabled
+triggers; `eod-scan`/`intraday-scan` real factor computation, cross-
+sectional ranking, regime signal, cooldown-gated trigger evaluation (see
+"Immediate next step" for the one part not yet re-confirmed at full
+scale); `intraday-bars-scan` populating the Day chart; 5-year backfill
+for the whole universe; the realtime outlier worker (websocket
+subscription list not yet re-verified against the full universe);
+shadow-position exit tracking; the dossier/alert pipeline end to end;
+`backtest-triggers` + real `deep-dive.ts` scoring (stats predate the
+NYSE expansion, need a re-run); symbol search/on-demand onboarding;
+per-symbol profile workups with live proximity bars; confluence
+scoring; PNG performance reports; market breadth; hover tooltips;
+company name/description.
 
-**Placeholder / not yet built, called out in code comments:**
-- `factor_state.sue` / `est_revision_30d` / `book_to_market` etc. are never populated — Alpaca's data API doesn't cover fundamentals/estimates. `earnings_surprise_drift` is seeded but inert until a fundamentals vendor is added — and has 0 backtest samples for the same reason.
-- `momentum_rank_entry` (`>= 0.95`) and `momentum_breakout` (`>= 0.9`) use percentile thresholds that are **mathematically unreachable with only 8 symbols** — `percentileRank`'s max possible value at n=8 is `7/8 = 0.875`. The backtest surfaced this directly (0 samples for both, not "hasn't happened yet"). Needs either a lower threshold sized to the current universe, or a bigger universe — a real open decision, not something to silently patch.
-- `realtime_outlier_zscore` and `momentum_exit` aren't in `trigger_stats` — the former is tick-level (can't replay against end-of-day bars), the latter depends on `shadow_positions` state rather than a stateless factor check. Both fall back to confirmation-only scoring in `deep-dive.ts` until they can accumulate their own live-fire history.
-- Volume-vs-average in `intraday-scan` still uses the daily bar as a rough proxy rather than `bars_intraday` (which now exists and is populated) — a proper same-time-of-day comparison is still a follow-up.
-- Universe is 8 symbols — expanding it is just adding rows to `symbols` (then re-running `backfill-history` for the new ones).
-- Exit tracking only covers `momentum_rank_entry`/`momentum_breakout` — the mean-reversion/short-horizon triggers (BB/RSI confluence, squeeze breakout, MACD cross, outlier) have different holding-period logic and aren't tracked in `shadow_positions`. Manual position tracking (tying real trades to alerts, rather than auto-opening a shadow position on every entry fire) is a natural next step — see the exit-trigger design discussion in this project's chat history.
-- Edge-function-level auth gating (blocking page load itself, not just data) — noted as a TODO in `AuthGuard.tsx`. Current gate is client-side redirect + RLS as the real security boundary; fine for single-user, not a hardened multi-tenant gate.
-- The outlier worker's z-score reliability at low tick counts is a known, real limitation (small-sample EWMA variance) — see its own README for the tuning knobs (`MIN_TICKS_BEFORE_EVAL`, `EWMA_ALPHA`).
+**Placeholder / not yet built:** `factor_state.sue`/`est_revision_30d`/
+`book_to_market` etc. never populated (no fundamentals vendor) —
+`earnings_surprise_drift` inert; exit tracking only covers
+`momentum_rank_entry`/`momentum_breakout`; intraday-scan's volume-vs-
+average still proxies off the daily bar; edge-function-level auth
+gating (client-side + RLS is the real boundary today); the NYSE
+universe's name-keyword filter has known small imperfections (see
+"Universe" above).
 
 ## Trigger backlog
 
-Signals considered against the research this project is built on but not
-yet built, roughly in priority order:
-
-- **Multi-Timeframe Trend Agreement** — EMA stack aligned on daily *and*
+- **Multi-Timeframe Trend Agreement** — EMA stack aligned daily *and*
   weekly, pullback to the fast EMA, RSI resets to 40-50. Needs
-  weekly-timeframe bars/EMAs, not just daily — more ingestion work than
-  the three triggers added in this pass.
+  weekly-timeframe bars/EMAs.
 - **Candlestick Reversal at a Level** — hammer / bullish engulfing /
-  rising window occurring at a support/MA level, volume-confirmed. Needs
-  OHLC pattern-detection logic (we already store full OHLC in
-  `bars_daily`, so no new data source — just more involved code than a
-  threshold check).
-- **Estimate-Revision Breakout** — analyst estimate revisions trending up
-  ahead of price. Blocked on the same fundamentals/estimates data-source
-  gap as `earnings_surprise_drift` (Alpaca's market-data API doesn't cover
-  this; needs a vendor like Polygon or Finnhub added as a small extra
-  step in `eod-scan`).
+  rising window at a support/MA level, volume-confirmed. No new data
+  source needed (full OHLC already in `bars_daily`), just pattern logic.
+- **Estimate-Revision Breakout** — blocked on the same fundamentals gap
+  as `earnings_surprise_drift`.
 
 ## Backtesting
 
-Built: `backtest-triggers.ts` replays every backtestable trigger's real
+`backtest-triggers.ts` replays every backtestable trigger's real
 declarative definition against 5 years of `bars_daily` history via the
-shared `dailySnapshot.ts` factor module (also used live by `eod-scan`,
-so a backtest can't silently compute things differently than
-production), and writes real win-rate/expectancy numbers into
-`trigger_stats` — see "Everything built" #12 and "Open decisions" #1/#2
-above for what it already found. Not scheduled — re-run it manually
-whenever a trigger's definition or `dailySnapshot.ts` changes:
+shared `dailySnapshot.ts` factor module, and writes real win-rate/
+expectancy numbers into `trigger_stats`. Not scheduled — re-run
+manually whenever a trigger's definition or `dailySnapshot.ts` changes,
+or when the universe changes materially (it's due for a re-run now,
+post-NYSE-expansion):
 
 ```bash
 curl -X POST https://stackslash.netlify.app/.netlify/functions/backtest-triggers
