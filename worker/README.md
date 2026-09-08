@@ -8,11 +8,19 @@ others," which the serverless scheduled functions (`eod-scan`,
 `intraday-scan`) structurally can't do (Netlify cron has a 1-minute
 granularity floor; this needs a genuinely long-lived connection instead).
 
-Everything downstream is unchanged: this worker only inserts a row into
-`trigger_events`, same as the scheduled functions do. The existing
-`deep_dive_webhook` Postgres trigger (see the main project's Supabase
-migrations) picks it up automatically and runs the same dossier + Discord
-alert pipeline — this worker doesn't duplicate any of that.
+Everything downstream is unchanged: this worker hands each fire to the
+`confluence-gate` function (POST), same staging path the scheduled scans
+use. A fire only becomes a `trigger_event` — and therefore a dossier +
+Discord alert via the existing `deep_dive_webhook` — if it clusters with
+another same-direction trigger for that symbol in the window. Lone
+outlier spikes stay in `pending_fires` and go no further.
+
+**Symbol coverage:** Alpaca's free IEX websocket caps concurrent trade
+subscriptions (~30). This worker can't watch the whole ~1,900-symbol
+universe — it watches `WORKER_MAX_STREAM_SYMBOLS` (default 28): every
+`tracked_symbols` entry first, then the highest 20-day-dollar-volume
+names to fill the rest. The set is chosen at startup; restart to refresh
+it (e.g. after tracking a new symbol you want realtime coverage on).
 
 ## How outliers are detected
 
