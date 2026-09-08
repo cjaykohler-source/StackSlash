@@ -564,10 +564,16 @@ backfill for the whole universe; the realtime outlier worker (websocket
 subscription list not yet re-verified against the full universe);
 shadow-position exit tracking; the dossier/alert pipeline end to end;
 `backtest-triggers` + real `deep-dive.ts` scoring (per-trigger stats
-blended across the cluster; `trigger_stats` re-run against the
-1,911-symbol universe on 2026-09-08 — momentum win rates came down
-noticeably vs the S&P-500-only run, ~0.55 → ~0.53, the bigger/noisier
-universe diluting the edge); symbol search/on-demand onboarding; per-symbol profile
+blended across the cluster). **`trigger_stats` are now weak** — the
+free-plan 18-month history window leaves only ~8 evaluable months after
+the 260-day factor warmup, and the ~5,000-symbol universe is much
+noisier than the S&P 500 it was tuned on. The 2026-09-08 re-run has
+`momentum_rank_entry` at a *negative* 10-day expectancy (43.8% win,
+-0.42% avg, 4.2k samples) vs ~0.53/+1.3% in the old 4-year/512-symbol
+run; `bb_rsi_confluence_long` looks great (60.6%/+2.18%) but on the same
+thin window. Treat all of these as directional, not reliable, until
+there's either more history (Supabase Pro) or more elapsed time.
+Symbol search/on-demand onboarding; per-symbol profile
 workups with live proximity bars; PNG performance reports; per-symbol
 `$price | ±x%` quote tags (feed + symbol page); the dashboard's live
 Top-20 gainers / Top-20 losers sidebar (`top_movers()` Postgres function
