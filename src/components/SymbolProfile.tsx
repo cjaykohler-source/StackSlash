@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "../lib/triggerEval";
-import { triggerLabel, triggerCategoryLabel, humanize } from "../lib/triggerInfo";
+import { triggerLabel, triggerCategoryLabel, humanize, TRIGGER_INFO } from "../lib/triggerInfo";
 import { FIELD_META, HIDDEN_FIELDS, pct } from "../lib/factorFormat";
 import type { FactorState, RegimeState, Trigger } from "../lib/types";
+import { InfoTooltip } from "./InfoTooltip";
 
 interface TriggerStatRow {
   trigger_id: number;
@@ -128,7 +129,9 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
           const formatted = meta?.format(value) ?? String(value);
           return (
             <div className="dossier-metric" key={key}>
-              <span className="dossier-metric-label">{label}</span>
+              <span className="dossier-metric-label">
+                {meta?.description ? <InfoTooltip text={meta.description}>{label}</InfoTooltip> : label}
+              </span>
               <span className="dossier-metric-value">{formatted}</span>
             </div>
           );
@@ -137,7 +140,13 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
 
       {profileTriggers && profileTriggers.filter((p) => p.satisfied).length >= 2 && (
         <div className="confluence-banner">
-          <strong>Confluence: {profileTriggers.filter((p) => p.satisfied).length} signals agree right now</strong> —{" "}
+          <strong>
+            <InfoTooltip text="Multiple independent triggers are satisfied for this symbol at the same time — historically a stronger signal than any single trigger alone.">
+              Confluence
+            </InfoTooltip>
+            : {profileTriggers.filter((p) => p.satisfied).length} signals agree right now
+          </strong>{" "}
+          —{" "}
           {profileTriggers
             .filter((p) => p.satisfied)
             .map((p) => triggerLabel(p.trigger.name))
@@ -155,10 +164,25 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
             return (
               <div className="trigger-profile-row" key={trigger.id}>
                 <div className="trigger-profile-header">
-                  <span className="trigger-profile-label">{triggerLabel(trigger.name)}</span>
+                  <span className="trigger-profile-label">
+                    {TRIGGER_INFO[trigger.name]?.summary ? (
+                      <InfoTooltip text={TRIGGER_INFO[trigger.name]!.summary}>{triggerLabel(trigger.name)}</InfoTooltip>
+                    ) : (
+                      triggerLabel(trigger.name)
+                    )}
+                  </span>
                   <span className="trigger-profile-category">{triggerCategoryLabel(trigger.name)}</span>
                   <span className={`trigger-profile-status ${satisfied ? "satisfied" : "unsatisfied"}`}>
-                    {satisfied ? "Satisfied now" : "Not satisfied"}
+                    <InfoTooltip
+                      underline={false}
+                      text={
+                        satisfied
+                          ? "This trigger's condition is true right now, based on the latest factor snapshot."
+                          : "This trigger's condition is not currently true for this symbol."
+                      }
+                    >
+                      {satisfied ? "Satisfied now" : "Not satisfied"}
+                    </InfoTooltip>
                   </span>
                 </div>
                 {realStats.length === 0 ? (
@@ -167,7 +191,12 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
                   <div className="trigger-profile-stats">
                     {realStats.map((s) => (
                       <span key={s.horizon_days} className="trigger-profile-stat">
-                        {s.horizon_days}d: {pct(s.win_rate ?? 0, 0)} win rate ({s.sample_size} samples), avg{" "}
+                        <InfoTooltip
+                          text={`Backtested outcomes across every historical fire of this trigger, looking ${s.horizon_days} trading day${s.horizon_days === 1 ? "" : "s"} ahead: the share of fires that were profitable, and the average return.`}
+                        >
+                          {s.horizon_days}d
+                        </InfoTooltip>
+                        : {pct(s.win_rate ?? 0, 0)} win rate ({s.sample_size} samples), avg{" "}
                         {pct(s.avg_return ?? 0)}
                       </span>
                     ))}

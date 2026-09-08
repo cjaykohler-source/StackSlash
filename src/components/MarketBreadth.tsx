@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { InfoTooltip } from "./InfoTooltip";
+
+const METRIC_INFO = {
+  above200dma: "The share of the whole tracked universe currently trading above its own 200-day moving average — broader participation in an uptrend than any single index's own 200DMA status.",
+  advDec: "How many of the tracked symbols closed higher versus lower than the prior session — the day's actual tape action across the universe, not just one index.",
+  avgRet1w: "The average 1-week return across every tracked symbol — near-term momentum breadth.",
+};
 
 interface Breadth {
   pctAbove200dma: number | null;
@@ -160,19 +167,25 @@ export function MarketBreadth() {
   return (
     <div className="market-breadth">
       <div className="market-breadth-metric">
-        <span className="market-breadth-label">Above 200DMA</span>
+        <span className="market-breadth-label">
+          <InfoTooltip text={METRIC_INFO.above200dma}>Above 200DMA</InfoTooltip>
+        </span>
         <span className="market-breadth-value">
           {breadth.pctAbove200dma !== null ? pct(breadth.pctAbove200dma) : "—"}
         </span>
       </div>
       <div className="market-breadth-metric">
-        <span className="market-breadth-label">Advancers / Decliners</span>
+        <span className="market-breadth-label">
+          <InfoTooltip text={METRIC_INFO.advDec}>Advancers / Decliners</InfoTooltip>
+        </span>
         <span className={`market-breadth-value ${netAdvancers > 0 ? "up" : netAdvancers < 0 ? "down" : ""}`}>
           {breadth.advancers} / {breadth.decliners}
         </span>
       </div>
       <div className="market-breadth-metric">
-        <span className="market-breadth-label">Avg 1-Week Return</span>
+        <span className="market-breadth-label">
+          <InfoTooltip text={METRIC_INFO.avgRet1w}>Avg 1-Week Return</InfoTooltip>
+        </span>
         <span className={`market-breadth-value ${(breadth.avgRet1w ?? 0) > 0 ? "up" : (breadth.avgRet1w ?? 0) < 0 ? "down" : ""}`}>
           {breadth.avgRet1w !== null ? pct(breadth.avgRet1w) : "—"}
         </span>

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { triggerLabel, triggerCategoryLabel } from "../lib/triggerInfo";
+import { triggerLabel, triggerCategoryLabel, TRIGGER_INFO } from "../lib/triggerInfo";
 import { computeConfluence } from "../lib/confluence";
+import { InfoTooltip } from "./InfoTooltip";
 
 interface FeedRow {
   id: number;
@@ -42,6 +43,13 @@ function dayLabel(key: string): string {
     day: "numeric",
   });
 }
+
+const STATUS_INFO: Record<string, string> = {
+  new: "Trigger just fired — dossier generation and alerting haven't run yet.",
+  dossier_ready: "The trigger's supporting evidence (dossier) has been assembled.",
+  alerted: "A Discord alert went out for this fire.",
+  dismissed: "This fire was manually dismissed and won't generate further downstream action.",
+};
 
 function timeOnly(iso: string): string {
   return new Date(iso).toLocaleTimeString([], {
@@ -175,10 +183,24 @@ export function TriggerFeed() {
                         </span>
                       )}
                     </td>
-                    <td>{row.triggers?.name ? triggerLabel(row.triggers.name) : row.trigger_id}</td>
+                    <td>
+                      {row.triggers?.name && TRIGGER_INFO[row.triggers.name]?.summary ? (
+                        <InfoTooltip text={TRIGGER_INFO[row.triggers.name]!.summary}>
+                          {triggerLabel(row.triggers.name)}
+                        </InfoTooltip>
+                      ) : (
+                        (row.triggers?.name ? triggerLabel(row.triggers.name) : row.trigger_id)
+                      )}
+                    </td>
                     <td className="col-category">{row.triggers?.name ? triggerCategoryLabel(row.triggers.name) : "—"}</td>
                     <td>
-                      <span className={`status status-${row.status}`}>{row.status}</span>
+                      {STATUS_INFO[row.status] ? (
+                        <InfoTooltip underline={false} text={STATUS_INFO[row.status]}>
+                          <span className={`status status-${row.status}`}>{row.status}</span>
+                        </InfoTooltip>
+                      ) : (
+                        <span className={`status status-${row.status}`}>{row.status}</span>
+                      )}
                     </td>
                   </tr>
                   );

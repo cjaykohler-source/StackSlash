@@ -1,5 +1,6 @@
-import { triggerLabel, humanize } from "../lib/triggerInfo";
+import { triggerLabel, humanize, TRIGGER_INFO } from "../lib/triggerInfo";
 import { pct, FIELD_META, HIDDEN_FIELDS } from "../lib/factorFormat";
+import { InfoTooltip } from "./InfoTooltip";
 
 // Deliberately a narrow structural type rather than importing the full
 // Dossier from lib/types — this only needs these four fields, and
@@ -53,6 +54,7 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
   };
 
   const displayLabel = analysis.trigger ? triggerLabel(analysis.trigger) : "Unknown trigger";
+  const triggerSummary = analysis.trigger ? TRIGGER_INFO[analysis.trigger]?.summary : undefined;
 
   const fields = Object.entries(analysis.fired_on ?? {}).filter(([key]) => !HIDDEN_FIELDS.has(key));
 
@@ -60,7 +62,9 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
     <div className="dossier-card">
       <div className="dossier-card-header">
         <div>
-          <div className="dossier-trigger-name">{displayLabel}</div>
+          <div className="dossier-trigger-name">
+            {triggerSummary ? <InfoTooltip text={triggerSummary}>{displayLabel}</InfoTooltip> : displayLabel}
+          </div>
           <div className="dossier-timestamp">{new Date(dossier.ts).toLocaleString()}</div>
         </div>
         <div className="dossier-score" title="Conviction score">
@@ -76,7 +80,9 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
             const formatted = value === null || value === undefined ? "—" : (meta?.format(value) ?? String(value));
             return (
               <div className="dossier-metric" key={key}>
-                <span className="dossier-metric-label">{label}</span>
+                <span className="dossier-metric-label">
+                  {meta?.description ? <InfoTooltip text={meta.description}>{label}</InfoTooltip> : label}
+                </span>
                 <span className="dossier-metric-value">{formatted}</span>
               </div>
             );
