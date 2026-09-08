@@ -445,7 +445,7 @@ netlify/functions/
   quotes.ts               GET ?symbols=A,B,C -> { A: {price, changePct} }
                            from Alpaca snapshots; changePct is since
                            today's open. Feeds the UI's per-symbol quote
-                           tags. One batched call, 30s edge cache.
+                           tags. Chunked (120/call), 30s edge cache.
   lib/
     supabaseAdmin.ts       Service-role client (server-only, bypasses RLS)
     alpaca.ts               Alpaca REST client — bars, snapshots, asset
