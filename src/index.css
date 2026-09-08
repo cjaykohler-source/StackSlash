@@ -541,6 +541,21 @@ body {
   color: var(--green);
   white-space: nowrap;
 }
+.confluence-badge-high {
+  background: rgba(231, 76, 60, 0.18);
+  color: var(--red);
+}
+.confluence-badge-subfive {
+  background: var(--amber);
+  color: #04121f;
+  letter-spacing: 0.03em;
+}
+.trigger-feed-row-high td {
+  background: rgba(231, 76, 60, 0.06);
+}
+.trigger-feed-row-high td:first-child {
+  box-shadow: inset 3px 0 0 var(--red);
+}
 .quote-tag {
   margin-left: 8px;
   font-size: 0.8rem;
@@ -926,6 +941,10 @@ h1 .quote-tag {
   font-weight: 700;
   letter-spacing: 0.04em;
   vertical-align: 1px;
+}
+.dossier-priority-badge-subprice {
+  background: var(--amber);
+  color: #04121f;
 }
 .dossier-confluence {
   color: var(--text-dim);

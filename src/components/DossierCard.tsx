@@ -49,6 +49,8 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
     ticker?: string;
     priority?: "normal" | "high";
     confluence?: { count: number; direction: "long" | "short"; triggers: string[] } | null;
+    price?: number | null;
+    sub_price_flag?: boolean;
     fired_on?: Record<string, unknown>;
     note?: string; // legacy placeholder-era dossiers only
     historical?: HistoricalStats;
@@ -59,17 +61,27 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
   const triggerSummary = analysis.trigger ? TRIGGER_INFO[analysis.trigger]?.summary : undefined;
   const confluence = analysis.confluence ?? null;
   const isHighPriority = analysis.priority === "high";
+  const subPrice = analysis.sub_price_flag === true;
 
   const fields = Object.entries(analysis.fired_on ?? {}).filter(([key]) => !HIDDEN_FIELDS.has(key));
 
   return (
-    <div className={`dossier-card${isHighPriority ? " dossier-card-high" : ""}`}>
+    <div className={`dossier-card${isHighPriority || subPrice ? " dossier-card-high" : ""}`}>
       <div className="dossier-card-header">
         <div>
           <div className="dossier-trigger-name">
             {isHighPriority && (
               <InfoTooltip text="Three or more independent triggers fired for this symbol in the same direction within the confluence window — the strongest class of signal this scanner produces.">
                 <span className="dossier-priority-badge">HIGH PRIORITY</span>
+              </InfoTooltip>
+            )}
+            {subPrice && (
+              <InfoTooltip
+                text={`Trading under $5${analysis.price != null ? ` (at $${analysis.price.toFixed(2)})` : ""} when this fired — flagged as extra high priority.`}
+              >
+                <span className="dossier-priority-badge dossier-priority-badge-subprice">
+                  UNDER $5
+                </span>
               </InfoTooltip>
             )}
             {triggerSummary ? <InfoTooltip text={triggerSummary}>{displayLabel}</InfoTooltip> : displayLabel}
