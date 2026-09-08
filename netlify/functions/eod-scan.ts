@@ -91,9 +91,19 @@ export default async () => {
     const tickers = symbols.map((s) => s.ticker);
     const byTicker = new Map(symbols.map((s) => [s.ticker, s.id] as const));
 
-    // --- 1. Fetch bars (last ~260 trading days is enough for 12-1 momentum + 200dma) ---
+    // --- 1. Fetch only RECENT bars from Alpaca, then load the rest of the
+    // factor window from bars_daily. At ~5,000 symbols a 400-day pull is
+    // ~1,600 Alpaca requests every run — it reliably 429s. The historical
+    // window is already in bars_daily (backfill-history + prior runs), so
+    // this only needs to catch up the last few sessions. FACTOR_WINDOW is
+    // what computeFactors reads (from the DB in step 2b).
+    const RECENT_FETCH_DAYS = 12;
+    const FACTOR_WINDOW_DAYS = 400;
     const end = new Date().toISOString().slice(0, 10);
-    const start = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const start = new Date(Date.now() - RECENT_FETCH_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const factorWindowStart = new Date(Date.now() - FACTOR_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
 
     // Alpaca allows up to a few hundred symbols per request; chunk to be
     // safe. Chunks run concurrently — pagination *within* a chunk has to
@@ -143,11 +153,11 @@ export default async () => {
     }
 
     const chunkResults = await mapWithConcurrency(chunks, 3, fetchChunk);
-    const barsBySymbol = new Map<string, Bar[]>(chunkResults.flat());
+    const recentBarsBySymbol = new Map<string, Bar[]>(chunkResults.flat());
 
-    // --- 2. Upsert bars_daily ---
+    // --- 2. Upsert the fresh recent bars ---
     const barRows = [];
-    for (const [ticker, bars] of barsBySymbol.entries()) {
+    for (const [ticker, bars] of recentBarsBySymbol.entries()) {
       const symbolId = byTicker.get(ticker);
       if (!symbolId) continue;
       for (const b of bars) {
@@ -171,16 +181,38 @@ export default async () => {
       if (error) throw error;
     }
 
+    // --- 2b. Load the full factor window from bars_daily ---
+    // (the recent Alpaca pull above is just the last few sessions; the
+    // 400-day history computeFactors needs lives in the DB now).
+    const today = end;
+    const barsBySymbolId = new Map<number, Bar[]>();
+    {
+      const PAGE = 1000;
+      let from = 0;
+      for (;;) {
+        const { data, error } = await db
+          .from("bars_daily")
+          .select("symbol_id, date, close, volume")
+          .gte("date", factorWindowStart)
+          .order("symbol_id", { ascending: true })
+          .order("date", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        if (!data?.length) break;
+        for (const r of data as { symbol_id: number; date: string; close: number; volume: number }[]) {
+          const list = barsBySymbolId.get(r.symbol_id);
+          const bar = { date: r.date, close: Number(r.close), volume: Number(r.volume) };
+          if (list) list.push(bar);
+          else barsBySymbolId.set(r.symbol_id, [bar]);
+        }
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+    }
+
     // --- 3. Compute factor_state via the shared dailySnapshot module ---
     // (also used by backtest-triggers.ts, so live behavior and backtested
     // "expectancy" numbers can't silently drift apart — see its own comment.)
-    const today = end;
-    const barsBySymbolId = new Map<number, Bar[]>();
-    for (const [ticker, bars] of barsBySymbol.entries()) {
-      const symbolId = byTicker.get(ticker);
-      if (symbolId) barsBySymbolId.set(symbolId, bars);
-    }
-
     const factorsBySymbolId = computeFactors(barsBySymbolId);
     const factorRows: Record<string, unknown>[] = [];
     for (const [symbolId, fields] of factorsBySymbolId.entries()) {
@@ -194,13 +226,17 @@ export default async () => {
       if (bars.length) priceBySymbolId.set(symbolId, bars[bars.length - 1].close);
     }
 
-    if (factorRows.length) {
-      const { error } = await db.from("factor_state").upsert(factorRows, { onConflict: "symbol_id,as_of" });
+    // Batched — ~5,000 rows at the full universe scale.
+    for (let i = 0; i < factorRows.length; i += UPSERT_BATCH) {
+      const { error } = await db
+        .from("factor_state")
+        .upsert(factorRows.slice(i, i + UPSERT_BATCH), { onConflict: "symbol_id,as_of" });
       if (error) throw error;
     }
 
     // --- 4. Regime state, off the first configured index-like symbol if present, else skip ---
-    const spyBars = barsBySymbol.get("SPY");
+    const spyId = byTicker.get("SPY");
+    const spyBars = spyId ? barsBySymbolId.get(spyId) : undefined;
     const regimeFields = computeRegime(spyBars);
     if (regimeFields) {
       await db.from("regime_state").upsert(

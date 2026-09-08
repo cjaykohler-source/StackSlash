@@ -75,5 +75,8 @@
 [functions."prune-trigger-evaluations"]
   schedule = "45 21 * * 1-5"
 
+[functions."prune-bars-daily"]
+  schedule = "50 21 * * 1-5"
+
 [functions."weekly-bars-scan"]
   schedule = "0 6 * * 1"

@@ -65,7 +65,11 @@ async function fetchBars(
   // any other non-OK status still fails fast since that's a real error,
   // not a transient limit.
   let lastError: string | undefined;
-  for (let attempt = 0; attempt < 5; attempt++) {
+  // 8 attempts, backoff capped at 20s → ~90s of total patience. Alpaca's
+  // free tier is 200 req/min and the scheduled jobs alone can sit near
+  // that during market hours; a burst from eod-scan / backfill needs to
+  // ride out more than a few seconds of 429s at the ~5,000-symbol scale.
+  for (let attempt = 0; attempt < 8; attempt++) {
     const res = await fetch(url, { headers: authHeaders() });
     if (res.ok) {
       const json = (await res.json()) as {
@@ -78,7 +82,7 @@ async function fetchBars(
       throw new Error(`Alpaca bars request failed: ${res.status} ${await res.text()}`);
     }
     lastError = await res.text();
-    await sleep(2 ** attempt * 1000);
+    await sleep(Math.min(2 ** attempt * 1000, 20_000));
   }
   throw new Error(`Alpaca bars request failed: 429 ${lastError} (exhausted retries)`);
 }
@@ -152,6 +156,17 @@ export async function fetchIntradayBars(
   pageToken?: string,
 ): Promise<{ bars: Record<string, DailyBar[]>; nextPageToken: string | null }> {
   return fetchBars(symbols, "1Min", date, date, pageToken);
+}
+
+/** 1-minute bars over a date range — used by session-bars.ts to grab the
+ *  most recent trading session for a symbol on demand. */
+export async function fetchIntradayBarsRange(
+  symbols: string[],
+  start: string, // YYYY-MM-DD
+  end: string, // YYYY-MM-DD
+  pageToken?: string,
+): Promise<{ bars: Record<string, DailyBar[]>; nextPageToken: string | null }> {
+  return fetchBars(symbols, "1Min", start, end, pageToken);
 }
 
 /** Latest trade/quote snapshot for a batch of symbols — used by intraday-scan. */

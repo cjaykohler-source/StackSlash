@@ -49,32 +49,37 @@ improved returns; raw expected value is misleading for skewed payoffs
 | Auth | Single Supabase Auth user, `cjaykohler@gmail.com` | Working |
 | Realtime outlier worker (`worker/`) | Running via `launchd` on the always-on Mac mini (hostname `stackslash-worker-host`, serial `QLPQFQPRXP`) | Redeployed 2026-09-08 on the confluence-gate code; watches the top ~28 by liquidity + any tracked symbols (Alpaca free IEX websocket caps subscriptions ~30 — it can't watch the whole universe). Fires route through `confluence-gate`, verified via `pending_fires` |
 
-Current DB snapshot (live query, not from memory):
-**1,911 active symbols**, 2,222,635 `bars_daily` rows (443 MB total DB
-size), 9 enabled triggers, 228 `trigger_events`, 27 `trigger_stats`
-rows, 21 open `shadow_positions`.
+Current DB snapshot: **~5,000 active symbols** (NYSE 1,744 + NASDAQ 3,024
++ AMEX 231), `bars_daily` held to a rolling ~18-month window (Supabase
+free plan, 500 MB — see below), 9 enabled triggers.
 
-### Universe — S&P 500 + NYSE common stock (grown from 8 → 512 → 1,911 across this project's history)
+### Universe — NYSE + NASDAQ + AMEX common stock (grown 8 → 512 → 1,911 → ~5,000)
 
-The universe started at 8 hand-picked tickers, was expanded to the full
-S&P 500 (512 symbols) in an earlier session, and most recently to
-**all NYSE-listed common stock** (1,399 additional symbols, ingested
-this session).
+Started at 8 hand-picked tickers → full S&P 500 (512) → all NYSE-listed
+common stock (1,911 total) → **NASDAQ + NYSE American added** (2,858 +
+230 more, 2026-09-08). `symbols.exchange` records the listing venue.
+
+**Storage tradeoff:** the free Supabase plan caps the database at 500 MB.
+A 5-year daily history for ~5,000 symbols doesn't fit, so `bars_daily` /
+`bars_weekly` were pruned to a rolling ~18 months (from 2025-03-01) and
+`prune-bars-daily.ts` (scheduled) holds that window. Consequences: the
+symbol chart's "Max" range is ~18 months, and `backtest-triggers` runs
+on ~1 evaluable year (after the 252-day factor warmup) instead of ~4.
+Momentum ranking and all live triggers are unaffected. A Supabase Pro
+upgrade ($25/mo, 8 GB) would restore the full 5-year depth.
 
 **Data quality caveat, by design, not an oversight:** Alpaca's asset API
 has no security-type field anywhere — common stock, ETFs, closed-end
 funds, SPAC shells, LPs, and preferred shares are all indistinguishable
-except by parsing the company name string. The NYSE ingestion used a
+except by parsing the company name string. The NYSE and the later NASDAQ/AMEX ingestions both used a
 best-effort name-keyword filter (excludes "preferred", "fund", "trust",
-"etf", "acquisition corp", "merger corp", bond/note/certificate
-language, etc.) that got ~1,737 of 2,924 raw NYSE assets down to
-plausible common stock. It's known to still leak a small number of
-edge cases (e.g. one structured-note ticker slipped through) and could
-theoretically exclude a legitimate name that happens to match a filter
-keyword. The user explicitly chose to ship this heuristic list over
-pausing to add a proper security-master data vendor — see chat history
-for that decision. `symbols.name` is populated for all 1,911 via
-Alpaca's asset endpoint (that part is reliable, unlike security type).
+"etf"/"etn", "acquisition corp"/"merger corp", warrant/right/unit,
+bond/note/debenture/certificate language, a "N%" coupon, etc.). It's
+known to still leak a small number of edge cases and could theoretically
+exclude a legitimate name that matches a keyword. The user chose to ship
+this heuristic list over adding a proper security-master data vendor.
+`symbols.name` and `symbols.exchange` come from Alpaca's asset endpoint
+(reliable, unlike security type).
 
 One known real gap: **`BRK.A`** (Berkshire Hathaway Class A) returns
 zero bars from Alpaca's free IEX feed at any date range tested —
@@ -347,9 +352,10 @@ Backlog (research-identified, not started):
     now (component kept, just not rendered — see `Dashboard.tsx`); it had
     first been moved to a cached + manual-refresh load.
 21. **Dashboard live sidebar + feed rework.** `TopMovers` (right-hand
-    column): the day's Top-20 gainers / Top-20 losers via the
+    column): the day's Top-35 gainers / Top-35 losers via the
     `top_movers()` Postgres RPC over `bars_intraday` (% from the open,
-    ~1-min refresh, no Alpaca call, ~900-name coverage).
+    5-min refresh, no Alpaca call — coverage = intraday-bars-scan's
+    priority set).
     **Trigger feed** now merges two sources — the confluence gate's
     promoted cluster events (`trigger_events`) *and* un-promoted
     single-trigger fires (`pending_fires`, shown with a `pending` status).
@@ -380,6 +386,13 @@ Backlog (research-identified, not started):
     `tracked_symbols` is the first client-writable table — RLS
     `to authenticated` for select/insert/delete, single-user trust model.
     `useQuotes` gained an optional `pollMs`.
+24. **NASDAQ + AMEX added** (`symbols.exchange` column; 2,858 NASDAQ +
+    230 AMEX new symbols → ~5,000 total). To fit the free 500 MB Supabase
+    plan, `bars_daily` / `bars_weekly` were pruned to a rolling ~18 months
+    (from 2025-03-01) and `prune-bars-daily.ts` (scheduled) holds that
+    window; the chart's "Max" range and the backtest window shrank to
+    match. `quotes.ts` also gained chunked fetching (the feed asks for
+    300+ tickers at once) and the feed hides any row it can't price.
 
 ## Stack
 
@@ -410,13 +423,15 @@ src/                      Frontend (Vite + React + Supabase client)
                            snapshot.confluence.
 
 netlify/functions/
-  eod-scan.ts             Job A — daily bars, factor_state, momentum ranking,
+  eod-scan.ts             Job A — factor_state, momentum ranking,
                            regime_state, non-technical/non-exit trigger
                            evaluation, shadow_positions open/close. Fires go
-                           through the confluence gate (see below), not
-                           straight to trigger_events. Scheduled ~30min
-                           after close. Confirmed clean at the full
-                           ~1,911-symbol scale (2026-09-08).
+                           through the confluence gate, not straight to
+                           trigger_events. Scheduled ~30min after close.
+                           At ~5,000 symbols it fetches only the last ~12
+                           sessions from Alpaca (a 400-day pull was ~1,600
+                           requests and reliably 429'd) and reads the rest
+                           of the factor window from bars_daily.
   confluence-gate.ts     HTTP entry point for lib/confluenceGate.ts — used
                            by the realtime worker (which can't import the
                            lib). eod-scan / intraday-scan call the lib
@@ -425,14 +440,23 @@ netlify/functions/
                            evaluates technical-category triggers only, on that
                            candidate set only, cooldown-gated. Scheduled every
                            10min during market hours.
-  intraday-bars-scan.ts   1-min bars, whole active universe, every 5min
-                           during market hours — populates the Day chart range.
+  intraday-bars-scan.ts   1-min bars every 5min during market hours for a
+                           PRIORITY set only (tracked symbols + today's
+                           feed symbols + top ~300 by dollar volume, cap
+                           1200) — a full ~5,000-symbol 1-min pull every
+                           5min is thousands of Alpaca requests. Symbols
+                           outside the set have no intraday history; the
+                           Day chart and tracking cards fall back to daily.
   onboard-symbol.ts       On-demand symbol onboarding (search box) — validates
                            via Alpaca, backfills history, runs eod-scan
                            in-process so the new symbol gets real
                            cross-sectionally-ranked factors immediately.
-  backfill-history.ts     Manually-triggered deep historical pull (default:
-                           5 years back) for the 5-Year chart range.
+  backfill-history.ts     Manually-triggered historical pull for the chart
+                           range (`{start,tickers}` body; default 5y back,
+                           but the retention window is ~18mo now).
+  prune-bars-daily.ts     Scheduled daily — trims bars_daily / bars_weekly
+                           to a rolling ~550-day window so the ~5,000-symbol
+                           universe fits the free 500 MB Supabase plan.
   backtest-triggers.ts    Manually-triggered: replays every backtestable
                            trigger against 5yr history, writes trigger_stats.
   deep-dive.ts            Job C — HTTP-triggered by a Postgres trigger on

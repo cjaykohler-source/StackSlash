@@ -9,15 +9,16 @@ interface Mover {
   bucket: "gainer" | "loser";
 }
 
-const REFRESH_MS = 60_000;
+const REFRESH_MS = 5 * 60_000; // matches intraday-bars-scan's 5-min cadence
+const TOP_N = 35;
 
 /**
- * Live dashboard sidebar: the day's 20 biggest gainers and 20 biggest
+ * Live dashboard sidebar: the day's 35 biggest gainers and 35 biggest
  * losers across the tracked universe, % measured from today's open (same
  * basis as the per-symbol quote tags). Data comes straight from the
  * `top_movers()` Postgres function over `bars_intraday` — no Alpaca call —
- * so it's only as complete as that day's intraday coverage (~900 of the
- * more liquid names) and refreshes every minute.
+ * so it's only as complete as that day's intraday coverage, and refreshes
+ * every 5 minutes (the rate the underlying bars_intraday data updates).
  */
 export function TopMovers() {
   const [movers, setMovers] = useState<Mover[] | null>(null);
@@ -27,7 +28,7 @@ export function TopMovers() {
     let cancelled = false;
 
     async function load() {
-      const { data, error } = await supabase.rpc("top_movers", { n: 20 });
+      const { data, error } = await supabase.rpc("top_movers", { n: TOP_N });
       if (cancelled) return;
       if (error) {
         setFailed(true);
