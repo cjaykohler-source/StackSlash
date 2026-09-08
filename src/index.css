@@ -901,11 +901,17 @@ h1 .quote-tag {
 }
 .trigger-profile-stats {
   margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
   font-size: 0.8rem;
   color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.trigger-profile-sep {
+  color: var(--border);
+  margin: 0 2px;
+}
+.trigger-profile-stat + .trigger-profile-stat .trigger-profile-sep:first-child {
+  margin: 0 6px;
 }
 .trigger-profile-note {
   margin: 6px 0 0;
