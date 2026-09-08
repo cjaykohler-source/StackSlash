@@ -362,9 +362,9 @@ Backlog (research-identified, not started):
     `tracked_symbols` was in it — the feed had only ever refreshed on
     mount).
 23. **Alert exclusion list** (`symbols.alert_excluded`). Flagged symbols
-    — seeded with 22 mega-cap blue chips (NVDA, MSFT, AAPL, AMZN, GOOGL,
-    GOOG, META, TSLA, AVGO, BRK.B, LLY, JPM, V, WMT, MA, XOM, JNJ, PG,
-    HD, COST, ORCL, NFLX) — never produce a promoted `trigger_event`,
+    — seeded with SPY + 22 mega-cap blue chips (NVDA, MSFT, AAPL, AMZN,
+    GOOGL, GOOG, META, TSLA, AVGO, BRK.B, LLY, JPM, V, WMT, MA, XOM, JNJ,
+    PG, HD, COST, ORCL, NFLX) — never produce a promoted `trigger_event`,
     dossier, Discord alert, or feed row, and the realtime worker skips
     streaming them. One-liner to edit:
     `update symbols set alert_excluded = <bool> where ticker = 'XYZ'`
