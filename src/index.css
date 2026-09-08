@@ -523,6 +523,29 @@ body {
   color: var(--green);
   white-space: nowrap;
 }
+.quote-tag {
+  margin-left: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+.quote-tag.up {
+  color: var(--green);
+}
+.quote-tag.down {
+  color: var(--red);
+}
+.quote-tag-sep {
+  opacity: 0.45;
+  font-weight: 400;
+  margin: 0 1px;
+}
+h1 .quote-tag {
+  font-size: 0.55em;
+  vertical-align: middle;
+}
 .confluence-banner {
   background: rgba(46, 204, 113, 0.1);
   border: 1px solid var(--green);

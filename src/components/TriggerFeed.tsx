@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { triggerLabel, triggerCategoryLabel, TRIGGER_INFO } from "../lib/triggerInfo";
 import { InfoTooltip } from "./InfoTooltip";
+import { QuoteTag, useQuotes } from "./QuoteTag";
 
 interface ConfluenceMeta {
   count: number;
@@ -114,6 +115,8 @@ export function TriggerFeed() {
     };
   }, []);
 
+  const quotes = useQuotes(rows.map((r) => r.symbols?.ticker ?? "").filter(Boolean));
+
   const groups = useMemo<DayGroup[]>(() => {
     const byDay = new Map<string, FeedRow[]>();
     for (const row of rows) {
@@ -174,6 +177,7 @@ export function TriggerFeed() {
                       <Link to={`/symbol/${row.symbols?.ticker ?? row.symbol_id}`}>
                         {row.symbols?.ticker ?? row.symbol_id}
                       </Link>
+                      {row.symbols?.ticker && <QuoteTag quote={quotes.get(row.symbols.ticker)} />}
                       {isHigh ? (
                         <span
                           className="confluence-badge confluence-badge-high"

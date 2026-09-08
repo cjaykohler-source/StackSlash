@@ -330,9 +330,14 @@ Backlog (research-identified, not started):
     same-direction triggers cluster on a symbol inside a ~30h window, and
     a ≥3 cluster is tagged `HIGH PRIORITY`. Also: `trigger_stats` re-run
     against the full universe; the two field-label tweaks
-    (`200-DAY MAΔ`, `BMP 6MO`); `MarketBreadth` moved to a cached +
-    manual-refresh load instead of recomputing on every dashboard mount;
-    `src/lib/confluence.ts` (client-side confluence) retired.
+    (`200-DAY MAΔ`, `BMP 6MO`); `src/lib/confluence.ts` (client-side
+    confluence) retired.
+20. **Per-symbol quote tags** (`quotes.ts` function → Alpaca snapshots,
+    `QuoteTag.tsx` + `useQuotes`) — `$price | ±x%` (since the open, green
+    up / red down) next to every ticker in the trigger feed and on the
+    symbol page. The `MarketBreadth` panel was pulled off the dashboard
+    for now (component kept, just not rendered — see `Dashboard.tsx`); it
+    had first been moved to a cached + manual-refresh load.
 
 ## Stack
 
@@ -347,7 +352,8 @@ Backlog (research-identified, not started):
 src/                      Frontend (Vite + React + Supabase client)
   pages/                  Login, Dashboard, SymbolDetail, Reports, About
   components/             AuthGuard, RegimeBanner, TriggerFeed, DossierCard,
-                           SymbolSearch, SymbolProfile, MarketBreadth,
+                           SymbolSearch, SymbolProfile, QuoteTag (+useQuotes),
+                           MarketBreadth (built, not currently rendered),
                            InfoTooltip, ProximityBar, CompanyDescription
   lib/                    Supabase client, shared TS types, triggerEval.ts
                            (client-side port of triggers.ts, display-only),
@@ -392,6 +398,10 @@ netlify/functions/
                            dispatches an alert; tags 'high' priority
                            (3+ confluent triggers) in the Discord message.
   send-alert.ts           Manual/test alert dispatch for an existing dossier.
+  quotes.ts               GET ?symbols=A,B,C -> { A: {price, changePct} }
+                           from Alpaca snapshots; changePct is since
+                           today's open. Feeds the UI's per-symbol quote
+                           tags. One batched call, 30s edge cache.
   lib/
     supabaseAdmin.ts       Service-role client (server-only, bypasses RLS)
     alpaca.ts               Alpaca REST client — bars, snapshots, asset
@@ -489,8 +499,10 @@ blended across the cluster; `trigger_stats` re-run against the
 1,911-symbol universe on 2026-09-08 — momentum win rates came down
 noticeably vs the S&P-500-only run, ~0.55 → ~0.53, the bigger/noisier
 universe diluting the edge); symbol search/on-demand onboarding; per-symbol profile
-workups with live proximity bars; PNG performance reports; market
-breadth; hover tooltips; company name/description.
+workups with live proximity bars; PNG performance reports; per-symbol
+`$price | ±x%` quote tags (feed + symbol page); hover tooltips; company
+name/description. (Market breadth is built but pulled from the dashboard
+for now.)
 
 **Placeholder / not yet built:** `factor_state.sue`/`est_revision_30d`/
 `book_to_market` etc. never populated (no fundamentals vendor) —
