@@ -4,6 +4,7 @@ import { fetchDailyBars } from "./lib/alpaca";
 import { type Bar } from "./lib/indicators";
 import { computeFactors, computeRegime } from "./lib/dailySnapshot";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
+import { filterByCooldown } from "./lib/cooldown";
 
 /**
  * Job A — EOD cross-sectional scan.
@@ -181,6 +182,7 @@ export default async () => {
       .neq("category", "exit");
     if (trigErr) throw trigErr;
     const triggerNameById = new Map((triggers ?? []).map((t) => [t.id, t.name] as const));
+    const cooldownByTriggerId = new Map((triggers ?? []).map((t) => [t.id, t.cooldown_minutes] as const));
 
     const { data: regime } = await db
       .from("regime_state")
@@ -189,7 +191,7 @@ export default async () => {
       .maybeSingle();
 
     const evaluations: Record<string, unknown>[] = [];
-    const fires: Record<string, unknown>[] = [];
+    const fires: { trigger_id: number; symbol_id: number; snapshot: unknown }[] = [];
 
     for (const row of factorRows) {
       const inputs: TriggerInputs = { ...row, risk_on: regime?.risk_on ?? null };
@@ -204,7 +206,7 @@ export default async () => {
         if (fired) {
           fires.push({
             trigger_id: trigger.id,
-            symbol_id: row.symbol_id,
+            symbol_id: row.symbol_id as number,
             snapshot: row,
           });
         }
@@ -217,16 +219,18 @@ export default async () => {
     }
 
     let insertedFires: { id: number; trigger_id: number; symbol_id: number }[] = [];
-    if (fires.length) {
-      // Cooldown check happens per-fire against the most recent event for
-      // that trigger+symbol; kept simple here (deep-dive/send-alert do the
-      // authoritative dedup against `alerts`). Insert all fires; downstream
-      // dedup prevents duplicate alerts within the cooldown window.
+    const coolableFires = await filterByCooldown(db, fires, cooldownByTriggerId);
+    if (coolableFires.length) {
+      // Real cooldown check against the most recent trigger_event for the
+      // same trigger+symbol (lib/cooldown.ts) — a fire still within its
+      // trigger's cooldown_minutes never reaches this insert at all, so a
+      // condition that's been true since the last real fire doesn't
+      // create a fresh trigger_event/dossier/alert every single scan run.
       // .select() to get back real ids — step 6 needs them to open shadow
       // positions pointing at the actual entry_trigger_event_id.
       const { data, error } = await db
         .from("trigger_events")
-        .insert(fires)
+        .insert(coolableFires)
         .select("id, trigger_id, symbol_id");
       if (error) throw error;
       insertedFires = data ?? [];

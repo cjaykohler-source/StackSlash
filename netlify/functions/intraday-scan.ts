@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 import { fetchSnapshots } from "./lib/alpaca";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
+import { filterByCooldown } from "./lib/cooldown";
 
 /**
  * Job B — intraday polling scan.
@@ -50,10 +51,11 @@ export default async () => {
 
     const { data: triggers, error: trigErr } = await db
       .from("triggers")
-      .select("id, definition")
+      .select("id, definition, cooldown_minutes")
       .eq("enabled", true)
       .eq("category", "technical");
     if (trigErr) throw trigErr;
+    const cooldownByTriggerId = new Map((triggers ?? []).map((t) => [t.id, t.cooldown_minutes] as const));
 
     const { data: regime } = await db
       .from("regime_state")
@@ -62,7 +64,7 @@ export default async () => {
       .maybeSingle();
 
     const evaluations: Record<string, unknown>[] = [];
-    const fires: Record<string, unknown>[] = [];
+    const fires: { trigger_id: number; symbol_id: number; snapshot: unknown }[] = [];
 
     for (const candidate of candidates) {
       const ticker = tickerBySymbolId.get(candidate.symbol_id);
@@ -96,8 +98,14 @@ export default async () => {
       const { error } = await db.from("trigger_evaluations").insert(evaluations);
       if (error) throw error;
     }
-    if (fires.length) {
-      const { error } = await db.from("trigger_events").insert(fires);
+    // Real cooldown check (lib/cooldown.ts) against the most recent
+    // trigger_event for the same trigger+symbol — see eod-scan.ts's own
+    // comment on this for why: a condition true since the last real fire
+    // shouldn't create a fresh trigger_event/dossier/alert on every
+    // 10-minute poll.
+    const coolableFires = await filterByCooldown(db, fires, cooldownByTriggerId);
+    if (coolableFires.length) {
+      const { error } = await db.from("trigger_events").insert(coolableFires);
       if (error) throw error;
     }
 
