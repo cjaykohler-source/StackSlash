@@ -509,6 +509,24 @@ body {
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
 }
+.trigger-feed th.col-num,
+.trigger-feed td.col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.trigger-feed td.col-num.up {
+  color: var(--green);
+}
+.trigger-feed td.col-num.down {
+  color: var(--red);
+}
+@media (max-width: 560px) {
+  .trigger-feed th.col-num,
+  .trigger-feed td.col-num {
+    display: none;
+  }
+}
 .trigger-feed a {
   color: var(--accent);
   text-decoration: none;
@@ -545,6 +563,83 @@ body {
 h1 .quote-tag {
   font-size: 0.55em;
   vertical-align: middle;
+}
+
+/* Dashboard two-column layout: feed left, live movers right. */
+.dashboard-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  align-items: start;
+}
+.dashboard-main {
+  min-width: 0;
+}
+@media (max-width: 1024px) {
+  .dashboard-body {
+    grid-template-columns: 1fr;
+  }
+}
+.top-movers {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.top-movers-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px 12px;
+}
+.top-movers-title {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+}
+.top-movers-empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+.top-movers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.top-movers-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.top-movers-row + .top-movers-row {
+  border-top: 1px solid var(--border);
+}
+.top-movers-ticker {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.top-movers-price {
+  color: var(--text-dim);
+}
+.top-movers-pct {
+  font-weight: 700;
+  min-width: 52px;
+  text-align: right;
+}
+.top-movers-pct.up {
+  color: var(--green);
+}
+.top-movers-pct.down {
+  color: var(--red);
 }
 .confluence-banner {
   background: rgba(46, 204, 113, 0.1);
