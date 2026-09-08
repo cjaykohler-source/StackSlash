@@ -186,13 +186,20 @@ export function TriggerFeed() {
   );
 
   const quotes = useQuotes(rows.map((r) => r.ticker ?? "").filter(Boolean));
+  const quotesReady = quotes.size > 0;
 
   const visibleRows = useMemo(() => {
     return rows.filter((row) => {
-      const q = row.ticker ? quotes.get(row.ticker) : undefined;
-      return !(q && q.price > MAX_PRICE);
+      if (!row.ticker) return true;
+      const q = quotes.get(row.ticker);
+      // Once quotes have loaded, a row we still can't price is almost
+      // always an illiquid/delisted name Alpaca has no snapshot for —
+      // hide it rather than let unpriced high-value listings slip past
+      // the $50 cap.
+      if (!q) return !quotesReady;
+      return q.price <= MAX_PRICE;
     });
-  }, [rows, quotes]);
+  }, [rows, quotes, quotesReady]);
 
   const groups = useMemo<DayGroup[]>(() => {
     const byDay = new Map<string, FeedRow[]>();
@@ -214,7 +221,7 @@ export function TriggerFeed() {
       </p>
     );
   }
-  if (loaded && visibleRows.length === 0) {
+  if (loaded && quotesReady && visibleRows.length === 0) {
     return <p className="empty-state">Nothing in the recent feed is trading at ${MAX_PRICE}/share or less.</p>;
   }
 
