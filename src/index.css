@@ -811,6 +811,10 @@ h1 .quote-tag {
   background: rgba(139, 147, 167, 0.15);
   color: var(--text-dim);
 }
+.status-pending {
+  background: rgba(139, 147, 167, 0.12);
+  color: var(--text-dim);
+}
 
 .symbol-profile {
   display: flex;

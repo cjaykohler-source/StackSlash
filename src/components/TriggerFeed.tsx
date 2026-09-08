@@ -5,11 +5,12 @@ import { triggerLabel, triggerCategoryLabel, TRIGGER_INFO } from "../lib/trigger
 import { InfoTooltip } from "./InfoTooltip";
 import { useQuotes } from "./QuoteTag";
 
-// Feed is deliberately a focused view: only symbols where >= 2 distinct
-// triggers cluster (what the confluence gate promotes) AND trading at
-// $50/share or less. Rows we can't price yet stay visible until a quote
-// lands. Anything triggering under $5 gets an extra high-priority flag.
-const MIN_CONFLUENCE = 2;
+// The feed shows every trigger fire — single-trigger fires (still sitting
+// in pending_fires, un-clustered) alongside the confluence-gate's
+// promoted cluster events. Rows are flagged by how many distinct triggers
+// agreed: 2 gets a badge, 3+ gets the high-priority treatment. Still
+// scoped to symbols trading at $50/share or less; under $5 gets its own
+// flag. Rows we can't price yet stay visible until a quote lands.
 const MAX_PRICE = 50;
 const SUB_PENNY_FLAG_PRICE = 5;
 
@@ -20,20 +21,20 @@ interface ConfluenceMeta {
 }
 
 interface FeedRow {
-  id: number;
+  key: string; // "e<id>" | "p<id>"
   ts: string;
-  status: string;
-  priority: "normal" | "high" | null;
   symbol_id: number;
-  trigger_id: number;
-  snapshot: { confluence?: ConfluenceMeta | null } | null;
-  symbols: { ticker: string } | null;
-  triggers: { name: string; category: string | null } | null;
+  ticker: string | null;
+  triggerName: string | null;
+  signalCount: number; // 1 = lone fire / exit, 2 / 3+ = confluence cluster
+  clusterTriggerNames: string[]; // for the badge tooltip when >= 2
+  priority: "normal" | "high" | null;
+  status: string; // "pending" for un-promoted single fires
 }
 
 interface DayGroup {
   key: string; // YYYY-MM-DD, local time
-  label: string; // e.g. "Friday, September 4, 2026"
+  label: string;
   rows: FeedRow[];
 }
 
@@ -45,9 +46,6 @@ function dayKey(iso: string): string {
 }
 
 function dayLabel(key: string): string {
-  // key is YYYY-MM-DD local; append a time so the Date constructor
-  // parses it in local time rather than UTC (avoiding an off-by-one-day
-  // display near midnight).
   return new Date(`${key}T00:00:00`).toLocaleDateString([], {
     weekday: "long",
     year: "numeric",
@@ -57,6 +55,7 @@ function dayLabel(key: string): string {
 }
 
 const STATUS_INFO: Record<string, string> = {
+  pending: "One trigger fired — no second, same-direction trigger has clustered with it yet, so no dossier or alert.",
   new: "Trigger just fired — dossier generation and alerting haven't run yet.",
   dossier_ready: "The trigger's supporting evidence (dossier) has been assembled.",
   alerted: "A Discord alert went out for this fire.",
@@ -74,53 +73,99 @@ function timeOnly(iso: string): string {
 
 /**
  * Live feed of fired triggers, grouped by day and updated in real time via
- * Supabase Realtime. This is the primary dashboard surface — the
- * "digging" the two-tier design promised: everything here already passed
- * a trigger, nothing here is the raw wide-net Tier-1 data.
+ * Supabase Realtime. This is the primary dashboard surface.
  *
- * Deliberately narrowed to a single view: rows where >= 2 distinct
- * triggers clustered (MIN_CONFLUENCE) AND the symbol trades at MAX_PRICE
- * ($20) or less. Older single-trigger events and momentum_exit events
- * (no confluence metadata) don't appear here. Price/change come from the
- * quote batch and are their own columns.
- *
- * Grouped into a collapsible section per day (native <details>, so it's
- * keyboard/accessible-tree friendly for free) since the timestamp column
- * only needs to show time-of-day once it's filed under its date's
- * heading. Today's section starts expanded; every other day starts
- * collapsed — most days won't have anything worth re-reading once
- * they're not "today" anymore.
+ * Two sources, merged by timestamp:
+ *  - `trigger_events` — the confluence gate's promoted cluster events
+ *    (one row per cluster) plus non-gated events like momentum_exit.
+ *  - `pending_fires` (un-promoted) — single trigger fires that haven't
+ *    clustered with anything.
+ * Price/change are their own columns; a symbol's signal count drives the
+ * 2-signal / 3+-signal flags.
  */
 export function TriggerFeed() {
-  const [rows, setRows] = useState<FeedRow[]>([]);
+  const [eventRows, setEventRows] = useState<FeedRow[]>([]);
+  const [pendingRows, setPendingRows] = useState<FeedRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [expandedDays, setExpandedDays] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      const { data } = await supabase
-        .from("trigger_events")
-        .select("id, ts, status, priority, symbol_id, trigger_id, snapshot, symbols(ticker), triggers(name, category)")
-        .order("ts", { ascending: false })
-        .limit(500);
+      const [eventsRes, pendingRes] = await Promise.all([
+        supabase
+          .from("trigger_events")
+          .select("id, ts, status, priority, symbol_id, trigger_id, snapshot, symbols(ticker), triggers(name)")
+          .order("ts", { ascending: false })
+          .limit(500),
+        supabase
+          .from("pending_fires")
+          .select("id, created_at, symbol_id, trigger_id, symbols(ticker), triggers(name)")
+          .is("promoted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(300),
+      ]);
       if (cancelled) return;
-      const loaded = (data as unknown as FeedRow[]) ?? [];
-      setRows(loaded);
-      // Only set the initial expanded-days default once, the first time
-      // data loads — otherwise a realtime refresh would silently
-      // re-collapse a day the user just opened.
+
+      type RawEvent = {
+        id: number;
+        ts: string;
+        status: string;
+        priority: "normal" | "high" | null;
+        symbol_id: number;
+        trigger_id: number;
+        snapshot: { confluence?: ConfluenceMeta | null } | null;
+        symbols: { ticker: string } | null;
+        triggers: { name: string } | null;
+      };
+      type RawPending = {
+        id: number;
+        created_at: string;
+        symbol_id: number;
+        symbols: { ticker: string } | null;
+        triggers: { name: string } | null;
+      };
+
+      const events: FeedRow[] = ((eventsRes.data as unknown as RawEvent[]) ?? []).map((r) => {
+        const conf = r.snapshot?.confluence ?? null;
+        const names = conf?.triggers.map((t) => t.name).filter((n): n is string => !!n) ?? [];
+        return {
+          key: `e${r.id}`,
+          ts: r.ts,
+          symbol_id: r.symbol_id,
+          ticker: r.symbols?.ticker ?? null,
+          triggerName: r.triggers?.name ?? null,
+          signalCount: conf?.count ?? 1,
+          clusterTriggerNames: names.length ? names : r.triggers?.name ? [r.triggers.name] : [],
+          priority: r.priority,
+          status: r.status,
+        };
+      });
+
+      const pending: FeedRow[] = ((pendingRes.data as unknown as RawPending[]) ?? []).map((r) => ({
+        key: `p${r.id}`,
+        ts: r.created_at,
+        symbol_id: r.symbol_id,
+        ticker: r.symbols?.ticker ?? null,
+        triggerName: r.triggers?.name ?? null,
+        signalCount: 1,
+        clusterTriggerNames: r.triggers?.name ? [r.triggers.name] : [],
+        priority: null,
+        status: "pending",
+      }));
+
+      setEventRows(events);
+      setPendingRows(pending);
+      setLoaded(true);
       setExpandedDays((prev) => prev ?? new Set([dayKey(new Date().toISOString())]));
     }
     load();
 
     const channel = supabase
-      .channel("trigger_events_feed")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "trigger_events" },
-        () => load(),
-      )
+      .channel("trigger_feed")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "trigger_events" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "pending_fires" }, () => load())
       .subscribe();
 
     return () => {
@@ -129,14 +174,17 @@ export function TriggerFeed() {
     };
   }, []);
 
-  const quotes = useQuotes(rows.map((r) => r.symbols?.ticker ?? "").filter(Boolean));
+  const rows = useMemo(
+    () => [...eventRows, ...pendingRows].sort((a, b) => (a.ts < b.ts ? 1 : -1)),
+    [eventRows, pendingRows],
+  );
+
+  const quotes = useQuotes(rows.map((r) => r.ticker ?? "").filter(Boolean));
 
   const visibleRows = useMemo(() => {
     return rows.filter((row) => {
-      if ((row.snapshot?.confluence?.count ?? 0) < MIN_CONFLUENCE) return false;
-      const q = row.symbols?.ticker ? quotes.get(row.symbols.ticker) : undefined;
-      if (q && q.price > MAX_PRICE) return false;
-      return true;
+      const q = row.ticker ? quotes.get(row.ticker) : undefined;
+      return !(q && q.price > MAX_PRICE);
     });
   }, [rows, quotes]);
 
@@ -149,20 +197,19 @@ export function TriggerFeed() {
       else byDay.set(key, [row]);
     }
     return [...byDay.entries()]
-      .sort(([a], [b]) => (a < b ? 1 : -1)) // newest day first
+      .sort(([a], [b]) => (a < b ? 1 : -1))
       .map(([key, dayRows]) => ({ key, label: dayLabel(key), rows: dayRows }));
   }, [visibleRows]);
 
-  if (rows.length === 0) {
-    return <p className="empty-state">No trigger events yet — once eod-scan and intraday-scan are running, fires will show up here live.</p>;
-  }
-  if (visibleRows.length === 0) {
+  if (loaded && rows.length === 0) {
     return (
       <p className="empty-state">
-        Nothing in the recent feed matches the current view (≥{MIN_CONFLUENCE} agreeing triggers, ${MAX_PRICE}/share or
-        less).
+        No trigger activity yet — fires will show up here live once eod-scan / intraday-scan / the realtime worker run.
       </p>
     );
+  }
+  if (loaded && visibleRows.length === 0) {
+    return <p className="empty-state">Nothing in the recent feed is trading at ${MAX_PRICE}/share or less.</p>;
   }
 
   function toggleDay(key: string, isOpen: boolean) {
@@ -201,62 +248,63 @@ export function TriggerFeed() {
               </thead>
               <tbody>
                 {group.rows.map((row) => {
-                  const confluenceCount = row.snapshot?.confluence?.count ?? 0;
-                  const isHigh = row.priority === "high";
-                  const quote = row.symbols?.ticker ? quotes.get(row.symbols.ticker) : undefined;
+                  const quote = row.ticker ? quotes.get(row.ticker) : undefined;
                   const pct = quote ? Number((quote.changePct * 100).toFixed(1)) : null;
                   const pctDir = pct === null ? "" : pct > 0 ? "up" : pct < 0 ? "down" : "";
                   const subFive = quote != null && quote.price < SUB_PENNY_FLAG_PRICE;
+                  const isHigh = row.priority === "high" || row.signalCount >= 3;
                   return (
-                  <tr key={row.id} className={isHigh || subFive ? "trigger-feed-row-high" : undefined}>
-                    <td>{timeOnly(row.ts)}</td>
-                    <td>
-                      <Link to={`/symbol/${row.symbols?.ticker ?? row.symbol_id}`}>
-                        {row.symbols?.ticker ?? row.symbol_id}
-                      </Link>
-                      <span
-                        className={`confluence-badge${isHigh ? " confluence-badge-high" : ""}`}
-                        title={
-                          isHigh
-                            ? `High priority — ${confluenceCount} independent triggers agreed`
-                            : `${confluenceCount} independent triggers agreed for this symbol`
-                        }
-                      >
-                        {confluenceCount} signals
-                      </span>
-                      {subFive && (
-                        <span
-                          className="confluence-badge confluence-badge-subfive"
-                          title={`Trading under $${SUB_PENNY_FLAG_PRICE}/share — flagged high priority`}
-                        >
-                          UNDER ${SUB_PENNY_FLAG_PRICE}
-                        </span>
-                      )}
-                    </td>
-                    <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
-                    <td className={`col-num ${pctDir}`}>
-                      {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
-                    </td>
-                    <td>
-                      {row.triggers?.name && TRIGGER_INFO[row.triggers.name]?.summary ? (
-                        <InfoTooltip text={TRIGGER_INFO[row.triggers.name]!.summary}>
-                          {triggerLabel(row.triggers.name)}
-                        </InfoTooltip>
-                      ) : (
-                        (row.triggers?.name ? triggerLabel(row.triggers.name) : row.trigger_id)
-                      )}
-                    </td>
-                    <td className="col-category">{row.triggers?.name ? triggerCategoryLabel(row.triggers.name) : "—"}</td>
-                    <td>
-                      {STATUS_INFO[row.status] ? (
-                        <InfoTooltip underline={false} text={STATUS_INFO[row.status]}>
+                    <tr key={row.key} className={isHigh || subFive ? "trigger-feed-row-high" : undefined}>
+                      <td>{timeOnly(row.ts)}</td>
+                      <td>
+                        <Link to={`/symbol/${row.ticker ?? row.symbol_id}`}>{row.ticker ?? row.symbol_id}</Link>
+                        {row.signalCount >= 2 && (
+                          <span
+                            className={`confluence-badge${row.signalCount >= 3 ? " confluence-badge-high" : ""}`}
+                            title={`${row.signalCount} independent triggers agreed: ${row.clusterTriggerNames
+                              .map((n) => triggerLabel(n))
+                              .join(", ")}`}
+                          >
+                            {row.signalCount >= 3 ? `${row.signalCount} signals` : "2 signals"}
+                          </span>
+                        )}
+                        {subFive && (
+                          <span
+                            className="confluence-badge confluence-badge-subfive"
+                            title={`Trading under $${SUB_PENNY_FLAG_PRICE}/share — flagged high priority`}
+                          >
+                            UNDER ${SUB_PENNY_FLAG_PRICE}
+                          </span>
+                        )}
+                      </td>
+                      <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
+                      <td className={`col-num ${pctDir}`}>
+                        {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
+                      </td>
+                      <td>
+                        {row.triggerName && TRIGGER_INFO[row.triggerName]?.summary ? (
+                          <InfoTooltip text={TRIGGER_INFO[row.triggerName]!.summary}>
+                            {triggerLabel(row.triggerName)}
+                          </InfoTooltip>
+                        ) : row.triggerName ? (
+                          triggerLabel(row.triggerName)
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="col-category">
+                        {row.triggerName ? triggerCategoryLabel(row.triggerName) : "—"}
+                      </td>
+                      <td>
+                        {STATUS_INFO[row.status] ? (
+                          <InfoTooltip underline={false} text={STATUS_INFO[row.status]}>
+                            <span className={`status status-${row.status}`}>{row.status}</span>
+                          </InfoTooltip>
+                        ) : (
                           <span className={`status status-${row.status}`}>{row.status}</span>
-                        </InfoTooltip>
-                      ) : (
-                        <span className={`status status-${row.status}`}>{row.status}</span>
-                      )}
-                    </td>
-                  </tr>
+                        )}
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>

@@ -346,16 +346,21 @@ Backlog (research-identified, not started):
     columns. The `MarketBreadth` panel was pulled off the dashboard for
     now (component kept, just not rendered — see `Dashboard.tsx`); it had
     first been moved to a cached + manual-refresh load.
-21. **Dashboard live sidebar + focused feed.** `TopMovers` (right-hand
+21. **Dashboard live sidebar + feed rework.** `TopMovers` (right-hand
     column): the day's Top-20 gainers / Top-20 losers via the
     `top_movers()` Postgres RPC over `bars_intraday` (% from the open,
-    ~1-min refresh, no Alpaca call, ~900-name coverage). The trigger feed
-    is filtered to a single view — rows with ≥2 clustered triggers AND a
-    share price of **$50 or less**; anything under **$5** additionally
-    gets an `UNDER $5` flag (feed badge, dossier badge, and a `🔻 UNDER $5`
-    line in the Discord alert — deep-dive does one snapshot call for the
-    price). `momentum_exit` and pre-gate single-trigger events don't show
-    in the feed.
+    ~1-min refresh, no Alpaca call, ~900-name coverage).
+    **Trigger feed** now merges two sources — the confluence gate's
+    promoted cluster events (`trigger_events`) *and* un-promoted
+    single-trigger fires (`pending_fires`, shown with a `pending` status).
+    Every fire shows; rows are **flagged** by how many distinct triggers
+    agreed (2 → a `2 signals` badge, 3+ → the high-priority treatment).
+    Still scoped to symbols at **$50/share or less**; under **$5** gets an
+    `UNDER $5` flag (feed badge, dossier badge, `🔻 UNDER $5` in the alert
+    — deep-dive does one snapshot call for the price). Also: `trigger_events`
+    and `pending_fires` added to the realtime publication (only
+    `tracked_symbols` was in it — the feed had only ever refreshed on
+    mount).
 22. **Tracking panel** (`tracked_symbols` table, `TrackingPanel.tsx`).
     Above the trigger feed: search a ticker, hit Track, and it gets a
     persisted card with a live mini price chart that repolls every 60s
