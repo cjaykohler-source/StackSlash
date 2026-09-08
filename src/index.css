@@ -597,22 +597,15 @@ h1 .quote-tag {
   }
 }
 .top-movers {
-  position: sticky;
-  top: 16px;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  max-height: calc(100vh - 32px);
 }
 .top-movers-section {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
   padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
 }
 .top-movers-title {
   margin: 0 0 8px;
@@ -630,8 +623,6 @@ h1 .quote-tag {
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
-  min-height: 0;
 }
 .top-movers-row {
   display: grid;
