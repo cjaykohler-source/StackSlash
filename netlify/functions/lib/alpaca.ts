@@ -33,6 +33,10 @@ export interface DailyBar {
   v: number;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchBars(
   symbols: string[],
   timeframe: string,
@@ -51,20 +55,32 @@ async function fetchBars(
   });
   if (pageToken) params.set("page_token", pageToken);
 
-  const res = await fetch(`${dataBaseUrl()}/v2/stocks/bars?${params.toString()}`, {
-    headers: authHeaders(),
-  });
+  const url = `${dataBaseUrl()}/v2/stocks/bars?${params.toString()}`;
 
-  if (!res.ok) {
-    throw new Error(`Alpaca bars request failed: ${res.status} ${await res.text()}`);
+  // A single 429 used to abort the whole scan outright, throwing away
+  // every chunk already fetched in that run — confirmed happening for
+  // real once the active universe grew past ~500 symbols (more
+  // concurrent chunks means more requests in the same window against
+  // Alpaca's per-account rate limit). Retries with backoff on 429 only;
+  // any other non-OK status still fails fast since that's a real error,
+  // not a transient limit.
+  let lastError: string | undefined;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const res = await fetch(url, { headers: authHeaders() });
+    if (res.ok) {
+      const json = (await res.json()) as {
+        bars: Record<string, DailyBar[]>;
+        next_page_token: string | null;
+      };
+      return { bars: json.bars ?? {}, nextPageToken: json.next_page_token ?? null };
+    }
+    if (res.status !== 429) {
+      throw new Error(`Alpaca bars request failed: ${res.status} ${await res.text()}`);
+    }
+    lastError = await res.text();
+    await sleep(2 ** attempt * 1000);
   }
-
-  const json = (await res.json()) as {
-    bars: Record<string, DailyBar[]>;
-    next_page_token: string | null;
-  };
-
-  return { bars: json.bars ?? {}, nextPageToken: json.next_page_token ?? null };
+  throw new Error(`Alpaca bars request failed: 429 ${lastError} (exhausted retries)`);
 }
 
 /**

@@ -7,6 +7,27 @@ import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./l
 import { filterByCooldown } from "./lib/cooldown";
 
 /**
+ * Runs `fn` over `items` with at most `limit` in flight at once — plain
+ * worker-pool pattern, no new dependency. Added when the NYSE ingestion
+ * took the active universe from ~512 to ~1,900 symbols: at chunkSize=100
+ * that's 20 chunks, and firing all 20 chunk-fetches at once via a bare
+ * `Promise.all` (fine at 512 symbols / ~6 chunks) tripped Alpaca's rate
+ * limit (429) the first time this ran against the bigger universe.
+ */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+/**
  * Job A — EOD cross-sectional scan.
  *
  * 1. Pull daily bars for the active universe from Alpaca, upsert bars_daily.
@@ -37,12 +58,32 @@ export default async () => {
   const db = getSupabaseAdmin();
 
   await withJobRun(db, "eod-scan", async () => {
-    const { data: symbols, error: symErr } = await db
-      .from("symbols")
-      .select("id, ticker")
-      .eq("active", true);
-    if (symErr) throw symErr;
-    if (!symbols?.length) {
+    // PostgREST enforces a hard server-side row cap (commonly 1000) that
+    // an explicit .limit() can't raise — same issue already found and
+    // fixed once this session in MarketBreadth.tsx. With the active
+    // universe at ~1,900 symbols (NYSE ingestion, previously ~500) a
+    // plain unbounded select here silently truncated to ~1,000 symbols
+    // with NO error — every downstream chunk-size/concurrency change
+    // had zero effect because the ticker list itself was already capped
+    // before any of that ran. Real .range() pagination fixes it.
+    const symbols: { id: number; ticker: string }[] = [];
+    {
+      const PAGE_SIZE = 1000;
+      let from = 0;
+      for (;;) {
+        const { data, error } = await db
+          .from("symbols")
+          .select("id, ticker")
+          .eq("active", true)
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!data?.length) break;
+        symbols.push(...data);
+        if (data.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
+    }
+    if (!symbols.length) {
       return { rowsProcessed: 0, result: null };
     }
 
@@ -66,7 +107,18 @@ export default async () => {
     // fetch-should-be-parallel-not-sequential fix already applied twice
     // elsewhere this session (backfill-history's batch driver,
     // backtest-triggers' per-symbol fetch).
-    const chunkSize = 100;
+    // Was 100 — at the ~1,900-symbol scale each 100-ticker chunk needs
+    // ~28 pages (400-day window ÷ 1000-bar page limit), and empirically
+    // confirmed (direct Alpaca calls, same window) that large multi-
+    // symbol/many-page requests silently return incomplete symbol
+    // coverage well before the last page, with no error and a real
+    // next_page_token still present — e.g. a 100-ticker chunk left ~48%
+    // of its symbols with zero bars, while the exact same tickers in a
+    // 10-symbol/3-page request all came back with full data. Dropped to
+    // 25 (a handful of pages per chunk) to stay inside whatever limit
+    // that is; chunk count goes up but concurrency-capped fetching
+    // handles that fine.
+    const chunkSize = 25;
     const chunks: string[][] = [];
     for (let i = 0; i < tickers.length; i += chunkSize) {
       chunks.push(tickers.slice(i, i + chunkSize));
@@ -89,7 +141,7 @@ export default async () => {
       return [...chunkBars.entries()];
     }
 
-    const chunkResults = await Promise.all(chunks.map(fetchChunk));
+    const chunkResults = await mapWithConcurrency(chunks, 3, fetchChunk);
     const barsBySymbol = new Map<string, Bar[]>(chunkResults.flat());
 
     // --- 2. Upsert bars_daily ---
@@ -213,8 +265,13 @@ export default async () => {
       }
     }
 
-    if (evaluations.length) {
-      const { error } = await db.from("trigger_evaluations").insert(evaluations);
+    // Chunked for the same reason as bars_daily above: at the ~1,900-
+    // symbol scale this is ~8,000-9,500 rows, each carrying a full
+    // factor_state JSON snapshot in `inputs` — a single unbatched insert
+    // of that size hit Postgres's statement timeout (57014) once the
+    // NYSE ingestion made this table's per-run write big enough to matter.
+    for (let i = 0; i < evaluations.length; i += UPSERT_BATCH) {
+      const { error } = await db.from("trigger_evaluations").insert(evaluations.slice(i, i + UPSERT_BATCH));
       if (error) throw error;
     }
 
