@@ -60,20 +60,38 @@ export function MarketBreadth() {
       }
       const [latest, prior] = dates;
 
-      const [factorRes, barsRes] = await Promise.all([
-        // Under the 1,000-row PostgREST default cap today (~510 active
-        // symbols), but explicit for the same reason as the bars_daily
-        // query below — don't silently truncate again as the universe
-        // grows.
+      // PostgREST enforces a hard server-side row cap (commonly 1000,
+      // a `db-max-rows` config, not a client-overridable default) —
+      // confirmed the hard way: even an explicit `.limit(5000)` still
+      // came back capped at exactly 1000 rows, silently undercounting
+      // advancers/decliners (real data: 180/329; the single-request
+      // fetch rendered 178/320). `.limit()` bounds the request from
+      // below the cap; it can't raise the cap. Real pagination via
+      // `.range()` is required — same pattern already used correctly
+      // elsewhere in this codebase (backfill-history.ts,
+      // backtest-triggers.ts) for exactly this reason.
+      async function fetchAllBarsForDates(): Promise<{ symbol_id: number; date: string; close: number }[]> {
+        const PAGE_SIZE = 1000;
+        const rows: { symbol_id: number; date: string; close: number }[] = [];
+        let from = 0;
+        for (;;) {
+          const { data, error } = await supabase
+            .from("bars_daily")
+            .select("symbol_id, date, close")
+            .in("date", [latest, prior])
+            .range(from, from + PAGE_SIZE - 1);
+          if (error) throw error;
+          if (!data?.length) break;
+          rows.push(...(data as { symbol_id: number; date: string; close: number }[]));
+          if (data.length < PAGE_SIZE) break;
+          from += PAGE_SIZE;
+        }
+        return rows;
+      }
+
+      const [factorRes, barsRows] = await Promise.all([
         supabase.from("factor_state").select("symbol_id, dist_sma200, ret_1w").limit(5000),
-        // Explicit limit well above 2x the active universe size —
-        // PostgREST's default row cap (1000) would otherwise silently
-        // truncate the ~1,000+ rows two dates x 500+ symbols needs,
-        // undercounting advancers/decliners without ever raising an
-        // error (confirmed happening: real data showed 180/329, the
-        // unbounded query rendered 178/320). Same class of bug already
-        // documented in backtest-triggers.ts's own comments.
-        supabase.from("bars_daily").select("symbol_id, date, close").in("date", [latest, prior]).limit(5000),
+        fetchAllBarsForDates(),
       ]);
       if (cancelled) return;
 
@@ -84,7 +102,6 @@ export function MarketBreadth() {
       const ret1wValues = factorRows.map((r) => r.ret_1w).filter((v): v is number => v !== null);
       const avgRet1w = ret1wValues.length ? ret1wValues.reduce((a, b) => a + b, 0) / ret1wValues.length : null;
 
-      const barsRows = (barsRes.data as { symbol_id: number; date: string; close: number }[] | null) ?? [];
       const closesBySymbol = new Map<number, { latest?: number; prior?: number }>();
       for (const row of barsRows) {
         const entry = closesBySymbol.get(row.symbol_id) ?? {};
