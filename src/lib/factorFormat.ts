@@ -135,4 +135,12 @@ export const FIELD_META: Record<string, FieldMeta> = {
 
 // Fields that are noise in this context (redundant with the card's own
 // header/props, or internal bookkeeping) — hidden rather than dumped.
-export const HIDDEN_FIELDS = new Set(["symbol_id", "note", "trigger", "ticker", "computed_at"]);
+export const HIDDEN_FIELDS = new Set([
+  "symbol_id",
+  "note",
+  "trigger",
+  "ticker",
+  "computed_at",
+  "confluence",
+  "priority",
+]);

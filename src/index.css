@@ -672,6 +672,27 @@ body {
   border-radius: 8px;
   padding: 14px 16px;
 }
+.dossier-card-high {
+  border-color: var(--red);
+  box-shadow: inset 3px 0 0 var(--red);
+}
+.dossier-priority-badge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--red);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+}
+.dossier-confluence {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  margin-top: 3px;
+}
 .dossier-card-header {
   display: flex;
   justify-content: space-between;

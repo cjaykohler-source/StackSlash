@@ -75,11 +75,20 @@ async function main() {
         `OUTLIER ${trade.symbol} z=${result.zScore.toFixed(2)} ret=${(result.ret * 100).toFixed(3)}% price=${trade.price} (tick #${result.tickCount})`,
       );
 
-      void supabase
-        .from("trigger_events")
-        .insert({
-          trigger_id: trigger.id,
+      // Hand the fire to the confluence gate instead of inserting a
+      // trigger_event directly: a real outlier spike (or crash) only
+      // becomes an alert if it lands in a cluster with >= 1 other same-
+      // direction trigger for this symbol in the window. Direction is the
+      // sign of the move, not a fixed property of this trigger.
+      void fetch(config.confluenceGateUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           symbol_id: symbolId,
+          trigger_id: trigger.id,
+          direction: result.zScore >= 0 ? "long" : "short",
+          source: "worker",
+          trade_date: new Date().toISOString().slice(0, 10),
           snapshot: {
             price: trade.price,
             z_score: result.zScore,
@@ -87,10 +96,12 @@ async function main() {
             tick_count: result.tickCount,
             trade_ts: trade.timestamp,
           },
+        }),
+      })
+        .then(async (res) => {
+          if (!res.ok) console.error("confluence-gate rejected outlier fire", res.status, await res.text());
         })
-        .then(({ error }) => {
-          if (error) console.error("Failed to insert outlier trigger_event", error);
-        });
+        .catch((err) => console.error("Failed to POST outlier fire to confluence-gate", err));
     },
     (statusMsg) => log(`stream: ${statusMsg}`),
   );

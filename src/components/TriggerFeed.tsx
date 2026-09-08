@@ -2,15 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { triggerLabel, triggerCategoryLabel, TRIGGER_INFO } from "../lib/triggerInfo";
-import { computeConfluence } from "../lib/confluence";
 import { InfoTooltip } from "./InfoTooltip";
+
+interface ConfluenceMeta {
+  count: number;
+  direction: "long" | "short";
+  triggers: { id: number; name: string | null }[];
+}
 
 interface FeedRow {
   id: number;
   ts: string;
   status: string;
+  priority: "normal" | "high" | null;
   symbol_id: number;
   trigger_id: number;
+  snapshot: { confluence?: ConfluenceMeta | null } | null;
   symbols: { ticker: string } | null;
   triggers: { name: string; category: string | null } | null;
 }
@@ -19,10 +26,6 @@ interface DayGroup {
   key: string; // YYYY-MM-DD, local time
   label: string; // e.g. "Friday, September 4, 2026"
   rows: FeedRow[];
-  // symbol_id -> count of *distinct* trigger names that fired for it this
-  // day (not distinct rows — the same trigger re-firing after its
-  // cooldown isn't confluence, two different triggers agreeing is).
-  confluenceBySymbol: Map<number, number>;
 }
 
 // en-CA locale conveniently formats as YYYY-MM-DD — used purely as a
@@ -83,7 +86,7 @@ export function TriggerFeed() {
     async function load() {
       const { data } = await supabase
         .from("trigger_events")
-        .select("id, ts, status, symbol_id, trigger_id, symbols(ticker), triggers(name, category)")
+        .select("id, ts, status, priority, symbol_id, trigger_id, snapshot, symbols(ticker), triggers(name, category)")
         .order("ts", { ascending: false })
         .limit(200);
       if (cancelled) return;
@@ -121,14 +124,7 @@ export function TriggerFeed() {
     }
     return [...byDay.entries()]
       .sort(([a], [b]) => (a < b ? 1 : -1)) // newest day first
-      .map(([key, dayRows]) => {
-        const triggerNamesBySymbol = computeConfluence(
-          dayRows.map((r) => ({ symbol_id: r.symbol_id, triggerName: r.triggers?.name })),
-        );
-        const confluenceBySymbol = new Map<number, number>();
-        for (const [symbolId, names] of triggerNamesBySymbol) confluenceBySymbol.set(symbolId, names.size);
-        return { key, label: dayLabel(key), rows: dayRows, confluenceBySymbol };
-      });
+      .map(([key, dayRows]) => ({ key, label: dayLabel(key), rows: dayRows }));
   }, [rows]);
 
   if (rows.length === 0) {
@@ -169,18 +165,31 @@ export function TriggerFeed() {
               </thead>
               <tbody>
                 {group.rows.map((row) => {
-                  const confluenceCount = group.confluenceBySymbol.get(row.symbol_id) ?? 0;
+                  const confluenceCount = row.snapshot?.confluence?.count ?? 0;
+                  const isHigh = row.priority === "high";
                   return (
-                  <tr key={row.id}>
+                  <tr key={row.id} className={isHigh ? "trigger-feed-row-high" : undefined}>
                     <td>{timeOnly(row.ts)}</td>
                     <td>
                       <Link to={`/symbol/${row.symbols?.ticker ?? row.symbol_id}`}>
                         {row.symbols?.ticker ?? row.symbol_id}
                       </Link>
-                      {confluenceCount >= 2 && (
-                        <span className="confluence-badge" title={`${confluenceCount} distinct triggers fired for this symbol today`}>
+                      {isHigh ? (
+                        <span
+                          className="confluence-badge confluence-badge-high"
+                          title={`High priority — ${confluenceCount} independent triggers agreed`}
+                        >
                           {confluenceCount} signals
                         </span>
+                      ) : (
+                        confluenceCount >= 2 && (
+                          <span
+                            className="confluence-badge"
+                            title={`${confluenceCount} independent triggers agreed for this symbol`}
+                          >
+                            {confluenceCount} signals
+                          </span>
+                        )
                       )}
                     </td>
                     <td>

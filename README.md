@@ -42,7 +42,7 @@ improved returns; raw expected value is misleading for skewed payoffs
 | Piece | Where | Status |
 |---|---|---|
 | Frontend + functions | Netlify, site `stackslash` → https://stackslash.netlify.app | Live, auto-deploys from GitHub `main` |
-| Repo | https://github.com/cjaykohler-source/StackSlash | Two uncommitted local fixes pending — see "Immediate next step" below |
+| Repo | https://github.com/cjaykohler-source/StackSlash | `main`, clean and pushed |
 | Database | Supabase project `wnzxvdfskmivbyqadtll` (org StackSlash) | Live — see current counts below |
 | Market data | Alpaca, **paper** keys (IEX feed) | No funded account needed for data-only use |
 | Alerts | Discord webhook, channel showing as `#heating_up` (bot name "HeatBot") | Working, verified with real fires |
@@ -83,16 +83,24 @@ extreme per-share price likely puts it outside IEX's free-tier
 coverage. No fix applied; flagging so it isn't mistaken for a pipeline
 bug later.
 
-### Immediate next step — verify `eod-scan` at the new ~1,911-symbol scale
+### `eod-scan` at the ~1,911-symbol scale — fixed and CONFIRMED
 
 **Two real bugs were found and fixed in `netlify/functions/eod-scan.ts`
-and `netlify/functions/lib/alpaca.ts` this session, but the fixes are
-UNCOMMITTED locally and their end-to-end success has NOT been
-confirmed** — every manual verification attempt this session hit
-Alpaca's rate limit (429) before completing, most likely cumulative
-load from ~6 back-to-back full-scale manual runs plus the historical
-backfill in a short window, not a flaw in the fixes themselves. This is
-the single most important thing for the next session to pick up.
+and `netlify/functions/lib/alpaca.ts` (committed in `0abdbb2`), and a
+clean end-to-end run has now been confirmed** — `job_runs` id 416
+(2026-09-08 14:26 UTC): `status='ok'`, `rows_processed=1906`, 3m19s, no
+error, run locally against the committed code while the intraday jobs
+were concurrently hitting Alpaca. 13,950 `trigger_evaluations` rows were
+written in batches with no statement timeout. 1,906 of 1,911 active
+symbols got a `factor_state` row for 2026-09-08; the 5 missing are all
+expected — `BRK.A` (known zero-bars issue) plus four very recent
+listings with 14–28 bars of history, far short of the 200/252-day factor
+lookbacks. No further action needed here; the section below is kept for
+the record.
+
+Note: the `factor_state` upsert does not refresh `computed_at` on the
+UPDATE path (the column default only fires on INSERT), so `computed_at`
+is not a reliable "last run" marker — use `job_runs` instead.
 
 **Bug 1 — PostgREST's silent ~1,000-row cap** (the exact same class of
 bug already found once this session in `MarketBreadth.tsx`): `eod-scan`'s
@@ -124,12 +132,13 @@ the exact same tickers requeried as a 10-symbol/3-page request all came
 back complete) — this may turn out to be redundant with bug 1's fix
 once verified, but was evidence-based at the time and is safe either way.
 
-**To pick this up:**
-1. `git status` — confirm whether these fixes are still uncommitted (they were as of this handoff) and review the diff before committing.
-2. Wait for Alpaca's rate limit to clearly be clear (a fresh session, or a good 10-15+ minutes of no API activity on this account), then run a full `eod-scan` and check `job_runs` for `status='ok'`.
-3. Verify `select count(*) from factor_state where as_of = <today>` is close to 1,911 (a small shortfall is fine — some symbols may have too little Alpaca history — but it should not be capped near 1,000 or any other suspiciously round number).
-4. If it succeeds cleanly, commit the two fixes (and the defensive changes) and push.
-5. If it still fails, the regularly scheduled cron (`30 21 * * 1-5`, ~30 min after market close) will also attempt it — check `job_runs` the next morning either way.
+**How it was verified (2026-09-08):** ran the function locally against
+the committed code, mid-session, while the intraday jobs were still
+hitting Alpaca — `job_runs` id 416 came back `status='ok'`,
+`rows_processed=1906`, and `factor_state`/`trigger_evaluations` for the
+day matched (see the summary at the top of this section). The scheduled
+cron (`30 21 * * 1-5`, ~30 min after market close) exercises the same
+path daily; check `job_runs` if anything looks off.
 
 Note: this can also be tested by running the function locally (bypasses
 Netlify's scheduled-function access restriction — direct HTTP calls to
@@ -191,17 +200,31 @@ confirming its subscription list matches `symbols` before trusting
 ### Outstanding items — everything not finished, in one place
 
 Action items:
-- [ ] **Verify `eod-scan` completes cleanly at the ~1,911-symbol scale
-  and commit the pending fixes** — see "Immediate next step" above.
-  This is the single most important outstanding item.
+- [x] **Verify `eod-scan` completes cleanly at the ~1,911-symbol scale
+  and commit the pending fixes** — done: fixes committed in `0abdbb2`,
+  clean run confirmed 2026-09-08 (`job_runs` id 416).
 - [ ] Re-verify the realtime worker's websocket subscription covers the
-  current full active universe, not just the original 8 symbols
+  current full active universe, not just the original 8 symbols. **Extra
+  reason now:** the worker was changed to POST its fires to
+  `confluence-gate` instead of inserting `trigger_events` directly —
+  needs a real end-to-end check once redeployed (see `worker/README.md`).
 - [ ] Give the worker host a distinct hostname (see "Worker status")
 - [ ] Add a fundamentals/estimates data vendor to unblock
-  `earnings_surprise_drift`
-- [ ] Run `backtest-triggers` against the full expanded universe once
-  `eod-scan` is confirmed populating `factor_state` for all of it — the
-  existing 27 `trigger_stats` rows predate the NYSE expansion
+  `earnings_surprise_drift` (still the only enabled trigger with no
+  backtest history, and now also the only long trigger that can never be
+  a confluence partner)
+- [x] Run `backtest-triggers` against the full expanded universe — done
+  2026-09-08 (local chunked re-run; `finalize_backtest_stats` doesn't
+  bump `trigger_stats.computed_at` so that column still reads 09-04, but
+  the numbers are fresh). Two stale rows remain for the disabled
+  `bb_rsi_confluence_short` / `macd_bearish_cross` (finalize doesn't
+  prune stat rows whose raw returns were cleared) — harmless, they can't
+  fire, but worth a one-line `delete from trigger_stats …` cleanup.
+- [ ] Confluence gate: verify a real ≥2-trigger cluster promotes and a
+  ≥3 cluster sends a `HIGH PRIORITY` Discord alert, end to end, after
+  deploy. The decision layer (`planClusters`) is unit-checked; the DB
+  wiring and the deployed `confluence-gate` endpoint are not yet
+  exercised against live fires.
 
 Design/scope decisions (need a call before building):
 - [ ] Whether to invest in a real security-type data source to clean up
@@ -298,6 +321,18 @@ Backlog (research-identified, not started):
     listing) + full 5-year historical backfill (1.59M rows) — see
     "Universe" and "Immediate next step" above for the full story,
     including the two real `eod-scan` scale bugs this surfaced
+19. **Confluence gate** (`lib/confluenceGate.ts`, `confluence-gate.ts`,
+    `pending_fires` table, `triggers.direction`, `trigger_events.priority`)
+    — the "trigger point" moved off the raw per-fire `trigger_events`
+    insert. Every source (eod-scan, intraday-scan, worker) now stages
+    fires in `pending_fires`; a fire is promoted to a single
+    `trigger_event` (→ one dossier, one alert) only when ≥2 distinct
+    same-direction triggers cluster on a symbol inside a ~30h window, and
+    a ≥3 cluster is tagged `HIGH PRIORITY`. Also: `trigger_stats` re-run
+    against the full universe; the two field-label tweaks
+    (`200-DAY MAΔ`, `BMP 6MO`); `MarketBreadth` moved to a cached +
+    manual-refresh load instead of recomputing on every dashboard mount;
+    `src/lib/confluence.ts` (client-side confluence) retired.
 
 ## Stack
 
@@ -318,16 +353,24 @@ src/                      Frontend (Vite + React + Supabase client)
                            (client-side port of triggers.ts, display-only),
                            triggerProximity.ts, triggerInfo.ts (plain-English
                            labels, single source of truth), factorFormat.ts
-                           (field labels/formatters, shared with dossiers),
-                           confluence.ts
+                           (field labels/formatters, shared with dossiers).
+                           Confluence is no longer computed client-side —
+                           it's recorded on the trigger_event by the
+                           confluence gate (see below); the UI just reads
+                           snapshot.confluence.
 
 netlify/functions/
   eod-scan.ts             Job A — daily bars, factor_state, momentum ranking,
                            regime_state, non-technical/non-exit trigger
-                           evaluation, shadow_positions open/close, cooldown-
-                           gated trigger_events insert. Scheduled ~30min
-                           after close. See "Immediate next step" above for
-                           its current unverified-at-scale state.
+                           evaluation, shadow_positions open/close. Fires go
+                           through the confluence gate (see below), not
+                           straight to trigger_events. Scheduled ~30min
+                           after close. Confirmed clean at the full
+                           ~1,911-symbol scale (2026-09-08).
+  confluence-gate.ts     HTTP entry point for lib/confluenceGate.ts — used
+                           by the realtime worker (which can't import the
+                           lib). eod-scan / intraday-scan call the lib
+                           in-process instead.
   intraday-scan.ts        Job B — polls snapshots for top-momentum names,
                            evaluates technical-category triggers only, on that
                            candidate set only, cooldown-gated. Scheduled every
@@ -344,8 +387,10 @@ netlify/functions/
                            trigger against 5yr history, writes trigger_stats.
   deep-dive.ts            Job C — HTTP-triggered by a Postgres trigger on
                            every trigger_events insert. Scores from
-                           trigger_stats + live confirmation, writes a
-                           dossier, dispatches an alert.
+                           trigger_stats (blended across the cluster's
+                           triggers) + live confirmation, writes a dossier,
+                           dispatches an alert; tags 'high' priority
+                           (3+ confluent triggers) in the Discord message.
   send-alert.ts           Manual/test alert dispatch for an existing dossier.
   lib/
     supabaseAdmin.ts       Service-role client (server-only, bypasses RLS)
@@ -361,6 +406,15 @@ netlify/functions/
                                 against the most recent trigger_event per
                                 (symbol, trigger), used by eod-scan and
                                 intraday-scan
+    confluenceGate.ts          stageAndPromote() / promotePending() — the
+                                real trigger point. Fires land in
+                                pending_fires; only a cluster of >=2 distinct
+                                SAME-direction triggers for one symbol within
+                                a rolling window is promoted to a single
+                                trigger_event (>=3 -> priority 'high'). Pure
+                                decision layer (planClusters) is separated
+                                out. Shared by eod-scan, intraday-scan and
+                                confluence-gate.ts.
     backfillSymbol.ts           backfillSymbolBars/backfillLatestIntradaySession
                                 — shared by backfill-history and onboard-symbol
     notify.ts                  Telegram/Discord dispatch + dedup/cooldown
@@ -418,17 +472,25 @@ worker/                   Separate deployable — persistent Alpaca websocket,
 
 **Real and functional:** schema/RLS/1,911-symbol universe across 9 enabled
 triggers; `eod-scan`/`intraday-scan` real factor computation, cross-
-sectional ranking, regime signal, cooldown-gated trigger evaluation (see
-"Immediate next step" for the one part not yet re-confirmed at full
-scale); `intraday-bars-scan` populating the Day chart; 5-year backfill
-for the whole universe; the realtime outlier worker (websocket
+sectional ranking, regime signal, cooldown-gated trigger evaluation
+(confirmed clean at the full ~1,911-symbol scale on 2026-09-08);
+**the confluence gate** — a fire becomes a trigger_event/dossier/alert
+only as part of a cluster of ≥2 distinct same-direction triggers for one
+symbol within a rolling ~30h window, across all three fire sources; a
+cluster of ≥3 is tagged 'high' priority in the Discord alert and the UI.
+Standalone single-trigger fires are recorded in `pending_fires` and go no
+further — including standalone momentum entries, which no longer open
+shadow positions. `intraday-bars-scan` populating the Day chart; 5-year
+backfill for the whole universe; the realtime outlier worker (websocket
 subscription list not yet re-verified against the full universe);
 shadow-position exit tracking; the dossier/alert pipeline end to end;
-`backtest-triggers` + real `deep-dive.ts` scoring (stats predate the
-NYSE expansion, need a re-run); symbol search/on-demand onboarding;
-per-symbol profile workups with live proximity bars; confluence
-scoring; PNG performance reports; market breadth; hover tooltips;
-company name/description.
+`backtest-triggers` + real `deep-dive.ts` scoring (per-trigger stats
+blended across the cluster; `trigger_stats` re-run against the
+1,911-symbol universe on 2026-09-08 — momentum win rates came down
+noticeably vs the S&P-500-only run, ~0.55 → ~0.53, the bigger/noisier
+universe diluting the edge); symbol search/on-demand onboarding; per-symbol profile
+workups with live proximity bars; PNG performance reports; market
+breadth; hover tooltips; company name/description.
 
 **Placeholder / not yet built:** `factor_state.sue`/`est_revision_30d`/
 `book_to_market` etc. never populated (no fundamentals vendor) —
@@ -438,6 +500,24 @@ average still proxies off the daily bar; edge-function-level auth
 gating (client-side + RLS is the real boundary today); the NYSE
 universe's name-keyword filter has known small imperfections (see
 "Universe" above).
+
+**Confirmation logic & backtest history — real, with known shallow spots
+(not placeholders):**
+- `deep-dive.ts`'s live confirmation checks the same three generic
+  signals (trend intact, volume confirming, favorable regime) for every
+  trigger regardless of what it is. A per-category confirmation rule set
+  (breakout → the level held; momentum → 12-1 rank persisted) would make
+  it sharper.
+- `realtime_outlier_zscore` and `momentum_exit` have no `trigger_stats`
+  by design — one is tick-level (can't replay from daily bars), the
+  other is position-state-dependent. deep-dive falls back to
+  live-confirmation-only for them. A "realized outcomes" job that
+  records the forward return N days after each real live fire would let
+  their expectancy accumulate from production instead.
+- The confluence blend in deep-dive is a sample-size-weighted average of
+  the contributing triggers' individual stats — there's no
+  backtest of "these two co-fired," which would be a materially bigger
+  piece (the gate's clustering would have to be replayed against history).
 
 ## Trigger backlog
 

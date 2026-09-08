@@ -5,6 +5,7 @@ import { type Bar } from "./lib/indicators";
 import { computeFactors, computeRegime } from "./lib/dailySnapshot";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 import { filterByCooldown } from "./lib/cooldown";
+import { stageAndPromote, ENTRY_TRIGGER_NAMES } from "./lib/confluenceGate";
 
 /**
  * Runs `fn` over `items` with at most `limit` in flight at once — plain
@@ -228,13 +229,15 @@ export default async () => {
     // held), handled directly in step 7 below instead.
     const { data: triggers, error: trigErr } = await db
       .from("triggers")
-      .select("id, name, definition, cooldown_minutes")
+      .select("id, name, definition, cooldown_minutes, direction")
       .eq("enabled", true)
       .neq("category", "technical")
       .neq("category", "exit");
     if (trigErr) throw trigErr;
-    const triggerNameById = new Map((triggers ?? []).map((t) => [t.id, t.name] as const));
     const cooldownByTriggerId = new Map((triggers ?? []).map((t) => [t.id, t.cooldown_minutes] as const));
+    const directionByTriggerId = new Map(
+      (triggers ?? []).map((t) => [t.id, (t.direction as "long" | "short" | null) ?? "long"] as const),
+    );
 
     const { data: regime } = await db
       .from("regime_state")
@@ -275,23 +278,27 @@ export default async () => {
       if (error) throw error;
     }
 
-    let insertedFires: { id: number; trigger_id: number; symbol_id: number }[] = [];
+    // Real cooldown check against the most recent trigger_event for the
+    // same trigger+symbol (lib/cooldown.ts) — a fire still within its
+    // trigger's cooldown_minutes doesn't even reach the confluence gate.
     const coolableFires = await filterByCooldown(db, fires, cooldownByTriggerId);
-    if (coolableFires.length) {
-      // Real cooldown check against the most recent trigger_event for the
-      // same trigger+symbol (lib/cooldown.ts) — a fire still within its
-      // trigger's cooldown_minutes never reaches this insert at all, so a
-      // condition that's been true since the last real fire doesn't
-      // create a fresh trigger_event/dossier/alert every single scan run.
-      // .select() to get back real ids — step 6 needs them to open shadow
-      // positions pointing at the actual entry_trigger_event_id.
-      const { data, error } = await db
-        .from("trigger_events")
-        .insert(coolableFires)
-        .select("id, trigger_id, symbol_id");
-      if (error) throw error;
-      insertedFires = data ?? [];
-    }
+
+    // Confluence gate: a fire only becomes a trigger_event (and therefore a
+    // dossier + alert) when >= 2 distinct same-direction triggers have
+    // fired for the same symbol within a rolling window — across sources,
+    // so an earlier intraday or realtime fire counts toward today's
+    // cluster. Lone fires stay in pending_fires and go no further. See
+    // lib/confluenceGate.ts.
+    const promotedEvents = await stageAndPromote(
+      db,
+      coolableFires.map((f) => ({
+        symbol_id: f.symbol_id,
+        trigger_id: f.trigger_id,
+        direction: directionByTriggerId.get(f.trigger_id) ?? "long",
+        snapshot: f.snapshot,
+      })),
+      { source: "eod-scan", tradeDate: today },
+    );
 
     // --- 6. Open shadow positions for new momentum-style entries ---
     // Only momentum_rank_entry and momentum_breakout carry a holding-
@@ -300,10 +307,21 @@ export default async () => {
     // short-horizon triggers (BB/RSI confluence, squeeze breakout, MACD
     // cross, outlier) have different exit logic entirely and aren't
     // tracked here — see the Trigger Backlog in README.md.
-    const ENTRY_TRIGGER_NAMES = new Set(["momentum_rank_entry", "momentum_breakout"]);
-    const entryFires = insertedFires.filter((f) => ENTRY_TRIGGER_NAMES.has(triggerNameById.get(f.trigger_id) ?? ""));
+    //
+    // Post-confluence-gate: a position opens off a promoted cluster event
+    // whose contributing triggers include an entry trigger — i.e. a
+    // momentum entry that was confirmed by at least one other signal, not
+    // a standalone fire.
+    const entryEvents = promotedEvents
+      .map((ev) => ({
+        ev,
+        entryName: ev.confluence.triggers
+          .map((t) => t.name)
+          .find((n): n is string => !!n && ENTRY_TRIGGER_NAMES.has(n)),
+      }))
+      .filter((x): x is { ev: (typeof promotedEvents)[number]; entryName: string } => !!x.entryName);
 
-    if (entryFires.length) {
+    if (entryEvents.length) {
       // Don't open a second shadow position for a symbol that already
       // has one open — a fresh entry-trigger fire on something you're
       // (hypothetically) already holding isn't a new position.
@@ -313,26 +331,22 @@ export default async () => {
         .eq("status", "open")
         .in(
           "symbol_id",
-          entryFires.map((f) => f.symbol_id),
+          entryEvents.map((x) => x.ev.symbol_id),
         );
       const openSymbolIds = new Set((alreadyOpen ?? []).map((p) => p.symbol_id));
 
-      // Also guard against two entry triggers (momentum_rank_entry AND
-      // momentum_breakout) firing for the same symbol within this same
-      // run — openSymbolIds only reflects pre-existing DB state, not
-      // duplicates within entryFires itself. Keep the first, skip the rest.
       const newPositions = [];
-      for (const f of entryFires) {
-        if (openSymbolIds.has(f.symbol_id)) continue;
+      for (const { ev, entryName } of entryEvents) {
+        if (openSymbolIds.has(ev.symbol_id)) continue;
         newPositions.push({
-          symbol_id: f.symbol_id,
-          entry_trigger_event_id: f.id,
-          entry_trigger_name: triggerNameById.get(f.trigger_id) ?? "unknown",
+          symbol_id: ev.symbol_id,
+          entry_trigger_event_id: ev.id,
+          entry_trigger_name: entryName,
           entry_date: today,
-          entry_price: priceBySymbolId.get(f.symbol_id) ?? null,
+          entry_price: priceBySymbolId.get(ev.symbol_id) ?? null,
           status: "open" as const,
         });
-        openSymbolIds.add(f.symbol_id);
+        openSymbolIds.add(ev.symbol_id);
       }
 
       if (newPositions.length) {
