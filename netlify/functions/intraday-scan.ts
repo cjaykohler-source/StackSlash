@@ -8,12 +8,11 @@ import { stageAndPromote } from "./lib/confluenceGate";
 /**
  * Job B — intraday polling scan.
  *
- * Per the design, this only evaluates technical/entry-timing triggers
- * (category = 'technical') on symbols that already passed the cross-
- * sectional momentum filter in eod-scan (top momentum_rank_pct from the
- * latest factor_state), not the whole universe. That keeps this job cheap
- * and keeps chart-pattern triggers acting as timing on names the slower,
- * better-evidenced signals already flagged — not a standalone scan.
+ * Evaluates only technical/entry-timing triggers (category = 'technical')
+ * against a bounded candidate set from the latest factor_state — not the
+ * whole universe. The set is the union of: top-third cross-sectional
+ * momentum names, the liquid in-band universe (the tradeable penny tier,
+ * which almost never ranks by momentum), and tracked symbols.
  *
  * Scheduled via netlify.toml: every 10 min, 13:00-20:59 UTC, Mon-Fri.
  * The market-hours check below is a belt-and-suspenders no-op guard in
@@ -45,21 +44,71 @@ export default async () => {
       return { rowsProcessed: 0, result: null };
     }
 
-    // Candidate universe: top-third momentum names from the latest factor_state.
-    const { data: candidates, error } = await db
-      .from("factor_state")
-      .select("symbol_id, bb_pctb, rsi14, rsi2, momentum_rank_pct, symbols(ticker)")
-      .eq("as_of", factorDate)
-      .gte("momentum_rank_pct", 0.67);
-    if (error) throw error;
-    if (!candidates?.length) {
+    // Candidate universe, merged and de-duped from three sources:
+    //  1. top-third cross-sectional momentum (the original design — momentum
+    //     leaders getting a timing check),
+    //  2. the liquid in-band universe (price <= scan_config ceiling, dollar
+    //     volume above the floor) — the tradeable tier for a small penny
+    //     account, which almost never ranks in (1),
+    //  3. tracked symbols.
+    const { data: cfgRow } = await db
+      .from("scan_config")
+      .select("price_max, min_dollar_vol_20d")
+      .eq("id", 1)
+      .maybeSingle();
+    const priceMax = Number(cfgRow?.price_max ?? 3);
+    const minVol = Number(cfgRow?.min_dollar_vol_20d ?? 50000);
+
+    const SELECT = "symbol_id, bb_pctb, rsi14, rsi2, momentum_rank_pct, symbols(ticker, alert_excluded)";
+    const IN_BAND_LIMIT = 800;
+    const MAX_CANDIDATES = 3000;
+
+    const { data: trackedRows } = await db.from("tracked_symbols").select("symbol_id");
+    const trackedIds = ((trackedRows as { symbol_id: number }[] | null) ?? []).map((r) => r.symbol_id);
+
+    const [momoRes, bandRes, trackedFsRes] = await Promise.all([
+      db.from("factor_state").select(SELECT).eq("as_of", factorDate).gte("momentum_rank_pct", 0.67),
+      db
+        .from("factor_state")
+        .select(SELECT)
+        .eq("as_of", factorDate)
+        .not("last_close", "is", null)
+        .lte("last_close", priceMax)
+        .gte("dollar_vol_20d", minVol)
+        .order("dollar_vol_20d", { ascending: false })
+        .limit(IN_BAND_LIMIT),
+      trackedIds.length
+        ? db.from("factor_state").select(SELECT).eq("as_of", factorDate).in("symbol_id", trackedIds)
+        : Promise.resolve({ data: [] as unknown[], error: null }),
+    ]);
+    if (momoRes.error) throw momoRes.error;
+    if (bandRes.error) throw bandRes.error;
+
+    type Row = {
+      symbol_id: number;
+      bb_pctb: number | null;
+      rsi14: number | null;
+      rsi2: number | null;
+      momentum_rank_pct: number | null;
+      symbols: { ticker: string; alert_excluded: boolean } | null;
+    };
+    const byId = new Map<number, Row>();
+    for (const r of [
+      ...((momoRes.data as unknown as Row[]) ?? []),
+      ...((bandRes.data as unknown as Row[]) ?? []),
+      ...((trackedFsRes.data as unknown as Row[]) ?? []),
+    ]) {
+      if (!r.symbols?.ticker || r.symbols.alert_excluded) continue;
+      if (!byId.has(r.symbol_id)) byId.set(r.symbol_id, r);
+    }
+    const candidates = [...byId.values()].slice(0, MAX_CANDIDATES);
+    if (!candidates.length) {
       return { rowsProcessed: 0, result: null };
     }
 
     const tickerBySymbolId = new Map<number, string>();
     for (const c of candidates) {
-      const ticker = (c as unknown as { symbols: { ticker: string } | null }).symbols?.ticker;
-      if (ticker) tickerBySymbolId.set(c.symbol_id, ticker);
+      if (c.symbols?.ticker) tickerBySymbolId.set(c.symbol_id, c.symbols.ticker);
     }
     const tickers = [...tickerBySymbolId.values()];
     if (!tickers.length) return { rowsProcessed: 0, result: null };
@@ -115,8 +164,10 @@ export default async () => {
       }
     }
 
-    if (evaluations.length) {
-      const { error } = await db.from("trigger_evaluations").insert(evaluations);
+    // Batched — the candidate set can now be a few thousand names.
+    const EVAL_BATCH = 5000;
+    for (let i = 0; i < evaluations.length; i += EVAL_BATCH) {
+      const { error } = await db.from("trigger_evaluations").insert(evaluations.slice(i, i + EVAL_BATCH));
       if (error) throw error;
     }
     // Real cooldown check (lib/cooldown.ts) against the most recent
