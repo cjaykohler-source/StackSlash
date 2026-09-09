@@ -9,7 +9,23 @@ interface ScanConfig {
   min_dollar_vol_20d: number;
   max_rsi14: number;
   min_confluence: number;
+  account_size: number;
+  max_risk_pct: number;
+  default_stop_pct: number;
+  suppress_earnings_days: number;
 }
+
+const COLUMNS = [
+  "price_min",
+  "price_max",
+  "min_dollar_vol_20d",
+  "max_rsi14",
+  "min_confluence",
+  "account_size",
+  "max_risk_pct",
+  "default_stop_pct",
+  "suppress_earnings_days",
+] as const;
 
 const FIELDS: { key: keyof ScanConfig; label: string; step: number; hint: string }[] = [
   { key: "price_min", label: "Price floor ($)", step: 0.05, hint: "Ignore anything cheaper than this." },
@@ -30,7 +46,26 @@ const FIELDS: { key: keyof ScanConfig; label: string; step: number; hint: string
     key: "min_confluence",
     label: "Signals required to alert",
     step: 1,
-    hint: "How many distinct triggers must agree (same direction, same symbol) before it promotes to a dossier + alert.",
+    hint: "How many distinct triggers must agree before it promotes to a dossier + alert. Sub-$3 names rarely cluster, so 1 is the practical floor there.",
+  },
+  { key: "account_size", label: "Account size ($)", step: 5, hint: "Drives the risk-defined sizing shown on each dossier." },
+  {
+    key: "max_risk_pct",
+    label: "Max risk per trade (fraction)",
+    step: 0.05,
+    hint: "Most the stop can lose as a fraction of the account. 0.20 = 20%.",
+  },
+  {
+    key: "default_stop_pct",
+    label: "Default stop distance (fraction)",
+    step: 0.01,
+    hint: "How far below entry the suggested stop sits. 0.12 = −12%.",
+  },
+  {
+    key: "suppress_earnings_days",
+    label: "Suppress alerts near earnings (days)",
+    step: 1,
+    hint: "Skip the Discord alert (dossier still written) when a report is within this many days. 0 = never suppress.",
   },
 ];
 
@@ -48,19 +83,15 @@ export function Settings() {
   useEffect(() => {
     supabase
       .from("scan_config")
-      .select("price_min, price_max, min_dollar_vol_20d, max_rsi14, min_confluence")
+      .select(COLUMNS.join(", "))
       .eq("id", 1)
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) setError(error.message);
-        else if (data)
-          setCfg({
-            price_min: Number(data.price_min),
-            price_max: Number(data.price_max),
-            min_dollar_vol_20d: Number(data.min_dollar_vol_20d),
-            max_rsi14: Number(data.max_rsi14),
-            min_confluence: Number(data.min_confluence),
-          });
+        else if (data) {
+          const row = data as unknown as Record<string, unknown>;
+          setCfg(Object.fromEntries(COLUMNS.map((k) => [k, Number(row[k])])) as unknown as ScanConfig);
+        }
       });
   }, []);
 

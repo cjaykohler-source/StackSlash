@@ -611,14 +611,29 @@ over `bars_intraday`, % from the open, ~1-min refresh, ~900-name
 coverage); hover tooltips; company name/description. (Market breadth is
 built but pulled from the dashboard for now.)
 
-**Placeholder / not yet built:** `factor_state.sue`/`est_revision_30d`/
-`book_to_market` etc. never populated (no fundamentals vendor) —
-`earnings_surprise_drift` inert; exit tracking only covers
-`momentum_rank_entry`/`momentum_breakout`; intraday-scan's volume-vs-
-average still proxies off the daily bar; edge-function-level auth
-gating (client-side + RLS is the real boundary today); the NYSE
-universe's name-keyword filter has known small imperfections (see
-"Universe" above).
+**Fundamentals (FMP):** `fundamentals-sync.ts` (scheduled) pulls the
+earnings calendar (`earnings` table), company profiles
+(`symbols.sector/industry/market_cap/shares_outstanding/is_etf`), and
+per-symbol earnings-surprise history → `sue` / `days_since_earnings` on
+`factor_state`, which **activates `earnings_surprise_drift`**. `deep-dive`
+uses this for the risk flags below. Needs `FMP_API_KEY` in the env.
+
+**Placeholder / not yet built:** `factor_state.est_revision_30d` /
+`book_to_market` still unpopulated (FMP has them, not wired yet); exit
+tracking only covers `momentum_rank_entry`/`momentum_breakout`;
+intraday-scan's volume-vs-average still proxies off the daily bar;
+edge-function-level auth gating (client-side + RLS is the real boundary
+today); the name-keyword common-stock filter has known small
+imperfections (see "Universe" above).
+
+**Risk flags & risk-defined sizing:** every dossier + alert now carries
+risk flags computed by `lib/riskFlags.ts` — imminent earnings (with an
+optional alert-suppression window), extreme volatility, parabolic run,
+offering-sized volume, sub-$1, and biotech / crypto-AI binary-catalyst
+sectors — plus a suggested stop and position size from `scan_config`
+(`account_size`, `max_risk_pct`, `default_stop_pct`). The scanner still
+only sees price action; these flag the categories most likely to reverse
+on a small account, they don't substitute for a fundamental thesis.
 
 **Confirmation logic & backtest history — real, with known shallow spots
 (not placeholders):**

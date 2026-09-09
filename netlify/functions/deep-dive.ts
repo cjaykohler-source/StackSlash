@@ -1,10 +1,7 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { dispatchAlert } from "./lib/notify";
 import { fetchSnapshots } from "./lib/alpaca";
-
-// Anything trading below this gets an extra "high priority" flag in the
-// dossier and the alert, on top of whatever the confluence tier is.
-const SUB_PRICE_FLAG = 5;
+import { riskFlags, tradeSuggestion } from "./lib/riskFlags";
 
 /**
  * Job C — deep-dive worker.
@@ -54,7 +51,7 @@ export default async (req: Request) => {
   const { data: event, error } = await db
     .from("trigger_events")
     .select(
-      "id, snapshot, symbol_id, trigger_id, priority, symbols(ticker, alert_excluded), triggers(name, cooldown_minutes)",
+      "id, snapshot, symbol_id, trigger_id, priority, symbols(ticker, alert_excluded, sector, industry), triggers(name, cooldown_minutes)",
     )
     .eq("id", triggerEventId)
     .single();
@@ -84,8 +81,10 @@ export default async (req: Request) => {
   const priority =
     ((event as unknown as { priority?: string }).priority as "normal" | "high" | undefined) ?? "normal";
 
-  // Current share price — one snapshot call, best-effort. Used only for
-  // the sub-$5 flag; a failure here must not block the dossier/alert.
+  const sym = (event as unknown as { symbols: { sector: string | null; industry: string | null } | null }).symbols;
+
+  // Current share price — one snapshot call, best-effort. A failure here
+  // must not block the dossier/alert.
   let currentPrice: number | null = null;
   try {
     const snap = (await fetchSnapshots([ticker]))[ticker];
@@ -93,7 +92,6 @@ export default async (req: Request) => {
   } catch {
     /* non-critical */
   }
-  const subPriceFlag = currentPrice != null && currentPrice < SUB_PRICE_FLAG;
 
   // Confluence metadata, when this event was promoted by the confluence
   // gate (lib/confluenceGate.ts). `trigger_id` above is the cluster's
@@ -136,18 +134,64 @@ export default async (req: Request) => {
 
   const hasReliableHistory = (stats?.sample_size ?? 0) >= MIN_RELIABLE_SAMPLE;
 
-  // --- 2. Live multi-signal confirmation — the symbol's current state, ---
-  //        independent of which single field the trigger itself checked.
-  const [{ data: factors }, { data: regime }] = await Promise.all([
+  // --- 2. Live multi-signal confirmation + risk context ---
+  const nowIso = new Date().toISOString().slice(0, 10);
+  const [{ data: factors }, { data: regime }, { data: earn }, { data: cfg }] = await Promise.all([
     db
       .from("factor_state")
-      .select("dist_sma200, volume_ratio_20d")
+      .select("dist_sma200, volume_ratio_20d, vol_percentile_252d, ret_1m, last_close")
       .eq("symbol_id", event.symbol_id)
       .order("as_of", { ascending: false })
       .limit(1)
       .maybeSingle(),
     db.from("regime_state").select("risk_on").order("as_of", { ascending: false }).limit(1).maybeSingle(),
+    db
+      .from("earnings")
+      .select("report_date")
+      .eq("symbol_id", event.symbol_id)
+      .gte("report_date", new Date(Date.now() - 15 * 86400_000).toISOString().slice(0, 10))
+      .order("report_date", { ascending: true })
+      .limit(20),
+    db
+      .from("scan_config")
+      .select("account_size, max_risk_pct, default_stop_pct, suppress_earnings_days")
+      .eq("id", 1)
+      .maybeSingle(),
   ]);
+
+  currentPrice = currentPrice ?? (factors?.last_close != null ? Number(factors.last_close) : null);
+
+  // Nearest earnings report to today (upcoming preferred, else most recent).
+  const earnDates = ((earn as { report_date: string }[] | null) ?? []).map((e) => e.report_date);
+  const upcoming = earnDates.find((d) => d >= nowIso);
+  const nearestEarnings = upcoming ?? (earnDates.length ? earnDates[earnDates.length - 1] : null);
+  const earningsDays = nearestEarnings
+    ? Math.round((Date.parse(nearestEarnings) - Date.parse(nowIso)) / 86400_000)
+    : null;
+
+  const flags = riskFlags({
+    price: currentPrice,
+    vol_percentile_252d: factors?.vol_percentile_252d ?? null,
+    ret_1m: factors?.ret_1m ?? null,
+    dist_sma200: factors?.dist_sma200 ?? null,
+    volume_ratio_20d: factors?.volume_ratio_20d ?? null,
+    sector: sym?.sector ?? null,
+    industry: sym?.industry ?? null,
+    earnings_days: earningsDays,
+    earnings_date: nearestEarnings,
+  });
+
+  const riskCfg = {
+    account_size: Number(cfg?.account_size ?? 40),
+    max_risk_pct: Number(cfg?.max_risk_pct ?? 0.2),
+    default_stop_pct: Number(cfg?.default_stop_pct ?? 0.12),
+  };
+  const trade = currentPrice != null ? tradeSuggestion(currentPrice, riskCfg) : null;
+
+  // Suppress the alert (keep the dossier) if earnings are imminent.
+  const suppressDays = Number(cfg?.suppress_earnings_days ?? 0);
+  const earningsSuppressed =
+    suppressDays > 0 && earningsDays != null && earningsDays >= 0 && earningsDays <= suppressDays;
 
   const confirmations: { name: string; confirmed: boolean; note: string }[] = [];
   if (typeof factors?.dist_sma200 === "number") {
@@ -192,7 +236,9 @@ export default async (req: Request) => {
         }
       : null,
     price: currentPrice,
-    sub_price_flag: subPriceFlag,
+    risk_flags: flags,
+    trade,
+    earnings: nearestEarnings ? { date: nearestEarnings, days: earningsDays } : null,
     fired_on: snapshot,
     historical: hasReliableHistory
       ? {
@@ -227,24 +273,35 @@ export default async (req: Request) => {
 
   await db.from("trigger_events").update({ status: "dossier_ready" }).eq("id", event.id);
 
-  // High-priority (3+ confluent triggers) gets a visible tag and its own
-  // dedup tier, so an escalation still pings even if the normal-tier alert
-  // for one of the contributing triggers already went out in the window.
+  if (earningsSuppressed) {
+    await db.from("trigger_events").update({ status: "dismissed" }).eq("id", event.id);
+    return new Response(
+      JSON.stringify({ dossierId: dossier.id, alert: { status: "skipped", reason: "earnings imminent" } }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   const confluentNames = confluence?.triggers.map((t) => t.name).filter(Boolean) ?? [];
   const headline =
-    priority === "high"
-      ? `🔴 *HIGH PRIORITY* — *${ticker}*`
-      : `*${ticker}* — ${triggerName}`;
-  const subPriceLine = subPriceFlag ? `\n🔻 *UNDER $${SUB_PRICE_FLAG}* — trading at $${currentPrice!.toFixed(2)}` : "";
+    priority === "high" ? `🔴 *HIGH PRIORITY* — *${ticker}*` : `*${ticker}* — ${triggerName}`;
+  const priceLine = currentPrice != null ? `  ·  $${currentPrice.toFixed(2)}` : "";
   const confluenceLine = confluentNames.length
     ? `\n${confluentNames.length} signals: ${confluentNames.join(", ")}`
+    : "";
+  const redFlags = flags.filter((x) => x.level === "red");
+  const amberFlags = flags.filter((x) => x.level === "amber");
+  const flagLine = flags.length
+    ? `\n⚠️ ${[...redFlags, ...amberFlags].map((x) => x.label).join(" · ")}`
+    : "";
+  const tradeLine = trade
+    ? `\nrisk-defined: ${trade.shares} sh ≈ $${trade.position_cost.toFixed(2)}, stop $${trade.stop.toFixed(2)} (−${Math.round(trade.stop_pct * 100)}%), max loss $${trade.max_loss.toFixed(2)}`
     : "";
 
   const alertResult = await dispatchAlert(db, {
     dossierId: dossier.id,
-    dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}${subPriceFlag ? ":sub" : ""}`,
+    dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}${redFlags.length ? ":rf" : ""}`,
     cooldownMinutes,
-    message: `${headline}${subPriceLine}${confluenceLine}\nscore: ${score.toFixed(2)}`,
+    message: `${headline}${priceLine}${confluenceLine}${flagLine}${tradeLine}\nscore: ${score.toFixed(2)}`,
   });
 
   if (alertResult.status === "sent") {

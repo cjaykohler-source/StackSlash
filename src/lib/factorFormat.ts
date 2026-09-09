@@ -143,4 +143,10 @@ export const HIDDEN_FIELDS = new Set([
   "computed_at",
   "confluence",
   "priority",
+  "close",
+  "last_close",
+  "as_of",
+  "risk_flags",
+  "trade",
+  "earnings",
 ]);
