@@ -14,6 +14,9 @@ export function Dashboard() {
         <img src={logo} alt="StackSlash" className="brand-logo" />
         <SymbolSearch />
         <div className="header-actions">
+          <Link to="/isolator" className="link-button">
+            Isolator
+          </Link>
           <Link to="/reports" className="link-button">
             Reports
           </Link>

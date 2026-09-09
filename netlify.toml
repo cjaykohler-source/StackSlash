@@ -85,3 +85,9 @@
 
 [functions."weekly-bars-scan"]
   schedule = "0 6 * * 1"
+
+# refresh-window-stats: 23:00 UTC weekdays (~6-7pm ET) — after eod-scan
+# has upserted the day's bars_daily. Rebuilds factor_window_stats, the
+# trailing-window metric table the Isolator screener reads.
+[functions."refresh-window-stats"]
+  schedule = "0 23 * * 1-5"

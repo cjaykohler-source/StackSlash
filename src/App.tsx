@@ -6,6 +6,7 @@ import { SymbolDetail } from "./pages/SymbolDetail";
 import { About } from "./pages/About";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
+import { Isolator } from "./pages/Isolator";
 
 export function App() {
   return (
@@ -40,6 +41,14 @@ export function App() {
         element={
           <AuthGuard>
             <Reports />
+          </AuthGuard>
+        }
+      />
+      <Route
+        path="/isolator"
+        element={
+          <AuthGuard>
+            <Isolator />
           </AuthGuard>
         }
       />
