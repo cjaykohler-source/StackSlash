@@ -29,11 +29,27 @@ export default async () => {
 
     const today = new Date().toISOString().slice(0, 10);
 
-    // Candidate universe: top-third momentum names from today's factor_state.
+    // factor_state / regime_state carry the *previous* close's values —
+    // eod-scan only writes the current date after the market closes, so
+    // during the session `as_of = today` doesn't exist yet. Use the most
+    // recent snapshot instead (that's the right candidate set anyway:
+    // yesterday's momentum ranking timed against today's intraday price).
+    const { data: latestFs } = await db
+      .from("factor_state")
+      .select("as_of")
+      .order("as_of", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const factorDate = (latestFs as { as_of: string } | null)?.as_of;
+    if (!factorDate) {
+      return { rowsProcessed: 0, result: null };
+    }
+
+    // Candidate universe: top-third momentum names from the latest factor_state.
     const { data: candidates, error } = await db
       .from("factor_state")
       .select("symbol_id, bb_pctb, rsi14, rsi2, momentum_rank_pct, symbols(ticker)")
-      .eq("as_of", today)
+      .eq("as_of", factorDate)
       .gte("momentum_rank_pct", 0.67);
     if (error) throw error;
     if (!candidates?.length) {
@@ -64,7 +80,8 @@ export default async () => {
     const { data: regime } = await db
       .from("regime_state")
       .select("risk_on")
-      .eq("as_of", today)
+      .order("as_of", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     const evaluations: Record<string, unknown>[] = [];
