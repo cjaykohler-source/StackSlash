@@ -407,6 +407,23 @@ Backlog (research-identified, not started):
     window; the chart's "Max" range and the backtest window shrank to
     match. `quotes.ts` also gained chunked fetching (the feed asks for
     300+ tickers at once) and the feed hides any row it can't price.
+25. **eod-scan moved to `launchd`** on the Mac mini (Netlify's ~3-4 min
+    scheduled-function timeout can't run it at ~5,000 symbols — it had
+    been silently truncating to ~511). Also fetches only the last ~12
+    sessions from Alpaca now, reading the rest of the factor window from
+    `bars_daily`. `scripts/run-eod-scan.sh` + `scripts/launchd/`.
+26. **Configurable targeting band** (`scan_config` singleton table,
+    `/settings` page). The confluence gate only promotes a fire to a
+    dossier + alert if the symbol is inside the band: price
+    `[price_min, price_max]`, `dollar_vol_20d ≥ min_dollar_vol_20d`,
+    `rsi14 ≤ max_rsi14` (longs), and `≥ min_confluence` distinct
+    same-direction triggers. Tuned for the live experiment: a ~$40
+    account trading **sub-$3** names, so `price_max = 3`,
+    `min_dollar_vol_20d = 50k` (penny stocks are inherently thin), and
+    `min_confluence = 1` (multi-trigger confluence on sub-$3 names is
+    near-zero — the trigger set is tuned for normal equities; 2+/3+
+    still flag as higher priority). Widen the band via `/settings` (or
+    `update scan_config …`) as the account grows.
 
 ## Stack
 

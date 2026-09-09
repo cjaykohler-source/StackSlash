@@ -1094,3 +1094,59 @@ h1 .quote-tag {
   background: rgba(139, 147, 167, 0.12);
   color: var(--text-dim);
 }
+
+/* Settings / targeting band */
+.settings-intro {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  max-width: 640px;
+  margin: 0 0 20px;
+}
+.settings-form {
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.settings-field {
+  display: grid;
+  grid-template-columns: 1fr 130px;
+  gap: 2px 12px;
+  align-items: baseline;
+}
+.settings-field-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.settings-field input {
+  grid-row: span 2;
+  align-self: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: var(--text);
+  font-size: 0.9rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.settings-field-hint {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.settings-saved {
+  color: var(--green);
+  font-size: 0.85rem;
+}
+.settings-current {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}

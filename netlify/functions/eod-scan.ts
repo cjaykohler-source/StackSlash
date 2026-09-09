@@ -302,7 +302,9 @@ export default async () => {
           fires.push({
             trigger_id: trigger.id,
             symbol_id: row.symbol_id as number,
-            snapshot: row,
+            // include the latest close so the confluence gate can apply
+            // scan_config's price band without its own price lookup.
+            snapshot: { ...row, close: priceBySymbolId.get(row.symbol_id as number) ?? null },
           });
         }
       }

@@ -5,6 +5,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { SymbolDetail } from "./pages/SymbolDetail";
 import { About } from "./pages/About";
 import { Reports } from "./pages/Reports";
+import { Settings } from "./pages/Settings";
 
 export function App() {
   return (
@@ -39,6 +40,14 @@ export function App() {
         element={
           <AuthGuard>
             <Reports />
+          </AuthGuard>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <AuthGuard>
+            <Settings />
           </AuthGuard>
         }
       />
