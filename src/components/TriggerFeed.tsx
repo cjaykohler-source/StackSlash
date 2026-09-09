@@ -8,11 +8,11 @@ import { useQuotes } from "./QuoteTag";
 // The feed shows every trigger fire — single-trigger fires (still sitting
 // in pending_fires, un-clustered) alongside the confluence-gate's
 // promoted cluster events. Rows are flagged by how many distinct triggers
-// agreed: 2 gets a badge, 3+ gets the high-priority treatment. Still
-// scoped to symbols trading at $50/share or less; under $5 gets its own
-// flag. Rows we can't price yet stay visible until a quote lands.
-const MAX_PRICE = 50;
-const SUB_PENNY_FLAG_PRICE = 5;
+// agreed: 2 gets a badge, 3+ gets the high-priority treatment. Scoped to
+// scan_config's price band (default $0.10–$3); sub-$1 gets its own flag.
+// Rows we can't price yet stay visible until a quote lands.
+const SUB_DOLLAR_FLAG_PRICE = 1;
+const DEFAULT_BAND = { price_min: 0.1, price_max: 3 };
 
 interface ConfluenceMeta {
   count: number;
@@ -86,8 +86,20 @@ function timeOnly(iso: string): string {
 export function TriggerFeed() {
   const [eventRows, setEventRows] = useState<FeedRow[]>([]);
   const [pendingRows, setPendingRows] = useState<FeedRow[]>([]);
+  const [band, setBand] = useState(DEFAULT_BAND);
   const [loaded, setLoaded] = useState(false);
   const [expandedDays, setExpandedDays] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from("scan_config")
+      .select("price_min, price_max")
+      .eq("id", 1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setBand({ price_min: Number(data.price_min), price_max: Number(data.price_max) });
+      });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,12 +206,11 @@ export function TriggerFeed() {
       const q = quotes.get(row.ticker);
       // Once quotes have loaded, a row we still can't price is almost
       // always an illiquid/delisted name Alpaca has no snapshot for —
-      // hide it rather than let unpriced high-value listings slip past
-      // the $50 cap.
+      // hide it rather than let an unpriced out-of-band name through.
       if (!q) return !quotesReady;
-      return q.price <= MAX_PRICE;
+      return q.price >= band.price_min && q.price <= band.price_max;
     });
-  }, [rows, quotes, quotesReady]);
+  }, [rows, quotes, quotesReady, band]);
 
   const groups = useMemo<DayGroup[]>(() => {
     const byDay = new Map<string, FeedRow[]>();
@@ -222,7 +233,11 @@ export function TriggerFeed() {
     );
   }
   if (loaded && quotesReady && visibleRows.length === 0) {
-    return <p className="empty-state">Nothing in the recent feed is trading at ${MAX_PRICE}/share or less.</p>;
+    return (
+      <p className="empty-state">
+        Nothing in the recent feed is in the ${band.price_min.toFixed(2)}–${band.price_max.toFixed(2)} band.
+      </p>
+    );
   }
 
   function toggleDay(key: string, isOpen: boolean) {
@@ -264,10 +279,10 @@ export function TriggerFeed() {
                   const quote = row.ticker ? quotes.get(row.ticker) : undefined;
                   const pct = quote ? Number((quote.changePct * 100).toFixed(1)) : null;
                   const pctDir = pct === null ? "" : pct > 0 ? "up" : pct < 0 ? "down" : "";
-                  const subFive = quote != null && quote.price < SUB_PENNY_FLAG_PRICE;
+                  const subDollar = quote != null && quote.price < SUB_DOLLAR_FLAG_PRICE;
                   const isHigh = row.priority === "high" || row.signalCount >= 3;
                   return (
-                    <tr key={row.key} className={isHigh || subFive ? "trigger-feed-row-high" : undefined}>
+                    <tr key={row.key} className={isHigh || subDollar ? "trigger-feed-row-high" : undefined}>
                       <td>{timeOnly(row.ts)}</td>
                       <td>
                         <Link to={`/symbol/${row.ticker ?? row.symbol_id}`}>{row.ticker ?? row.symbol_id}</Link>
@@ -281,12 +296,12 @@ export function TriggerFeed() {
                             {row.signalCount >= 3 ? `${row.signalCount} signals` : "2 signals"}
                           </span>
                         )}
-                        {subFive && (
+                        {subDollar && (
                           <span
                             className="confluence-badge confluence-badge-subfive"
-                            title={`Trading under $${SUB_PENNY_FLAG_PRICE}/share — flagged high priority`}
+                            title={`Trading under $${SUB_DOLLAR_FLAG_PRICE}/share — flagged high priority`}
                           >
-                            UNDER ${SUB_PENNY_FLAG_PRICE}
+                            UNDER ${SUB_DOLLAR_FLAG_PRICE}
                           </span>
                         )}
                       </td>

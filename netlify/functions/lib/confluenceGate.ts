@@ -51,8 +51,69 @@ export interface PromotedEvent {
 
 const WINDOW_HOURS = 30; // how far back a fire still counts toward a cluster
 const GC_HOURS = 48; // pending_fires older than this are dropped
-const MIN_CONFLUENCE = 2; // distinct same-direction triggers required to promote
+const DEFAULT_MIN_CONFLUENCE = 2; // fallback if scan_config is unreadable
 const HIGH_PRIORITY_AT = 3; // distinct triggers -> priority 'high'
+
+export interface ScanConfig {
+  price_min: number;
+  price_max: number;
+  min_dollar_vol_20d: number;
+  max_rsi14: number;
+  min_confluence: number;
+}
+
+const FALLBACK_CONFIG: ScanConfig = {
+  price_min: 0.1,
+  price_max: 3,
+  min_dollar_vol_20d: 150000,
+  max_rsi14: 85,
+  min_confluence: DEFAULT_MIN_CONFLUENCE,
+};
+
+async function loadScanConfig(db: SupabaseClient): Promise<ScanConfig> {
+  const { data } = await db
+    .from("scan_config")
+    .select("price_min, price_max, min_dollar_vol_20d, max_rsi14, min_confluence")
+    .eq("id", 1)
+    .maybeSingle();
+  return data
+    ? {
+        price_min: Number(data.price_min),
+        price_max: Number(data.price_max),
+        min_dollar_vol_20d: Number(data.min_dollar_vol_20d),
+        max_rsi14: Number(data.max_rsi14),
+        min_confluence: Number(data.min_confluence),
+      }
+    : FALLBACK_CONFIG;
+}
+
+/**
+ * Does this symbol fall inside scan_config's targeting band? Price/RSI
+ * come from the pending fire's own snapshot where possible (eod-scan puts
+ * `close`, intraday `latest_price`, the worker `price`); dollar volume and
+ * a fallback RSI come from `factorBySymbol`. A symbol we can't price or
+ * whose liquidity is unknown does NOT qualify — better to miss a signal
+ * than alert on something untradeable.
+ */
+function inBand(
+  cfg: ScanConfig,
+  direction: Direction,
+  snapshot: Record<string, unknown> | undefined,
+  factor: { dollar_vol_20d: number | null; rsi14: number | null; close?: number } | undefined,
+): boolean {
+  const s = snapshot ?? {};
+  const price = Number(s.close ?? s.latest_price ?? s.price ?? factor?.close ?? NaN);
+  if (!Number.isFinite(price) || price < cfg.price_min || price > cfg.price_max) return false;
+
+  const dv = factor?.dollar_vol_20d ?? Number(s.dollar_vol_20d ?? NaN);
+  if (!Number.isFinite(dv) || dv < cfg.min_dollar_vol_20d) return false;
+
+  if (direction === "long") {
+    const rsi = Number(s.rsi14 ?? factor?.rsi14 ?? NaN);
+    if (Number.isFinite(rsi) && rsi > cfg.max_rsi14) return false;
+  }
+  return true;
+}
 
 // Which trigger represents a cluster when it produces its single
 // trigger_event. Earlier in the list wins; ties break toward the most
@@ -151,7 +212,7 @@ export type ClusterPlan =
  * confluence window, work out which clusters have reached the threshold
  * and what should happen to each. No I/O — unit-tested directly.
  */
-export function planClusters(pending: PendingRow[]): ClusterPlan[] {
+export function planClusters(pending: PendingRow[], minConfluence = DEFAULT_MIN_CONFLUENCE): ClusterPlan[] {
   const clusters = new Map<string, PendingRow[]>();
   for (const row of pending) {
     const key = `${row.symbol_id}|${row.direction}`;
@@ -164,7 +225,7 @@ export function planClusters(pending: PendingRow[]): ClusterPlan[] {
 
   for (const rows of clusters.values()) {
     const distinctTriggerIds = new Set(rows.map((r) => r.trigger_id));
-    if (distinctTriggerIds.size < MIN_CONFLUENCE) continue;
+    if (distinctTriggerIds.size < minConfluence) continue;
 
     const tier: "normal" | "high" = distinctTriggerIds.size >= HIGH_PRIORITY_AT ? "high" : "normal";
     const meta: ConfluenceMeta = {
@@ -228,13 +289,50 @@ export async function promotePending(db: SupabaseClient): Promise<PromotedEvent[
   if (error) throw error;
   // alert_excluded symbols (mega-cap blue chips) never promote — a fire on
   // one stays in pending_fires, produces no trigger_event / dossier / alert.
-  const pending = ((data as unknown as PendingRow[] | null) ?? []).filter((r) => !r.symbols?.alert_excluded);
+  let pending = ((data as unknown as PendingRow[] | null) ?? []).filter((r) => !r.symbols?.alert_excluded);
+  if (!pending.length) return [];
+
+  // --- scan_config targeting band ---
+  const cfg = await loadScanConfig(db);
+  const symIds = [...new Set(pending.map((r) => r.symbol_id))];
+
+  const { data: fsRows } = await db
+    .from("factor_state")
+    .select("symbol_id, as_of, dollar_vol_20d, rsi14")
+    .in("symbol_id", symIds)
+    .order("as_of", { ascending: false })
+    .limit(4000);
+  const factorBySymbol = new Map<number, { dollar_vol_20d: number | null; rsi14: number | null; close?: number }>();
+  for (const r of (fsRows as { symbol_id: number; dollar_vol_20d: number | null; rsi14: number | null }[] | null) ??
+    []) {
+    if (!factorBySymbol.has(r.symbol_id)) factorBySymbol.set(r.symbol_id, r); // first = latest as_of
+  }
+
+  // Latest close per symbol as a price fallback for fires whose snapshot
+  // doesn't carry one (older stages, some sources).
+  const closeCutoff = new Date(Date.now() - 8 * 24 * 3_600_000).toISOString().slice(0, 10);
+  const { data: closeRows } = await db
+    .from("bars_daily")
+    .select("symbol_id, date, close")
+    .in("symbol_id", symIds)
+    .gte("date", closeCutoff)
+    .order("date", { ascending: false })
+    .limit(4000);
+  for (const r of (closeRows as { symbol_id: number; close: number }[] | null) ?? []) {
+    const f = factorBySymbol.get(r.symbol_id) ?? { dollar_vol_20d: null, rsi14: null };
+    if (f.close === undefined) f.close = Number(r.close);
+    factorBySymbol.set(r.symbol_id, f);
+  }
+
+  pending = pending.filter((r) =>
+    inBand(cfg, r.direction, r.snapshot as Record<string, unknown> | undefined, factorBySymbol.get(r.symbol_id)),
+  );
   if (!pending.length) return [];
 
   const promoted: PromotedEvent[] = [];
   const now = new Date().toISOString();
 
-  for (const plan of planClusters(pending)) {
+  for (const plan of planClusters(pending, cfg.min_confluence)) {
     if (plan.action === "fold") {
       if (plan.escalate) {
         await db
