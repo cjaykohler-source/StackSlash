@@ -228,22 +228,25 @@ export default async () => {
 
     // Post-earnings-drift inputs from the FMP-synced `earnings` table:
     // the most recent report per symbol within the drift window, so
-    // earnings_surprise_drift has real `sue` / `days_since_earnings`.
+    // earnings_surprise_drift has real `surprise_pct` / `days_since_earnings`.
+    // Free-tier FMP has no per-symbol earnings history, so full SUE can't
+    // be computed — the trigger keys off the raw calendar surprise
+    // (epsActual vs epsEstimated) instead.
     const DRIFT_WINDOW_DAYS = 90;
     const driftCutoff = new Date(Date.now() - DRIFT_WINDOW_DAYS * 86400_000).toISOString().slice(0, 10);
-    const earningsBySymbol = new Map<number, { days_since_earnings: number; sue: number | null }>();
+    const earningsBySymbol = new Map<number, { days_since_earnings: number; surprise_pct: number | null }>();
     {
       const { data: er } = await db
         .from("earnings")
-        .select("symbol_id, report_date, sue")
+        .select("symbol_id, report_date, surprise_pct")
         .lte("report_date", today)
         .gte("report_date", driftCutoff)
         .order("report_date", { ascending: false })
         .limit(8000);
-      for (const r of (er as { symbol_id: number; report_date: string; sue: number | null }[] | null) ?? []) {
+      for (const r of (er as { symbol_id: number; report_date: string; surprise_pct: number | null }[] | null) ?? []) {
         if (earningsBySymbol.has(r.symbol_id)) continue; // first = most recent
         const days = Math.floor((Date.parse(today) - Date.parse(r.report_date)) / 86400_000);
-        earningsBySymbol.set(r.symbol_id, { days_since_earnings: days, sue: r.sue });
+        earningsBySymbol.set(r.symbol_id, { days_since_earnings: days, surprise_pct: r.surprise_pct });
       }
     }
 
@@ -255,7 +258,7 @@ export default async () => {
         as_of: today,
         last_close: priceBySymbolId.get(symbolId) ?? null,
         days_since_earnings: earn?.days_since_earnings ?? null,
-        sue: earn?.sue ?? null,
+        surprise_pct: earn?.surprise_pct ?? null,
         ...fields,
       });
     }

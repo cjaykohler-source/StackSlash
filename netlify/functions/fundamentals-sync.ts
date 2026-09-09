@@ -1,31 +1,28 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
-import { fetchEarningsCalendar, fetchProfiles, fetchEarningsSurprises } from "./lib/fmp";
+import { fetchEarningsCalendarRecent, fetchProfile } from "./lib/fmp";
 
 /**
- * Daily FMP pull. Three jobs, all rate-budget-aware for the free tier:
+ * Daily FMP pull, sized for the free tier (see lib/fmp.ts). Two jobs:
  *
- *  1. Earnings calendar for [-100d, +45d] — one FMP call covers the whole
- *     market for the range; filtered to our active tickers, upserted into
- *     `earnings` with the actual-vs-estimate surprise.
- *  2. Company profiles (sector / industry / market cap / shares out / ETF
- *     flag) for symbols never synced or stale (>30d), PROFILE_BATCHES
- *     batches per run so it backfills over a few days without blowing the
- *     call budget.
- *  3. SUE (standardized unexpected earnings) for symbols that just
- *     reported and don't have it yet — per-symbol call, capped per run.
+ *  1. Earnings calendar — ONE call for the whole market's trailing ~3mo
+ *     of reported quarters. Filtered to our active tickers, upserted into
+ *     `earnings` with the actual-vs-estimate surprise (`surprise_pct`).
+ *     There is no forward calendar on this tier, so this is "who just
+ *     reported", not "who reports next" — the drift trigger keys off it.
+ *
+ *  2. Company profiles (sector / industry / market cap / ETF / ADR flag)
+ *     — one FMP call per symbol, so only PROFILE_MAX_PER_RUN symbols per
+ *     run: never-synced first, then stalest. Backfills the tradeable set
+ *     over a couple of weeks; deep-dive.ts fills any gap on demand for a
+ *     symbol that actually fires before the sweep reaches it.
  *
  * Scheduled via netlify.toml (06:00 + 21:00 UTC). Also accepts a manual
- * POST (like backfill-history / backtest-triggers) for a one-off run.
+ * POST for a one-off run.
  */
-const CAL_BACK_DAYS = 100;
-const CAL_FWD_DAYS = 45;
-const PROFILE_BATCH = 40; // tickers per FMP /profile call
-const PROFILE_BATCHES = 30; // batches per run (~1,200 symbols/day -> full universe in ~4 days)
-const SUE_MAX_PER_RUN = 40;
+const PROFILE_MAX_PER_RUN = 90; // one FMP call each
+const PROFILE_STALE_DAYS = 45;
 const UPSERT_BATCH = 2000;
-
-const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 export default async (_req?: Request) => {
   const db = getSupabaseAdmin();
@@ -41,12 +38,8 @@ export default async (_req?: Request) => {
     }
     const idByTicker = new Map(symbols.map((s) => [s.ticker, s.id]));
 
-    // --- 1. Earnings calendar ---
-    const now = new Date();
-    const cal = await fetchEarningsCalendar(
-      iso(new Date(now.getTime() - CAL_BACK_DAYS * 86400_000)),
-      iso(new Date(now.getTime() + CAL_FWD_DAYS * 86400_000)),
-    );
+    // --- 1. Earnings calendar (one call, trailing window) ---
+    const cal = await fetchEarningsCalendarRecent();
     const earningRows: Record<string, unknown>[] = [];
     for (const e of cal) {
       const symbolId = idByTicker.get(e.symbol);
@@ -57,7 +50,6 @@ export default async (_req?: Request) => {
       earningRows.push({
         symbol_id: symbolId,
         report_date: e.date,
-        report_time: e.time || null,
         eps_estimate: est,
         eps_actual: act,
         revenue_estimate: e.revenueEstimated ?? null,
@@ -74,73 +66,39 @@ export default async (_req?: Request) => {
     }
 
     // --- 2. Profiles (never-synced first, then stale) ---
-    const staleCutoff = new Date(Date.now() - 30 * 86400_000).toISOString();
+    const staleCutoff = new Date(Date.now() - PROFILE_STALE_DAYS * 86400_000).toISOString();
     const { data: needProfile } = await db
       .from("symbols")
       .select("id, ticker, profile_synced_at")
       .eq("active", true)
       .or(`profile_synced_at.is.null,profile_synced_at.lt.${staleCutoff}`)
       .order("profile_synced_at", { ascending: true, nullsFirst: true })
-      .limit(PROFILE_BATCH * PROFILE_BATCHES);
+      .limit(PROFILE_MAX_PER_RUN);
     let profilesUpdated = 0;
-    const toProfile = (needProfile as { id: number; ticker: string }[] | null) ?? [];
-    for (let i = 0; i < toProfile.length; i += PROFILE_BATCH) {
-      const batch = toProfile.slice(i, i + PROFILE_BATCH);
-      const profiles = await fetchProfiles(batch.map((s) => s.ticker));
-      const bySym = new Map(profiles.map((p) => [p.symbol, p]));
-      await Promise.all(
-        batch.map((s) => {
-          const p = bySym.get(s.ticker);
-          return db
-            .from("symbols")
-            .update({
-              sector: p?.sector ?? null,
-              industry: p?.industry ?? null,
-              market_cap: p?.mktCap ?? null,
-              shares_outstanding: p && "sharesOutstanding" in p ? (p as { sharesOutstanding?: number }).sharesOutstanding ?? null : null,
-              is_etf: p?.isEtf ?? false,
-              profile_synced_at: new Date().toISOString(),
-            })
-            .eq("id", s.id)
-            .then(() => {
-              profilesUpdated++;
-            });
-        }),
-      );
-    }
-
-    // --- 3. SUE for freshly-reported symbols missing it ---
-    const { data: recentReports } = await db
-      .from("earnings")
-      .select("symbol_id, report_date, symbols(ticker)")
-      .gte("report_date", iso(new Date(now.getTime() - 10 * 86400_000)))
-      .lte("report_date", iso(now))
-      .is("sue", null)
-      .limit(SUE_MAX_PER_RUN);
-    let sueUpdated = 0;
-    for (const r of (recentReports as unknown as { symbol_id: number; report_date: string; symbols: { ticker: string } | null }[] | null) ?? []) {
-      const ticker = r.symbols?.ticker;
-      if (!ticker) continue;
+    for (const s of (needProfile as { id: number; ticker: string }[] | null) ?? []) {
       try {
-        const hist = await fetchEarningsSurprises(ticker);
-        const surprises = hist
-          .filter((h) => h.actualEarningResult != null && h.estimatedEarning != null && h.estimatedEarning !== 0)
-          .map((h) => (h.actualEarningResult! - h.estimatedEarning!) / Math.abs(h.estimatedEarning!));
-        if (surprises.length < 4) continue;
-        const mean = surprises.reduce((a, b) => a + b, 0) / surprises.length;
-        const sd = Math.sqrt(surprises.reduce((a, b) => a + (b - mean) ** 2, 0) / surprises.length);
-        const latest = surprises[0]; // FMP returns newest first
-        const sue = sd > 0 ? (latest - mean) / sd : 0;
-        await db.from("earnings").update({ sue }).eq("symbol_id", r.symbol_id).eq("report_date", r.report_date);
-        sueUpdated++;
+        const p = await fetchProfile(s.ticker);
+        await db
+          .from("symbols")
+          .update({
+            sector: p?.sector ?? null,
+            industry: p?.industry ?? null,
+            market_cap: p?.marketCap ?? null,
+            is_etf: p?.isEtf ?? false,
+            is_fund: p?.isFund ?? false,
+            is_adr: p?.isAdr ?? false,
+            profile_synced_at: new Date().toISOString(),
+          })
+          .eq("id", s.id);
+        profilesUpdated++;
       } catch {
-        /* skip this symbol */
+        /* skip this symbol, retry next run */
       }
     }
 
     return {
       rowsProcessed: earningRows.length,
-      result: { calendar: earningRows.length, profilesUpdated, sueUpdated },
+      result: { calendar: earningRows.length, calendarFetched: cal.length, profilesUpdated },
     };
   });
 

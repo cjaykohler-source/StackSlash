@@ -19,6 +19,8 @@ export interface RiskInput {
   volume_ratio_20d?: number | null;
   sector?: string | null;
   industry?: string | null;
+  market_cap?: number | null;
+  is_adr?: boolean | null;
   // days until (positive) or since (negative) the nearest earnings report
   earnings_days?: number | null;
   earnings_date?: string | null;
@@ -77,6 +79,20 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
       level: "amber",
       label: "Sub-$1",
       note: "Lowest-price tier — highest manipulation and delisting risk.",
+    });
+  }
+  if (typeof x.market_cap === "number" && x.market_cap > 0 && x.market_cap < 50_000_000) {
+    f.push({
+      level: "red",
+      label: `Nano-cap ($${(x.market_cap / 1e6).toFixed(0)}M)`,
+      note: "Below ~$50M market cap — thin float, easily moved by a single order, and dilution/reverse-split prone.",
+    });
+  }
+  if (x.is_adr) {
+    f.push({
+      level: "amber",
+      label: "Foreign ADR",
+      note: "Overseas issuer — lighter disclosure, wider overnight gaps, higher delisting/deregistration risk.",
     });
   }
   if (BIOTECH.test(sec)) {

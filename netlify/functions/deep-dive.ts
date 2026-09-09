@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { dispatchAlert } from "./lib/notify";
 import { fetchSnapshots } from "./lib/alpaca";
 import { riskFlags, tradeSuggestion } from "./lib/riskFlags";
+import { fetchProfile } from "./lib/fmp";
 
 /**
  * Job C — deep-dive worker.
@@ -51,7 +52,7 @@ export default async (req: Request) => {
   const { data: event, error } = await db
     .from("trigger_events")
     .select(
-      "id, snapshot, symbol_id, trigger_id, priority, symbols(ticker, alert_excluded, sector, industry), triggers(name, cooldown_minutes)",
+      "id, snapshot, symbol_id, trigger_id, priority, symbols(ticker, alert_excluded, sector, industry, market_cap, is_adr, profile_synced_at), triggers(name, cooldown_minutes)",
     )
     .eq("id", triggerEventId)
     .single();
@@ -81,7 +82,57 @@ export default async (req: Request) => {
   const priority =
     ((event as unknown as { priority?: string }).priority as "normal" | "high" | undefined) ?? "normal";
 
-  const sym = (event as unknown as { symbols: { sector: string | null; industry: string | null } | null }).symbols;
+  const sym = (event as unknown as {
+    symbols: {
+      sector: string | null;
+      industry: string | null;
+      market_cap: number | null;
+      is_adr: boolean | null;
+      profile_synced_at: string | null;
+    } | null;
+  }).symbols;
+
+  // On-demand FMP profile fill. fundamentals-sync backfills the universe
+  // slowly (one call per symbol); if this symbol fired before the sweep
+  // reached it — or its profile is stale — fetch it now so the risk
+  // flags below see a real sector / market cap. Best-effort: a failure
+  // must not block the dossier.
+  let profile = {
+    sector: sym?.sector ?? null,
+    industry: sym?.industry ?? null,
+    market_cap: sym?.market_cap ?? null,
+    is_adr: sym?.is_adr ?? null,
+  };
+  const profileStale =
+    !sym?.profile_synced_at ||
+    Date.now() - Date.parse(sym.profile_synced_at) > 45 * 86400_000;
+  if (profileStale) {
+    try {
+      const p = await fetchProfile(ticker);
+      if (p) {
+        profile = {
+          sector: p.sector,
+          industry: p.industry,
+          market_cap: p.marketCap,
+          is_adr: p.isAdr,
+        };
+        await db
+          .from("symbols")
+          .update({
+            sector: p.sector,
+            industry: p.industry,
+            market_cap: p.marketCap,
+            is_etf: p.isEtf,
+            is_fund: p.isFund,
+            is_adr: p.isAdr,
+            profile_synced_at: new Date().toISOString(),
+          })
+          .eq("id", event.symbol_id);
+      }
+    } catch {
+      /* non-critical */
+    }
+  }
 
   // Current share price — one snapshot call, best-effort. A failure here
   // must not block the dossier/alert.
@@ -175,8 +226,10 @@ export default async (req: Request) => {
     ret_1m: factors?.ret_1m ?? null,
     dist_sma200: factors?.dist_sma200 ?? null,
     volume_ratio_20d: factors?.volume_ratio_20d ?? null,
-    sector: sym?.sector ?? null,
-    industry: sym?.industry ?? null,
+    sector: profile.sector,
+    industry: profile.industry,
+    market_cap: profile.market_cap,
+    is_adr: profile.is_adr,
     earnings_days: earningsDays,
     earnings_date: nearestEarnings,
   });

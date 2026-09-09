@@ -611,12 +611,24 @@ over `bars_intraday`, % from the open, ~1-min refresh, ~900-name
 coverage); hover tooltips; company name/description. (Market breadth is
 built but pulled from the dashboard for now.)
 
-**Fundamentals (FMP):** `fundamentals-sync.ts` (scheduled) pulls the
-earnings calendar (`earnings` table), company profiles
-(`symbols.sector/industry/market_cap/shares_outstanding/is_etf`), and
-per-symbol earnings-surprise history → `sue` / `days_since_earnings` on
-`factor_state`, which **activates `earnings_surprise_drift`**. `deep-dive`
-uses this for the risk flags below. Needs `FMP_API_KEY` in the env.
+**Fundamentals (FMP `/stable/`, free tier):** the legacy `/v3/` API is
+dead for accounts created after Aug 2025; `lib/fmp.ts` uses `/stable/`.
+Two things work on the free tier:
+- `/stable/profile?symbol=X` — one symbol per call (batch form returns
+  `[]`). `fundamentals-sync.ts` sweeps ~90 never-synced/stalest symbols
+  per run into `symbols.sector/industry/market_cap/is_etf/is_fund/is_adr`;
+  `deep-dive.ts` fills any gap on demand for a symbol that fires first.
+- `/stable/earnings-calendar` — one no-param call, a trailing ~3-month
+  window of **reported** quarters (no `from`/`to`, no forward calendar on
+  this tier). Upserted into `earnings` with `surprise_pct` (epsActual vs
+  epsEstimated). `eod-scan` copies the most recent report per symbol to
+  `factor_state.surprise_pct` / `days_since_earnings`, which
+  **activates `earnings_surprise_drift`** (keyed off `surprise_pct >=
+  0.10` — full SUE needs per-symbol history, which is a paid endpoint).
+
+No forward earnings calendar means the "earnings in N days" gap-risk flag
+and `suppress_earnings_days` can't fire on the free tier — they light up
+only on FMP Starter+. Needs `FMP_API_KEY` in the env.
 
 **Placeholder / not yet built:** `factor_state.est_revision_30d` /
 `book_to_market` still unpopulated (FMP has them, not wired yet); exit
@@ -627,10 +639,11 @@ today); the name-keyword common-stock filter has known small
 imperfections (see "Universe" above).
 
 **Risk flags & risk-defined sizing:** every dossier + alert now carries
-risk flags computed by `lib/riskFlags.ts` — imminent earnings (with an
-optional alert-suppression window), extreme volatility, parabolic run,
-offering-sized volume, sub-$1, and biotech / crypto-AI binary-catalyst
-sectors — plus a suggested stop and position size from `scan_config`
+risk flags computed by `lib/riskFlags.ts` — imminent earnings (Starter+
+only, with an optional alert-suppression window), extreme volatility,
+parabolic run, offering-sized volume, sub-$1, nano-cap (< $50M),
+foreign ADR, and biotech / crypto-AI binary-catalyst sectors — plus a
+suggested stop and position size from `scan_config`
 (`account_size`, `max_risk_pct`, `default_stop_pct`). The scanner still
 only sees price action; these flag the categories most likely to reverse
 on a small account, they don't substitute for a fundamental thesis.
