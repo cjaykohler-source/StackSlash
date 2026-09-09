@@ -646,11 +646,6 @@ body {
   background: rgba(37, 233, 121, 0.26);
   color: var(--brand-green);
 }
-.confluence-badge-subfive {
-  background: rgba(240, 160, 32, 0.14);
-  color: var(--amber);
-  letter-spacing: 0.03em;
-}
 
 /* Flags column: confluence badges + relocated risk chips */
 .trigger-feed td.col-flags,

@@ -258,11 +258,16 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
     const quote = row.ticker ? quotes.get(row.ticker) : undefined;
     const pct = quote ? Number((quote.changePct * 100).toFixed(1)) : null;
     const pctDir = pct === null ? "" : pct > 0 ? "up" : pct < 0 ? "down" : "";
-    const subDollar = quote != null && quote.price < SUB_DOLLAR_FLAG_PRICE;
+    // Sub-$1 is computed here from the live quote so it shows on un-promoted
+    // pending fires too; suppress it when the dossier already carries it.
+    const subDollar =
+      quote != null &&
+      quote.price < SUB_DOLLAR_FLAG_PRICE &&
+      !row.riskFlags.some((f) => f.label.startsWith("Sub-$1"));
     const hasRed = row.riskFlags.some((f) => f.level === "red");
     const isHigh = row.priority === "high" || row.signalCount >= 3;
     return (
-      <tr key={row.key} className={isHigh || subDollar || hasRed ? "trigger-feed-row-high" : undefined}>
+      <tr key={row.key} className={isHigh || hasRed ? "trigger-feed-row-high" : undefined}>
         <td>{timeOnly(row.ts)}</td>
         <td>
           <Link to={`/symbol/${row.ticker ?? row.symbol_id}`}>{row.ticker ?? row.symbol_id}</Link>
@@ -279,11 +284,8 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
             </span>
           )}
           {subDollar && (
-            <span
-              className="confluence-badge confluence-badge-subfive"
-              title={`Trading under $${SUB_DOLLAR_FLAG_PRICE}/share`}
-            >
-              UNDER ${SUB_DOLLAR_FLAG_PRICE}
+            <span className="feed-flag feed-flag-amber" title="Trading under $1/share">
+              Sub-$1
             </span>
           )}
           {[...row.riskFlags]
