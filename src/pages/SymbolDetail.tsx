@@ -97,15 +97,22 @@ export function SymbolDetail() {
     setLoading(true);
     if (r === "day") {
       // "Day" = the most recent session with data, not literally today.
-      // Points carry an epoch-ms x so PriceChart can run the line the full
-      // width of the session we have bars for.
-      const toPoints = (rows: { ts: string; price: number }[]): PricePoint[] =>
-        rows.map((b) => ({ x: new Date(b.ts).getTime(), y: b.price }));
-      const applySession = (pts: PricePoint[]) => {
-        setSession(
-          pts.length >= 2
-            ? sessionAxis(pts[0].x as number, pts[pts.length - 1].x as number)
-            : null,
+      // The axis is the fixed 4:00a–8:00p ET window (extended hours
+      // compressed to 1/3 width); each point's x is the layout coordinate
+      // from session.toX, with the real timestamp kept in `t`.
+      const buildDay = (rows: { ts: string; price: number }[]) => {
+        if (!rows.length) {
+          setPoints([]);
+          setSession(null);
+          return;
+        }
+        const s = sessionAxis(new Date(rows[rows.length - 1].ts).getTime());
+        setSession(s);
+        setPoints(
+          rows.map((b) => {
+            const t = new Date(b.ts).getTime();
+            return { x: s.toX(t), y: b.price, t };
+          }),
         );
       };
 
@@ -129,9 +136,7 @@ export function SymbolDetail() {
             `/.netlify/functions/session-bars?symbol=${encodeURIComponent(tkr)}`,
           );
           const body = (await res.json()) as { bars?: { ts: string; price: number }[] };
-          const pts = toPoints(body.bars ?? []);
-          setPoints(pts);
-          applySession(pts);
+          buildDay(body.bars ?? []);
         } catch {
           setPoints([]);
           setSession(null);
@@ -150,9 +155,7 @@ export function SymbolDetail() {
         .lt("ts", dayEnd)
         .order("ts", { ascending: true })
         .limit(1000);
-      const pts = toPoints((data as { ts: string; price: number }[] | null) ?? []);
-      setPoints(pts);
-      applySession(pts);
+      buildDay((data as { ts: string; price: number }[] | null) ?? []);
     } else {
       setSession(null);
       const start = rangeStartDate(r).toISOString().slice(0, 10);

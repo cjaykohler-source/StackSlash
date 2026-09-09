@@ -1,17 +1,63 @@
 /**
- * US-equities session boundaries in Eastern time, as epoch-ms, for the
- * intraday ("Day") chart. The x-axis runs the full extended-hours span —
- * pre-market open (04:00 ET) to after-hours close (20:00 ET) — so a
- * partial session's line sits where it actually is in the day instead of
- * being stretched edge to edge.
+ * X-axis model for the intraday ("Day") chart.
+ *
+ * The axis covers the whole extended trading day in Eastern time —
+ * pre-market 4:00a, regular session 9:30a–4:00p, after-hours to 8:00p —
+ * with a fixed hourly tick for every hour. It is NOT linear in time: an
+ * hour of pre-market or after-hours takes up 1/3 the width of an hour of
+ * the regular session, so the part of the day that matters gets most of
+ * the frame. Tick labels never move; the price line just fills in from
+ * the left as the session's bars arrive.
  */
 
 const ET = "America/New_York";
 
-/** Offset of `tz` relative to UTC, in ms, at the given instant (handles DST). */
-function tzOffsetMs(at: Date, tz: string): number {
+// Session boundaries as ET wall-clock hours (9.5 = 9:30a).
+const PRE_START = 4;
+const REG_OPEN = 9.5;
+const REG_CLOSE = 16;
+const AH_END = 20;
+// Width of one extended-hours hour relative to one regular-session hour.
+const COMPRESS = 1 / 3;
+
+const U_PRE = (REG_OPEN - PRE_START) * COMPRESS;
+const U_REG = REG_CLOSE - REG_OPEN;
+const U_AH = (AH_END - REG_CLOSE) * COMPRESS;
+const U_TOTAL = U_PRE + U_REG + U_AH;
+
+/** ET wall-clock hour → layout coordinate on the [0, U_TOTAL] axis. */
+function hourToX(h: number): number {
+  const hh = Math.min(AH_END, Math.max(PRE_START, h));
+  if (hh <= REG_OPEN) return (hh - PRE_START) * COMPRESS;
+  if (hh <= REG_CLOSE) return U_PRE + (hh - REG_OPEN);
+  return U_PRE + U_REG + (hh - REG_CLOSE) * COMPRESS;
+}
+
+/** Fractional ET wall-clock hour for an instant (DST-correct). */
+function etHours(ts: number): number {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: ET,
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+      .formatToParts(new Date(ts))
+      .map((x) => [x.type, x.value]),
+  );
+  return Number(p.hour) + Number(p.minute) / 60;
+}
+
+function hourLabel(h: number): string {
+  const suffix = h % 24 < 12 ? "a" : "p";
+  const hr = h % 12 === 0 ? 12 : h % 12;
+  return `${hr}${suffix}`;
+}
+
+/** Offset of ET relative to UTC, in ms, at the given instant (handles DST). */
+function tzOffsetMs(at: Date): number {
   const dtf = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
+    timeZone: ET,
     hourCycle: "h23",
     year: "numeric",
     month: "2-digit",
@@ -36,7 +82,7 @@ function tzOffsetMs(at: Date, tz: string): number {
 export function etWallClock(dateStr: string, h: number, m = 0): number {
   const [y, mo, d] = dateStr.split("-").map(Number);
   const guess = Date.UTC(y, mo - 1, d, h, m);
-  return guess - tzOffsetMs(new Date(guess), ET);
+  return guess - tzOffsetMs(new Date(guess));
 }
 
 /** The YYYY-MM-DD ET calendar date an instant falls on. */
@@ -44,58 +90,47 @@ export function etDateString(at: Date | number): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: ET }).format(new Date(at));
 }
 
-/** "9:30a" / "4:00p" style ET clock label for an epoch-ms value. */
-export function etClockLabel(at: number): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: ET,
-    hour: "numeric",
-    minute: "2-digit",
-    hourCycle: "h12",
-  })
-    .format(new Date(at))
-    .replace(":00", "")
-    .replace(" AM", "a")
-    .replace(" PM", "p");
+/** "9:30 AM ET" style label for the tooltip. */
+export function etTimeLabel(at: number): string {
+  return (
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: ET,
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(at)) + " ET"
+  );
 }
 
 export interface SessionAxis {
-  date: string; // YYYY-MM-DD (ET)
-  domain: [number, number]; // first .. last bar of the session we have
+  domain: [number, number];
   ticks: number[];
-  open: number | null; // 9:30 ET, if inside the domain
-  close: number | null; // 16:00 ET, if inside the domain
+  tickLabels: Record<number, string>;
+  /** epoch-ms → layout coordinate */
+  toX: (ts: number) => number;
+  open: number; // layout x of 9:30a
+  close: number; // layout x of 4:00p
 }
 
+const TICK_HOURS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
 /**
- * Axis for the intraday ("Day") chart, spanning the full width of the
- * session we actually have bars for — `firstTs`..`lastTs` — so the line
- * runs edge to edge like the other ranges instead of sitting in a sliver
- * in the middle. Pre-market / after-hours prints (when the feed has them)
- * are inside that span, so the edges naturally reach toward 4:00a / 8:00p.
- * The regular-session open/close are marked only when they fall inside
- * the data we have.
+ * Piecewise axis for the trading day that `anyTs` falls on: full width is
+ * 4:00a–8:00p ET, but each extended-hours hour is 1/3 the width of a
+ * regular-session hour.
  */
-export function sessionAxis(firstTs: number, lastTs: number): SessionAxis {
-  const date = etDateString(lastTs);
-  const span = Math.max(lastTs - firstTs, 60_000);
-  const STEP_MIN = [30, 60, 120, 180, 240];
-  const target = span / 6;
-  const stepMs = (STEP_MIN.find((m) => m * 60_000 >= target) ?? 360) * 60_000;
-
-  const ticks: number[] = [];
-  // stepMs divides an hour (or is a whole number of hours) and ET is a
-  // whole-hour offset from UTC, so epoch-aligned steps land on clean ET
-  // clock times.
-  const firstTick = Math.ceil(firstTs / stepMs) * stepMs;
-  for (let t = firstTick; t <= lastTs; t += stepMs) ticks.push(t);
-
-  const open = etWallClock(date, 9, 30);
-  const close = etWallClock(date, 16);
+export function sessionAxis(anyTs: number): SessionAxis {
+  void anyTs; // the mapping is wall-clock only; the arg keeps the call site explicit
+  const ticks = TICK_HOURS.map(hourToX);
+  const tickLabels: Record<number, string> = {};
+  TICK_HOURS.forEach((h, i) => {
+    tickLabels[ticks[i]] = hourLabel(h);
+  });
   return {
-    date,
-    domain: [firstTs, lastTs],
+    domain: [0, U_TOTAL],
     ticks,
-    open: open >= firstTs && open <= lastTs ? open : null,
-    close: close >= firstTs && close <= lastTs ? close : null,
+    tickLabels,
+    toX: (ts: number) => hourToX(etHours(ts)),
+    open: hourToX(REG_OPEN),
+    close: hourToX(REG_CLOSE),
   };
 }
