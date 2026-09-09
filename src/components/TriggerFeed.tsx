@@ -21,10 +21,13 @@ interface ConfluenceMeta {
 }
 
 interface RiskFlag {
-  level: "red" | "amber";
+  level: "red" | "amber" | "green";
   label: string;
   note?: string;
 }
+
+// Feed flag display order: negatives first, positives last.
+const FLAG_ORDER: Record<RiskFlag["level"], number> = { red: 0, amber: 1, green: 2 };
 
 interface FeedRow {
   key: string; // "e<id>" | "p<id>"
@@ -283,11 +286,13 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
               UNDER ${SUB_DOLLAR_FLAG_PRICE}
             </span>
           )}
-          {row.riskFlags.map((f) => (
-            <span key={f.label} className={`feed-flag feed-flag-${f.level}`} title={f.note ?? f.label}>
-              {f.label}
-            </span>
-          ))}
+          {[...row.riskFlags]
+            .sort((a, b) => FLAG_ORDER[a.level] - FLAG_ORDER[b.level])
+            .map((f) => (
+              <span key={f.label} className={`feed-flag feed-flag-${f.level}`} title={f.note ?? f.label}>
+                {f.label}
+              </span>
+            ))}
         </td>
         <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
         <td className={`col-num ${pctDir}`}>

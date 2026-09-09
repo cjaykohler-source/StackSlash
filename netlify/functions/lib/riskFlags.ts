@@ -1,14 +1,18 @@
 /**
- * Turns a signal's context into plain-language risk flags + a
- * risk-defined trade suggestion. Pure — no I/O — so deep-dive.ts stays
- * readable and this is unit-testable.
+ * Turns a signal's context into plain-language flags + a risk-defined
+ * trade suggestion. Pure — no I/O — so deep-dive.ts stays readable and
+ * this is unit-testable.
  *
  * The scanner surfaces price action; it says nothing about *why* a stock
- * is moving or whether the move has legs. These flags don't fix that,
- * but they catch the categories most likely to reverse hard on a small
- * account: imminent earnings, parabolic runs, offering-sized volume,
- * sub-$1 manipulation, and binary-catalyst sectors (biotech / crypto-AI
- * sentiment).
+ * is moving or whether the move has legs. Flags are colour-coded by what
+ * they mean for the trade, not by severity:
+ *   red   — a negative: something that tends to hurt a small position
+ *           (offering-sized volume, nano-cap float, short cash runway,
+ *           heavy dilution).
+ *   amber — neutral / situational: a binary or two-sided condition to be
+ *           aware of (imminent earnings, fresh news, parabolic run,
+ *           biotech / crypto-AI catalyst risk).
+ *   green — a positive: well-capitalised, growing, or analyst-favoured.
  */
 
 export interface RiskInput {
@@ -30,10 +34,13 @@ export interface RiskInput {
   runway_quarters?: number | null; // cash ÷ quarterly cash burn
   share_change_yoy?: number | null; // shares outstanding vs ~1 year ago
   book_equity?: number | null; // total stockholders' equity
+  net_cash_to_mktcap?: number | null; // (cash − debt) ÷ market cap
+  revenue_growth_yoy?: number | null; // latest quarter sales vs the year-ago quarter
+  zacks_rank?: number | null; // 1 (strong buy) .. 5 (strong sell)
 }
 
 export interface RiskFlag {
-  level: "red" | "amber";
+  level: "red" | "amber" | "green";
   label: string;
   note: string;
 }
@@ -141,6 +148,29 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
       level: "amber",
       label: "Sentiment-driven sector",
       note: "Crypto / AI sympathy moves reverse as fast as they appear.",
+    });
+  }
+
+  // --- positives ---
+  if (typeof x.zacks_rank === "number" && x.zacks_rank >= 1 && x.zacks_rank <= 2) {
+    f.push({
+      level: "green",
+      label: x.zacks_rank === 1 ? "Zacks Strong Buy" : "Zacks Buy",
+      note: "Zacks rank in the top two tiers — driven mainly by upward earnings-estimate revisions.",
+    });
+  }
+  if (typeof x.revenue_growth_yoy === "number" && x.revenue_growth_yoy >= 0.25) {
+    f.push({
+      level: "green",
+      label: `Revenue +${Math.round(x.revenue_growth_yoy * 100)}% YoY`,
+      note: "Latest quarter's sales well above the year-ago quarter — real growth behind the move, not just a chart.",
+    });
+  }
+  if (typeof x.net_cash_to_mktcap === "number" && x.net_cash_to_mktcap >= 0.35) {
+    f.push({
+      level: "green",
+      label: `Net cash ${Math.round(x.net_cash_to_mktcap * 100)}% of cap`,
+      note: "Cash minus debt covers a large share of the market cap — well funded, low near-term dilution risk, and a downside cushion.",
     });
   }
   return f;
