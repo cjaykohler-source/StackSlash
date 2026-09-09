@@ -240,8 +240,16 @@ function TrackedCard({
                 <Tooltip
                   labelFormatter={() => ""}
                   formatter={(v: number) => [`$${v.toFixed(2)}`, ""]}
-                  contentStyle={{ fontSize: "0.75rem", padding: "2px 6px" }}
-                  labelStyle={{ color: "#000" }}
+                  separator=""
+                  contentStyle={{
+                    fontSize: "0.75rem",
+                    padding: "2px 6px",
+                    background: "var(--panel)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "6px",
+                  }}
+                  itemStyle={{ color: "var(--text)" }}
+                  wrapperStyle={{ outline: "none" }}
                 />
                 <Line type="monotone" dataKey="price" stroke={stroke} strokeWidth={1.75} dot={false} isAnimationActive={false} />
               </LineChart>

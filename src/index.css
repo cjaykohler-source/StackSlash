@@ -416,9 +416,39 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 300px;
+  min-height: 320px;
   margin: 0;
   text-align: center;
+}
+
+.price-chart {
+  background: linear-gradient(180deg, rgba(19, 23, 34, 0.6), rgba(19, 23, 34, 0.15));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 8px 4px;
+}
+.price-chart .recharts-cartesian-axis-tick-value {
+  font-variant-numeric: tabular-nums;
+}
+.price-chart-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.price-chart-tip-when {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+.price-chart-tip-price {
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .range-toggle {
