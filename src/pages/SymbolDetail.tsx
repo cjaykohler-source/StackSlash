@@ -262,13 +262,10 @@ export function SymbolDetail() {
 
       {symbolId !== null && (
         <section>
-          <SymbolProfile symbolId={symbolId} />
-        </section>
-      )}
-
-      {ticker && (
-        <section>
-          <SymbolNews ticker={ticker} />
+          <SymbolProfile
+            symbolId={symbolId}
+            news={ticker ? <SymbolNews ticker={ticker} /> : null}
+          />
         </section>
       )}
 

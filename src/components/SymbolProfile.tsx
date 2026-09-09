@@ -72,7 +72,13 @@ function momentumExitProximity(position: OpenShadowPosition, factor: FactorState
  * the canonical netlify/functions/lib/triggers.ts — see that file's own
  * comment for why this is a deliberate duplicate, display-only.
  */
-export function SymbolProfile({ symbolId }: { symbolId: number }) {
+export function SymbolProfile({
+  symbolId,
+  news,
+}: {
+  symbolId: number;
+  news?: React.ReactNode;
+}) {
   const [factorState, setFactorState] = useState<FactorState | null>(null);
   const [profileTriggers, setProfileTriggers] = useState<ProfileTrigger[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -213,11 +219,13 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
         </div>
       )}
 
-      <h3 className="profile-subheading">Trigger status</h3>
-      {!profileTriggers || profileTriggers.length === 0 ? (
-        <p className="empty-state">No evaluable triggers configured.</p>
-      ) : (
-        <div className="trigger-profile-list">
+      <div className="symbol-profile-split">
+        <div className="symbol-profile-triggers">
+          <h3 className="profile-subheading">Trigger status</h3>
+          {!profileTriggers || profileTriggers.length === 0 ? (
+            <p className="empty-state">No evaluable triggers configured.</p>
+          ) : (
+            <div className="trigger-profile-list">
           {profileTriggers.map(({ trigger, satisfied, stats, proximity, variant }) => {
             const realStats = stats.filter((s) => s.sample_size > 0);
             const statusText = variant === "exit" ? "Position open" : satisfied ? "Satisfied now" : "Not satisfied";
@@ -266,8 +274,11 @@ export function SymbolProfile({ symbolId }: { symbolId: number }) {
               </div>
             );
           })}
+            </div>
+          )}
         </div>
-      )}
+        {news ? <div className="symbol-profile-news">{news}</div> : null}
+      </div>
     </div>
   );
 }
