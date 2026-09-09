@@ -26,6 +26,10 @@ export interface RiskInput {
   earnings_date?: string | null;
   // hours since the most recent news headline for this symbol
   news_age_hours?: number | null;
+  // fundamentals (from the DoltHub sync)
+  runway_quarters?: number | null; // cash ÷ quarterly cash burn
+  share_change_yoy?: number | null; // shares outstanding vs ~1 year ago
+  book_equity?: number | null; // total stockholders' equity
 }
 
 export interface RiskFlag {
@@ -102,6 +106,27 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
       level: "amber",
       label: "Foreign ADR",
       note: "Overseas issuer — lighter disclosure, wider overnight gaps, higher delisting/deregistration risk.",
+    });
+  }
+  if (typeof x.runway_quarters === "number" && x.runway_quarters > 0 && x.runway_quarters <= 4) {
+    f.push({
+      level: x.runway_quarters <= 2 ? "red" : "amber",
+      label: `~${x.runway_quarters < 1 ? "<1" : x.runway_quarters.toFixed(1)}Q cash left`,
+      note: "Cash divided by recent quarterly burn. A raise is likely inside the hold window — an offering prices below market and dilutes.",
+    });
+  }
+  if (typeof x.share_change_yoy === "number" && x.share_change_yoy >= 0.2) {
+    f.push({
+      level: x.share_change_yoy >= 0.5 ? "red" : "amber",
+      label: `Shares +${Math.round(x.share_change_yoy * 100)}% YoY`,
+      note: "Heavy dilution over the last year — the count keeps climbing, which caps upside and often precedes more of the same.",
+    });
+  }
+  if (typeof x.book_equity === "number" && x.book_equity < 0) {
+    f.push({
+      level: "amber",
+      label: "Negative book value",
+      note: "Liabilities exceed assets — accumulated losses have wiped out equity. Common in distressed / pre-revenue names.",
     });
   }
   if (BIOTECH.test(sec)) {
