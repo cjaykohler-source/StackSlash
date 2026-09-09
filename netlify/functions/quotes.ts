@@ -19,7 +19,7 @@ export default async (req: Request) => {
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
-      headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=30" },
+      headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=15" },
     });
 
   const symbolsParam = new URL(req.url).searchParams.get("symbols");
