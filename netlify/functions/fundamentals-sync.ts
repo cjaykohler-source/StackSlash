@@ -15,7 +15,8 @@ import { fetchEarningsCalendar, fetchProfiles, fetchEarningsSurprises } from "./
  *  3. SUE (standardized unexpected earnings) for symbols that just
  *     reported and don't have it yet — per-symbol call, capped per run.
  *
- * Scheduled via netlify.toml, once daily.
+ * Scheduled via netlify.toml (06:00 + 21:00 UTC). Also accepts a manual
+ * POST (like backfill-history / backtest-triggers) for a one-off run.
  */
 const CAL_BACK_DAYS = 100;
 const CAL_FWD_DAYS = 45;
@@ -26,10 +27,10 @@ const UPSERT_BATCH = 2000;
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-export default async () => {
+export default async (_req?: Request) => {
   const db = getSupabaseAdmin();
 
-  await withJobRun(db, "fundamentals-sync", async () => {
+  const result = await withJobRun(db, "fundamentals-sync", async () => {
     // active symbols
     const symbols: { id: number; ticker: string }[] = [];
     for (let from = 0; ; from += 1000) {
@@ -143,5 +144,5 @@ export default async () => {
     };
   });
 
-  return new Response("ok");
+  return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
 };
