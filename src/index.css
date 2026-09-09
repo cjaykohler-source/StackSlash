@@ -1393,6 +1393,29 @@ h1 .quote-tag {
 /* ---------------------------------------------------------------------------
    News (symbol page + dossier)
    --------------------------------------------------------------------------- */
+
+/* Trigger status | recent news — split evenly on the symbol page. */
+.symbol-profile-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+.symbol-profile-triggers,
+.symbol-profile-news {
+  min-width: 0;
+}
+.symbol-profile-triggers .profile-subheading,
+.symbol-profile-news .symbol-news-title {
+  margin-top: 0;
+}
+@media (max-width: 900px) {
+  .symbol-profile-split {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+}
+
 .symbol-news-title {
   margin: 0 0 10px;
   font-size: 0.72rem;
@@ -1412,7 +1435,6 @@ h1 .quote-tag {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 720px;
 }
 .symbol-news-item {
   display: flex;
