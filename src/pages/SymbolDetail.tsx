@@ -4,7 +4,7 @@ import { supabase } from "../lib/supabaseClient";
 import { DossierCard } from "../components/DossierCard";
 import { SymbolProfile } from "../components/SymbolProfile";
 import { CompanyDescription } from "../components/CompanyDescription";
-import { QuoteTag, useQuotes } from "../components/QuoteTag";
+import { useQuotes, type Quote } from "../components/QuoteTag";
 import { PriceChart, type PricePoint } from "../components/PriceChart";
 import { SymbolNews } from "../components/SymbolNews";
 import { sessionAxis, type SessionAxis } from "../lib/marketTime";
@@ -82,7 +82,8 @@ export function SymbolDetail() {
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
   const [symbolName, setSymbolName] = useState<string | null>(null);
-  const quotes = useQuotes(ticker ? [ticker] : []);
+  // Poll the live quote every 30s (matches the quotes function's edge cache).
+  const quotes = useQuotes(ticker ? [ticker] : [], 30_000);
 
   const loadDossiers = useCallback(async (symbolId: number) => {
     const { data } = await supabase
@@ -225,8 +226,8 @@ export function SymbolDetail() {
           <h1>
             {ticker}
             {symbolName && <span className="symbol-company-name"> ({symbolName})</span>}
-            {ticker && <QuoteTag quote={quotes.get(ticker)} />}
           </h1>
+          {ticker && <SymbolQuote quote={quotes.get(ticker)} />}
           <CompanyDescription name={symbolName} />
         </div>
         <Link to="/" className="link-button">← Back to feed</Link>
@@ -283,6 +284,26 @@ export function SymbolDetail() {
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+/** Prominent last-price + intraday change for the symbol header. */
+function SymbolQuote({ quote }: { quote: Quote | undefined }) {
+  if (!quote) return <div className="symbol-quote symbol-quote-empty">—</div>;
+  const { price, changePct } = quote;
+  const open = changePct > -1 ? price / (1 + changePct) : price;
+  const abs = price - open;
+  const pctRounded = Number((changePct * 100).toFixed(2));
+  const dir = pctRounded > 0 ? "up" : pctRounded < 0 ? "down" : "flat";
+  const arrow = dir === "up" ? "▲" : dir === "down" ? "▼" : "";
+  return (
+    <div className={`symbol-quote ${dir}`}>
+      <span className="symbol-quote-price">${price.toFixed(2)}</span>
+      <span className="symbol-quote-change">
+        {arrow} {abs >= 0 ? "+" : "−"}${Math.abs(abs).toFixed(2)} ({pctRounded > 0 ? "+" : ""}
+        {pctRounded.toFixed(2)}%) <span className="symbol-quote-today">today</span>
+      </span>
     </div>
   );
 }

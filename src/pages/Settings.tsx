@@ -115,7 +115,9 @@ export function Settings() {
   return (
     <div className="page">
       <header className="page-header">
-        <img src={logo} alt="StackSlash" className="brand-logo" />
+        <Link to="/" className="brand-logo-link" aria-label="Home">
+          <img src={logo} alt="StackSlash" className="brand-logo" />
+        </Link>
         <div className="header-actions">
           <Link to="/" className="link-button">
             ← Dashboard

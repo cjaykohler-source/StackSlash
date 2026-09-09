@@ -11,7 +11,9 @@ export function Dashboard() {
   return (
     <div className="page">
       <header className="page-header">
-        <img src={logo} alt="StackSlash" className="brand-logo" />
+        <Link to="/" className="brand-logo-link" aria-label="Home">
+          <img src={logo} alt="StackSlash" className="brand-logo" />
+        </Link>
         <SymbolSearch />
         <div className="header-actions">
           <Link to="/isolator" className="link-button">

@@ -10,12 +10,16 @@ interface Tracked {
   name: string | null;
 }
 
-const REFRESH_MS = 60_000;
+// The live quote (price + intraday %) polls fast; the chart's bar series
+// reloads slowly, since bars_intraday only updates every ~5 min and the
+// current quote is appended as the line's tip between reloads.
+const QUOTE_MS = 15_000;
+const SERIES_MS = 90_000;
 
 /**
  * Dashboard "Tracking" panel — a user-curated watchlist (persisted in the
  * `tracked_symbols` table). Search a ticker, hit Track, and it gets a
- * live mini chart that repolls every minute. Sits above the trigger feed.
+ * live mini chart. Sits above the trigger feed.
  */
 export function TrackingPanel() {
   const [tracked, setTracked] = useState<Tracked[]>([]);
@@ -78,7 +82,7 @@ export function TrackingPanel() {
   // One batched, self-repolling quote fetch for every tracked ticker.
   const quotes = useQuotes(
     tracked.map((t) => t.ticker),
-    REFRESH_MS,
+    QUOTE_MS,
   );
 
   return (
@@ -191,7 +195,7 @@ function TrackedCard({
       setSeries(drows.reverse().map((r) => ({ t: new Date(`${r.date}T00:00:00Z`).getTime(), price: Number(r.close) })));
     }
     loadSeries();
-    const id = setInterval(loadSeries, REFRESH_MS);
+    const id = setInterval(loadSeries, SERIES_MS);
     return () => {
       cancelledRef.current = true;
       clearInterval(id);
