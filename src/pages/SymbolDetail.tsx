@@ -1,19 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { supabase } from "../lib/supabaseClient";
 import { DossierCard } from "../components/DossierCard";
 import { SymbolProfile } from "../components/SymbolProfile";
 import { CompanyDescription } from "../components/CompanyDescription";
 import { QuoteTag, useQuotes } from "../components/QuoteTag";
+import { PriceChart, type PricePoint } from "../components/PriceChart";
+import { sessionAxis, type SessionAxis } from "../lib/marketTime";
 
 type Range = "day" | "week" | "month" | "year" | "max";
 
@@ -24,11 +17,6 @@ const RANGE_OPTIONS: { key: Range; label: string }[] = [
   { key: "year", label: "Year" },
   { key: "max", label: "Max (18mo)" },
 ];
-
-interface ChartPoint {
-  x: string; // pre-formatted label (time for Day, date for everything else)
-  y: number;
-}
 
 interface DossierRow {
   id: number;
@@ -87,7 +75,8 @@ function formatDateLabel(dateStr: string, range: Range): string {
 export function SymbolDetail() {
   const { ticker } = useParams<{ ticker: string }>();
   const [range, setRange] = useState<Range>("day");
-  const [points, setPoints] = useState<ChartPoint[]>([]);
+  const [points, setPoints] = useState<PricePoint[]>([]);
+  const [session, setSession] = useState<SessionAxis | null>(null);
   const [dossiers, setDossiers] = useState<DossierRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
@@ -108,11 +97,13 @@ export function SymbolDetail() {
     setLoading(true);
     if (r === "day") {
       // "Day" = the most recent session with data, not literally today.
-      const toPoints = (rows: { ts: string; price: number }[]) =>
-        rows.map((b) => ({
-          x: new Date(b.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          y: b.price,
-        }));
+      // Points carry an epoch-ms x so PriceChart can pin the axis to the
+      // full pre-market-to-after-hours span for that session.
+      const toPoints = (rows: { ts: string; price: number }[]): PricePoint[] =>
+        rows.map((b) => ({ x: new Date(b.ts).getTime(), y: b.price }));
+      const applySession = (pts: PricePoint[]) => {
+        setSession(pts.length ? sessionAxis(pts[pts.length - 1].x as number) : null);
+      };
 
       const { data: latestRow } = await supabase
         .from("bars_intraday")
@@ -134,9 +125,12 @@ export function SymbolDetail() {
             `/.netlify/functions/session-bars?symbol=${encodeURIComponent(tkr)}`,
           );
           const body = (await res.json()) as { bars?: { ts: string; price: number }[] };
-          setPoints(toPoints(body.bars ?? []));
+          const pts = toPoints(body.bars ?? []);
+          setPoints(pts);
+          applySession(pts);
         } catch {
           setPoints([]);
+          setSession(null);
         }
         setLoading(false);
         return;
@@ -152,8 +146,11 @@ export function SymbolDetail() {
         .lt("ts", dayEnd)
         .order("ts", { ascending: true })
         .limit(1000);
-      setPoints(toPoints((data as { ts: string; price: number }[] | null) ?? []));
+      const pts = toPoints((data as { ts: string; price: number }[] | null) ?? []);
+      setPoints(pts);
+      applySession(pts);
     } else {
+      setSession(null);
       const start = rangeStartDate(r).toISOString().slice(0, 10);
       const { data } = await supabase
         .from("bars_daily")
@@ -247,15 +244,11 @@ export function SymbolDetail() {
             {range === "max" ? " — history is backfilled from 2025-03." : "."}
           </p>
         ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={points}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="x" minTickGap={40} />
-              <YAxis domain={["auto", "auto"]} />
-              <Tooltip labelStyle={{ color: "#000" }} />
-              <Line type="monotone" dataKey="y" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          <PriceChart
+            data={points}
+            variant={range === "day" ? "intraday" : "calendar"}
+            session={range === "day" ? session ?? undefined : undefined}
+          />
         )}
       </section>
 
