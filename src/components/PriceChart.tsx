@@ -113,22 +113,20 @@ export function PriceChart({ data, variant, session, height = 320 }: Props) {
             tick={{ fill: "var(--text-dim)", fontSize: 11 }}
             tickFormatter={(v: number) => money(v)}
           />
-          {variant === "intraday" && session && (
-            <>
-              <ReferenceLine
-                x={session.open}
-                stroke="var(--text-dim)"
-                strokeDasharray="2 3"
-                strokeOpacity={0.6}
-              />
-              <ReferenceLine
-                x={session.close}
-                stroke="var(--text-dim)"
-                strokeDasharray="2 3"
-                strokeOpacity={0.6}
-              />
-            </>
-          )}
+          {variant === "intraday" &&
+            session &&
+            [session.open, session.close].map(
+              (x) =>
+                x != null && (
+                  <ReferenceLine
+                    key={x}
+                    x={x}
+                    stroke="var(--text-dim)"
+                    strokeDasharray="2 3"
+                    strokeOpacity={0.6}
+                  />
+                ),
+            )}
           <Tooltip
             content={<TooltipCard variant={variant} />}
             cursor={{ stroke: "var(--text-dim)", strokeDasharray: "3 3" }}
