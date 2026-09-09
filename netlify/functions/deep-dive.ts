@@ -255,6 +255,11 @@ export default async (req: Request) => {
     runway_quarters: fundamentals?.runway_quarters != null ? Number(fundamentals.runway_quarters) : null,
     share_change_yoy: fundamentals?.share_change_yoy != null ? Number(fundamentals.share_change_yoy) : null,
     book_equity: fundamentals?.book_equity != null ? Number(fundamentals.book_equity) : null,
+    net_cash_to_mktcap:
+      fundamentals?.net_cash_to_mktcap != null ? Number(fundamentals.net_cash_to_mktcap) : null,
+    revenue_growth_yoy:
+      fundamentals?.revenue_growth_yoy != null ? Number(fundamentals.revenue_growth_yoy) : null,
+    zacks_rank: fundamentals?.zacks_rank != null ? Number(fundamentals.zacks_rank) : null,
   });
 
   const riskCfg = {
@@ -378,8 +383,11 @@ export default async (req: Request) => {
     : "";
   const redFlags = flags.filter((x) => x.level === "red");
   const amberFlags = flags.filter((x) => x.level === "amber");
+  const greenFlags = flags.filter((x) => x.level === "green");
   const flagLine = flags.length
-    ? `\n⚠️ ${[...redFlags, ...amberFlags].map((x) => x.label).join(" · ")}`
+    ? `\n${redFlags.length ? "⚠️" : "🔹"} ${[...redFlags, ...amberFlags, ...greenFlags]
+        .map((x) => x.label)
+        .join(" · ")}`
     : "";
   const tradeLine = trade
     ? `\nrisk-defined: ${trade.shares} sh ≈ $${trade.position_cost.toFixed(2)}, stop $${trade.stop.toFixed(2)} (−${Math.round(trade.stop_pct * 100)}%), max loss $${trade.max_loss.toFixed(2)}`

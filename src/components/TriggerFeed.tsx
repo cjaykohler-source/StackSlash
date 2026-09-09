@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { triggerLabel, triggerCategoryLabel, TRIGGER_INFO } from "../lib/triggerInfo";
+import { triggerLabel, triggerCategoryLabel } from "../lib/triggerInfo";
 import { InfoTooltip } from "./InfoTooltip";
 import { useQuotes } from "./QuoteTag";
 
@@ -20,6 +20,15 @@ interface ConfluenceMeta {
   triggers: { id: number; name: string | null }[];
 }
 
+interface RiskFlag {
+  level: "red" | "amber" | "green";
+  label: string;
+  note?: string;
+}
+
+// Feed flag display order: negatives first, positives last.
+const FLAG_ORDER: Record<RiskFlag["level"], number> = { red: 0, amber: 1, green: 2 };
+
 interface FeedRow {
   key: string; // "e<id>" | "p<id>"
   ts: string;
@@ -30,6 +39,7 @@ interface FeedRow {
   clusterTriggerNames: string[]; // for the badge tooltip when >= 2
   priority: "normal" | "high" | null;
   status: string; // "pending" for un-promoted single fires
+  riskFlags: RiskFlag[]; // from the linked dossier (promoted events only)
 }
 
 interface DayGroup {
@@ -111,11 +121,13 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
       const [eventsRes, pendingRes] = await Promise.all([
         supabase
           .from("trigger_events")
+          // `dossiers(risk_flags:analysis->risk_flags)` projects just the
+          // flag array out of the (large) analysis JSON.
           .select(
-            "id, ts, status, priority, symbol_id, trigger_id, snapshot, symbols(ticker, alert_excluded), triggers(name)",
+            "id, ts, status, priority, symbol_id, trigger_id, snapshot, symbols(ticker, alert_excluded), triggers(name), dossiers(risk_flags:analysis->risk_flags)",
           )
           .order("ts", { ascending: false })
-          .limit(500),
+          .limit(400),
         supabase
           .from("pending_fires")
           .select("id, created_at, symbol_id, trigger_id, symbols(ticker, alert_excluded), triggers(name)")
@@ -135,6 +147,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         snapshot: { confluence?: ConfluenceMeta | null } | null;
         symbols: { ticker: string; alert_excluded: boolean } | null;
         triggers: { name: string } | null;
+        dossiers: { risk_flags: RiskFlag[] | null }[] | null;
       };
       type RawPending = {
         id: number;
@@ -159,6 +172,11 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
           clusterTriggerNames: names.length ? names : r.triggers?.name ? [r.triggers.name] : [],
           priority: r.priority,
           status: r.status,
+          riskFlags: (r.dossiers?.[0]?.risk_flags ?? []).map((x) => ({
+            level: x.level,
+            label: x.label,
+            note: x.note,
+          })),
         };
       });
 
@@ -174,6 +192,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         clusterTriggerNames: r.triggers?.name ? [r.triggers.name] : [],
         priority: null,
         status: "pending",
+        riskFlags: [],
       }));
 
       setEventRows(events);
@@ -240,12 +259,15 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
     const pct = quote ? Number((quote.changePct * 100).toFixed(1)) : null;
     const pctDir = pct === null ? "" : pct > 0 ? "up" : pct < 0 ? "down" : "";
     const subDollar = quote != null && quote.price < SUB_DOLLAR_FLAG_PRICE;
+    const hasRed = row.riskFlags.some((f) => f.level === "red");
     const isHigh = row.priority === "high" || row.signalCount >= 3;
     return (
-      <tr key={row.key} className={isHigh || subDollar ? "trigger-feed-row-high" : undefined}>
+      <tr key={row.key} className={isHigh || subDollar || hasRed ? "trigger-feed-row-high" : undefined}>
         <td>{timeOnly(row.ts)}</td>
         <td>
           <Link to={`/symbol/${row.ticker ?? row.symbol_id}`}>{row.ticker ?? row.symbol_id}</Link>
+        </td>
+        <td className="col-flags">
           {row.signalCount >= 2 && (
             <span
               className={`confluence-badge${row.signalCount >= 3 ? " confluence-badge-high" : ""}`}
@@ -259,26 +281,22 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
           {subDollar && (
             <span
               className="confluence-badge confluence-badge-subfive"
-              title={`Trading under $${SUB_DOLLAR_FLAG_PRICE}/share — flagged high priority`}
+              title={`Trading under $${SUB_DOLLAR_FLAG_PRICE}/share`}
             >
               UNDER ${SUB_DOLLAR_FLAG_PRICE}
             </span>
           )}
+          {[...row.riskFlags]
+            .sort((a, b) => FLAG_ORDER[a.level] - FLAG_ORDER[b.level])
+            .map((f) => (
+              <span key={f.label} className={`feed-flag feed-flag-${f.level}`} title={f.note ?? f.label}>
+                {f.label}
+              </span>
+            ))}
         </td>
         <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
         <td className={`col-num ${pctDir}`}>
           {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
-        </td>
-        <td>
-          {row.triggerName && TRIGGER_INFO[row.triggerName]?.summary ? (
-            <InfoTooltip text={TRIGGER_INFO[row.triggerName]!.summary}>
-              {triggerLabel(row.triggerName)}
-            </InfoTooltip>
-          ) : row.triggerName ? (
-            triggerLabel(row.triggerName)
-          ) : (
-            "—"
-          )}
         </td>
         <td className="col-category">{row.triggerName ? triggerCategoryLabel(row.triggerName) : "—"}</td>
         <td>
@@ -301,9 +319,9 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
           <tr>
             <th>Time</th>
             <th>Symbol</th>
+            <th className="col-flags">Flags</th>
             <th className="col-num">Price</th>
             <th className="col-num">Change</th>
-            <th>Trigger</th>
             <th className="col-category">Category</th>
             <th>Status</th>
           </tr>

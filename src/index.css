@@ -637,19 +637,60 @@ body {
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(46, 204, 113, 0.15);
-  color: var(--green);
+  background: rgba(37, 233, 121, 0.14);
+  color: var(--brand-green);
   white-space: nowrap;
 }
+/* 3+ agreeing triggers — the strongest positive, brighter green. */
 .confluence-badge-high {
-  background: rgba(231, 76, 60, 0.18);
-  color: var(--red);
+  background: rgba(37, 233, 121, 0.26);
+  color: var(--brand-green);
 }
 .confluence-badge-subfive {
-  background: var(--amber);
-  color: #04121f;
+  background: rgba(240, 160, 32, 0.14);
+  color: var(--amber);
   letter-spacing: 0.03em;
 }
+
+/* Flags column: confluence badges + relocated risk chips */
+.trigger-feed td.col-flags,
+.trigger-feed th.col-flags {
+  white-space: normal;
+  max-width: 240px;
+  line-height: 1.9;
+}
+.trigger-feed td.col-flags:empty::after {
+  content: "—";
+  color: var(--text-dim);
+}
+.trigger-feed td.col-flags .confluence-badge {
+  margin: 0 4px 0 0;
+}
+.feed-flag {
+  display: inline-block;
+  margin: 0 4px 0 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.feed-flag-red {
+  background: rgba(231, 76, 60, 0.14);
+  color: var(--red);
+  border-color: rgba(231, 76, 60, 0.35);
+}
+.feed-flag-amber {
+  background: rgba(240, 160, 32, 0.14);
+  color: var(--amber);
+}
+.feed-flag-green {
+  background: rgba(37, 233, 121, 0.14);
+  color: var(--brand-green);
+  border-color: rgba(37, 233, 121, 0.3);
+}
+
 .trigger-feed-row-high td {
   background: rgba(231, 76, 60, 0.06);
 }
@@ -1110,6 +1151,10 @@ h1 .quote-tag {
 .dossier-flag-amber {
   background: rgba(240, 160, 32, 0.14);
   color: var(--amber);
+}
+.dossier-flag-green {
+  background: rgba(37, 233, 121, 0.14);
+  color: var(--brand-green);
 }
 .dossier-trade {
   margin-top: 10px;

@@ -28,6 +28,8 @@ export interface DossierCardData {
  * factor_state columns identically.
  */
 
+const FLAG_ORDER: Record<"red" | "amber" | "green", number> = { red: 0, amber: 1, green: 2 };
+
 interface HistoricalStats {
   horizon_days?: number;
   sample_size: number;
@@ -76,7 +78,7 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
     priority?: "normal" | "high";
     confluence?: { count: number; direction: "long" | "short"; triggers: string[] } | null;
     price?: number | null;
-    risk_flags?: { level: "red" | "amber"; label: string; note: string }[];
+    risk_flags?: { level: "red" | "amber" | "green"; label: string; note: string }[];
     trade?: { stop: number; stop_pct: number; shares: number; position_cost: number; max_loss: number } | null;
     earnings?: { date: string; days: number } | null;
     news?: { headline: string; url: string; source: string; ts: string }[];
@@ -131,11 +133,15 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
 
       {flagsList.length > 0 && (
         <div className="dossier-flags">
-          {flagsList.map((f) => (
-            <InfoTooltip key={f.label} text={f.note}>
-              <span className={`dossier-flag dossier-flag-${f.level}`}>⚠ {f.label}</span>
-            </InfoTooltip>
-          ))}
+          {[...flagsList]
+            .sort((a, b) => FLAG_ORDER[a.level] - FLAG_ORDER[b.level])
+            .map((f) => (
+              <InfoTooltip key={f.label} text={f.note}>
+                <span className={`dossier-flag dossier-flag-${f.level}`}>
+                  {f.level === "green" ? "✓" : "⚠"} {f.label}
+                </span>
+              </InfoTooltip>
+            ))}
         </div>
       )}
 
