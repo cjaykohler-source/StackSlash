@@ -217,17 +217,22 @@ export default async () => {
     // --- 3. Compute factor_state via the shared dailySnapshot module ---
     // (also used by backtest-triggers.ts, so live behavior and backtested
     // "expectancy" numbers can't silently drift apart — see its own comment.)
-    const factorsBySymbolId = computeFactors(barsBySymbolId);
-    const factorRows: Record<string, unknown>[] = [];
-    for (const [symbolId, fields] of factorsBySymbolId.entries()) {
-      factorRows.push({ symbol_id: symbolId, as_of: today, ...fields });
-    }
-
-    // Latest close per symbol — used by steps 6/7 for shadow_positions
-    // entry_price/exit_price (not stored on factor_state rows themselves).
+    // Latest close per symbol — stored on factor_state (last_close) and
+    // used by steps 6/7 for shadow_positions entry/exit prices.
     const priceBySymbolId = new Map<number, number>();
     for (const [symbolId, bars] of barsBySymbolId.entries()) {
       if (bars.length) priceBySymbolId.set(symbolId, bars[bars.length - 1].close);
+    }
+
+    const factorsBySymbolId = computeFactors(barsBySymbolId);
+    const factorRows: Record<string, unknown>[] = [];
+    for (const [symbolId, fields] of factorsBySymbolId.entries()) {
+      factorRows.push({
+        symbol_id: symbolId,
+        as_of: today,
+        last_close: priceBySymbolId.get(symbolId) ?? null,
+        ...fields,
+      });
     }
 
     // Batched — ~5,000 rows at the full universe scale.
