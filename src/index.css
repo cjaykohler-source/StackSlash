@@ -971,10 +971,49 @@ h1 .quote-tag {
   background: var(--amber);
   color: #04121f;
 }
+.dossier-card-flagged {
+  border-color: var(--amber);
+}
+.dossier-price {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 .dossier-confluence {
   color: var(--text-dim);
   font-size: 0.8rem;
   margin-top: 3px;
+}
+.dossier-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+.dossier-flag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.dossier-flag-red {
+  background: rgba(231, 76, 60, 0.16);
+  color: var(--red);
+}
+.dossier-flag-amber {
+  background: rgba(240, 160, 32, 0.14);
+  color: var(--amber);
+}
+.dossier-trade {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.dossier-trade-label {
+  color: var(--text);
+  font-weight: 600;
 }
 .dossier-card-header {
   display: flex;

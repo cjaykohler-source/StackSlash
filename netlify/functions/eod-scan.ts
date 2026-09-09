@@ -225,12 +225,37 @@ export default async () => {
     }
 
     const factorsBySymbolId = computeFactors(barsBySymbolId);
+
+    // Post-earnings-drift inputs from the FMP-synced `earnings` table:
+    // the most recent report per symbol within the drift window, so
+    // earnings_surprise_drift has real `sue` / `days_since_earnings`.
+    const DRIFT_WINDOW_DAYS = 90;
+    const driftCutoff = new Date(Date.now() - DRIFT_WINDOW_DAYS * 86400_000).toISOString().slice(0, 10);
+    const earningsBySymbol = new Map<number, { days_since_earnings: number; sue: number | null }>();
+    {
+      const { data: er } = await db
+        .from("earnings")
+        .select("symbol_id, report_date, sue")
+        .lte("report_date", today)
+        .gte("report_date", driftCutoff)
+        .order("report_date", { ascending: false })
+        .limit(8000);
+      for (const r of (er as { symbol_id: number; report_date: string; sue: number | null }[] | null) ?? []) {
+        if (earningsBySymbol.has(r.symbol_id)) continue; // first = most recent
+        const days = Math.floor((Date.parse(today) - Date.parse(r.report_date)) / 86400_000);
+        earningsBySymbol.set(r.symbol_id, { days_since_earnings: days, sue: r.sue });
+      }
+    }
+
     const factorRows: Record<string, unknown>[] = [];
     for (const [symbolId, fields] of factorsBySymbolId.entries()) {
+      const earn = earningsBySymbol.get(symbolId);
       factorRows.push({
         symbol_id: symbolId,
         as_of: today,
         last_close: priceBySymbolId.get(symbolId) ?? null,
+        days_since_earnings: earn?.days_since_earnings ?? null,
+        sue: earn?.sue ?? null,
         ...fields,
       });
     }

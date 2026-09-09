@@ -16,7 +16,7 @@
   #
   # ALPACA_BASE_URL is additionally just a public API endpoint, not a
   # secret at all.
-  SECRETS_SCAN_OMIT_KEYS = "ALPACA_BASE_URL,ALPACA_API_KEY_ID,ALPACA_API_SECRET_KEY,SUPABASE_SERVICE_ROLE_KEY,DISCORD_WEBHOOK_URL,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID"
+  SECRETS_SCAN_OMIT_KEYS = "ALPACA_BASE_URL,ALPACA_API_KEY_ID,ALPACA_API_SECRET_KEY,SUPABASE_SERVICE_ROLE_KEY,DISCORD_WEBHOOK_URL,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,FMP_API_KEY"
 
 [dev]
   command = "npm run dev"
@@ -79,6 +79,9 @@
 
 [functions."prune-bars-daily"]
   schedule = "50 21 * * 1-5"
+
+[functions."fundamentals-sync"]
+  schedule = "0 6,21 * * *"
 
 [functions."weekly-bars-scan"]
   schedule = "0 6 * * 1"
