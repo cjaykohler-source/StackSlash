@@ -1389,3 +1389,73 @@ h1 .quote-tag {
   color: var(--text-dim);
   font-size: 0.8em;
 }
+
+/* ---------------------------------------------------------------------------
+   News (symbol page + dossier)
+   --------------------------------------------------------------------------- */
+.symbol-news-title {
+  margin: 0 0 10px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+}
+.symbol-news-empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.symbol-news-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+}
+.symbol-news-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.symbol-news-item a,
+.symbol-news-item a:visited {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+.symbol-news-item a:hover {
+  color: var(--accent);
+}
+.symbol-news-meta {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.dossier-news {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+.dossier-news-item,
+.dossier-news-item:visited {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-decoration: none;
+  color: var(--text);
+}
+.dossier-news-headline {
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+.dossier-news-item:hover .dossier-news-headline {
+  color: var(--accent);
+}
+.dossier-news-meta {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}

@@ -6,6 +6,7 @@ import { SymbolProfile } from "../components/SymbolProfile";
 import { CompanyDescription } from "../components/CompanyDescription";
 import { QuoteTag, useQuotes } from "../components/QuoteTag";
 import { PriceChart, type PricePoint } from "../components/PriceChart";
+import { SymbolNews } from "../components/SymbolNews";
 import { sessionAxis, type SessionAxis } from "../lib/marketTime";
 
 type Range = "day" | "week" | "month" | "year" | "max";
@@ -262,6 +263,12 @@ export function SymbolDetail() {
       {symbolId !== null && (
         <section>
           <SymbolProfile symbolId={symbolId} />
+        </section>
+      )}
+
+      {ticker && (
+        <section>
+          <SymbolNews ticker={ticker} />
         </section>
       )}
 

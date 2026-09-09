@@ -53,6 +53,7 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
     risk_flags?: { level: "red" | "amber"; label: string; note: string }[];
     trade?: { stop: number; stop_pct: number; shares: number; position_cost: number; max_loss: number } | null;
     earnings?: { date: string; days: number } | null;
+    news?: { headline: string; url: string; source: string; ts: string }[];
     fired_on?: Record<string, unknown>;
     note?: string; // legacy placeholder-era dossiers only
     historical?: HistoricalStats;
@@ -110,6 +111,19 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
           <span className="dossier-trade-label">Risk-defined:</span> {trade.shares} sh ≈ $
           {trade.position_cost.toFixed(2)} · stop ${trade.stop.toFixed(2)} (−{Math.round(trade.stop_pct * 100)}%) ·
           max loss ${trade.max_loss.toFixed(2)}
+        </div>
+      )}
+
+      {analysis.news && analysis.news.length > 0 && (
+        <div className="dossier-news">
+          {analysis.news.slice(0, 3).map((n) => (
+            <a key={n.url} href={n.url} target="_blank" rel="noopener noreferrer" className="dossier-news-item">
+              <span className="dossier-news-headline">📰 {n.headline}</span>
+              <span className="dossier-news-meta">
+                {n.source} · {new Date(n.ts).toLocaleDateString([], { month: "short", day: "numeric" })}
+              </span>
+            </a>
+          ))}
         </div>
       )}
 
