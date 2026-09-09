@@ -436,14 +436,16 @@ Backlog (research-identified, not started):
 
 ```
 src/                      Frontend (Vite + React + Supabase client)
-  pages/                  Login, Dashboard, SymbolDetail, Reports, About
+  pages/                  Login, Dashboard, SymbolDetail, Reports, Settings,
+                           Isolator (screener), About
   components/             AuthGuard, RegimeBanner, TriggerFeed, DossierCard,
                            SymbolSearch, SymbolProfile, QuoteTag (+useQuotes),
                            TopMovers (sidebar, top_movers() RPC),
                            TrackingPanel (watchlist + live mini charts),
                            MarketBreadth (built, not currently rendered),
                            InfoTooltip, ProximityBar, CompanyDescription
-  lib/                    Supabase client, shared TS types, triggerEval.ts
+  lib/                    Supabase client, shared TS types, screenFields.ts
+                           (Isolator field catalogue + spec helpers), triggerEval.ts
                            (client-side port of triggers.ts, display-only),
                            triggerProximity.ts, triggerInfo.ts (plain-English
                            labels, single source of truth), factorFormat.ts
@@ -488,6 +490,10 @@ netlify/functions/
   prune-bars-daily.ts     Scheduled daily — trims bars_daily / bars_weekly
                            to a rolling ~550-day window so the ~5,000-symbol
                            universe fits the free 500 MB Supabase plan.
+  refresh-window-stats.ts Scheduled weeknights (23:00 UTC, after eod-scan) —
+                           invokes refresh_factor_window_stats() to rebuild
+                           factor_window_stats, the Isolator's trailing-window
+                           metric table.
   backtest-triggers.ts    Manually-triggered: replays every backtestable
                            trigger against 5yr history, writes trigger_stats.
   deep-dive.ts            Job C — HTTP-triggered by a Postgres trigger on
@@ -629,6 +635,27 @@ Two things work on the free tier:
 No forward earnings calendar means the "earnings in N days" gap-risk flag
 and `suppress_earnings_days` can't fire on the free tier — they light up
 only on FMP Starter+. Needs `FMP_API_KEY` in the env.
+
+**Isolator (`/isolator`):** a screener over the whole tracked universe.
+A screen's `spec` (JSON) is a list of AND-ed conditions, each either
+`snapshot` (a current `factor_state` column — RSI now, momentum rank now,
+…) or `window` (a trailing aggregate over a 20- or 40-session lookback —
+avg Bollinger width, volume high/low spread, window return, realized vol,
+range position, price/volume slope, …). `screen_symbols(spec jsonb)`
+(Postgres, `security invoker`, granted to `authenticated`) evaluates it
+and returns the matches plus a `metrics` blob so the UI can show what
+matched. Window metrics live in `factor_window_stats`
+(one scalar row per symbol × window × metric), rebuilt nightly by
+`refresh_factor_window_stats()` — all recomputed from `bars_daily` OHLCV,
+so they carry the full ~18-month depth immediately (the `refresh-window-stats`
+scheduled function just invokes it after eod-scan). ~25 MB. Saved and
+preset screens are rows in `screens` (`is_preset` rows are read-only via
+RLS); 7 presets seeded (coiled spring, quiet accumulation, volatility
+contraction, washout bounce, range breakout watch, fresh momentum leader,
+penny setups for a $40 account). Trailing aggregates of *non-price*
+factor columns (avg momentum rank over 40 sessions, etc.) are a future
+add — `factor_state` only started accumulating daily history in Sept 2026,
+so there's nothing to aggregate yet.
 
 **Placeholder / not yet built:** `factor_state.est_revision_30d` /
 `book_to_market` still unpopulated (FMP has them, not wired yet); exit
