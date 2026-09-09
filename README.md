@@ -507,6 +507,10 @@ netlify/functions/
                            from Alpaca snapshots; changePct is since
                            today's open. Feeds the UI's per-symbol quote
                            tags. Chunked (120/call), 30s edge cache.
+  news.ts                 GET ?symbol=X -> recent Benzinga headlines for
+                           one symbol (Alpaca /v1beta1/news). Public,
+                           5-min edge cache. Feeds the symbol page's
+                           "Recent news" panel.
   lib/
     supabaseAdmin.ts       Service-role client (server-only, bypasses RLS)
     alpaca.ts               Alpaca REST client — bars, snapshots, asset
@@ -665,12 +669,23 @@ edge-function-level auth gating (client-side + RLS is the real boundary
 today); the name-keyword common-stock filter has known small
 imperfections (see "Universe" above).
 
+**News (Alpaca `/v1beta1/news`, Benzinga):** works on the paper keys —
+real-time headlines, limited historical depth, headline-only (no body).
+`lib/alpaca.ts`'s `fetchNews()` is best-effort (returns `[]` on any
+failure, never blocks). Wired in three places: `deep-dive.ts` attaches
+the symbol's last ~4 headlines to the dossier and the newest to the
+Discord alert; a "fresh news (Nh ago)" risk flag fires when the latest
+headline is within 24h (red ≤ 6h) — a catalyst-driven move has a
+different risk profile than a quiet technical drift; the `news` function
+(`GET ?symbol=X`, public, 5-min edge cache) feeds a "Recent news" panel
+on the symbol page.
+
 **Risk flags & risk-defined sizing:** every dossier + alert now carries
-risk flags computed by `lib/riskFlags.ts` — imminent earnings (Starter+
-only, with an optional alert-suppression window), extreme volatility,
-parabolic run, offering-sized volume, sub-$1, nano-cap (< $50M),
-foreign ADR, and biotech / crypto-AI binary-catalyst sectors — plus a
-suggested stop and position size from `scan_config`
+risk flags computed by `lib/riskFlags.ts` — fresh news (< 24h), imminent
+earnings (Starter+ only, with an optional alert-suppression window),
+extreme volatility, parabolic run, offering-sized volume, sub-$1,
+nano-cap (< $50M), foreign ADR, and biotech / crypto-AI binary-catalyst
+sectors — plus a suggested stop and position size from `scan_config`
 (`account_size`, `max_risk_pct`, `default_stop_pct`). The scanner still
 only sees price action; these flag the categories most likely to reverse
 on a small account, they don't substitute for a fundamental thesis.

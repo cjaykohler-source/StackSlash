@@ -193,3 +193,46 @@ export async function fetchSnapshots(
   }
   return out;
 }
+
+export interface NewsItem {
+  id: number;
+  headline: string;
+  summary: string;
+  author: string;
+  source: string;
+  url: string;
+  created_at: string; // RFC-3339
+  symbols: string[];
+}
+
+/**
+ * Recent news headlines for one or more symbols (Alpaca `/v1beta1/news`,
+ * Benzinga-sourced). Works on the free/paper tier: real-time headlines,
+ * limited historical depth, mostly headline-only (no article body).
+ *
+ * Best-effort by design — callers use this to add "why is it moving"
+ * context, never to gate a decision, so a rate-limit or outage returns
+ * an empty list rather than throwing.
+ */
+export async function fetchNews(
+  symbols: string[],
+  opts: { limit?: number; start?: string } = {},
+): Promise<NewsItem[]> {
+  if (!symbols.length) return [];
+  const params = new URLSearchParams({
+    symbols: symbols.join(","),
+    limit: String(opts.limit ?? 10),
+    sort: "desc",
+  });
+  if (opts.start) params.set("start", opts.start);
+  try {
+    const res = await fetch(`${dataBaseUrl()}/v1beta1/news?${params.toString()}`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { news?: NewsItem[] };
+    return body.news ?? [];
+  } catch {
+    return [];
+  }
+}

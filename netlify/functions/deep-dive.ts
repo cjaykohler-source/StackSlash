@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { dispatchAlert } from "./lib/notify";
-import { fetchSnapshots } from "./lib/alpaca";
+import { fetchSnapshots, fetchNews } from "./lib/alpaca";
 import { riskFlags, tradeSuggestion } from "./lib/riskFlags";
 import { fetchProfile } from "./lib/fmp";
 
@@ -220,6 +220,19 @@ export default async (req: Request) => {
     ? Math.round((Date.parse(nearestEarnings) - Date.parse(nowIso)) / 86400_000)
     : null;
 
+  // Recent headlines for the symbol — best-effort "why is it moving"
+  // context. fetchNews never throws (returns [] on any failure).
+  const newsItems = (await fetchNews([ticker], { limit: 4 })).slice(0, 4);
+  const news = newsItems.map((n) => ({
+    headline: n.headline,
+    url: n.url,
+    source: n.source,
+    ts: n.created_at,
+  }));
+  const newsAgeHours = news.length
+    ? Math.max(0, (Date.now() - Date.parse(news[0].ts)) / 3_600_000)
+    : null;
+
   const flags = riskFlags({
     price: currentPrice,
     vol_percentile_252d: factors?.vol_percentile_252d ?? null,
@@ -232,6 +245,7 @@ export default async (req: Request) => {
     is_adr: profile.is_adr,
     earnings_days: earningsDays,
     earnings_date: nearestEarnings,
+    news_age_hours: newsAgeHours,
   });
 
   const riskCfg = {
@@ -292,6 +306,7 @@ export default async (req: Request) => {
     risk_flags: flags,
     trade,
     earnings: nearestEarnings ? { date: nearestEarnings, days: earningsDays } : null,
+    news,
     fired_on: snapshot,
     historical: hasReliableHistory
       ? {
@@ -349,12 +364,15 @@ export default async (req: Request) => {
   const tradeLine = trade
     ? `\nrisk-defined: ${trade.shares} sh ≈ $${trade.position_cost.toFixed(2)}, stop $${trade.stop.toFixed(2)} (−${Math.round(trade.stop_pct * 100)}%), max loss $${trade.max_loss.toFixed(2)}`
     : "";
+  const newsLine = news.length
+    ? `\n📰 ${news[0].headline.slice(0, 160)}${newsAgeHours != null ? ` (${newsAgeHours < 1 ? "<1h" : `${Math.round(newsAgeHours)}h`} ago)` : ""}`
+    : "";
 
   const alertResult = await dispatchAlert(db, {
     dossierId: dossier.id,
     dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}${redFlags.length ? ":rf" : ""}`,
     cooldownMinutes,
-    message: `${headline}${priceLine}${confluenceLine}${flagLine}${tradeLine}\nscore: ${score.toFixed(2)}`,
+    message: `${headline}${priceLine}${confluenceLine}${flagLine}${tradeLine}${newsLine}\nscore: ${score.toFixed(2)}`,
   });
 
   if (alertResult.status === "sent") {

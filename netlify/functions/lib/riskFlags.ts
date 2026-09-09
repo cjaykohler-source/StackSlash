@@ -24,6 +24,8 @@ export interface RiskInput {
   // days until (positive) or since (negative) the nearest earnings report
   earnings_days?: number | null;
   earnings_date?: string | null;
+  // hours since the most recent news headline for this symbol
+  news_age_hours?: number | null;
 }
 
 export interface RiskFlag {
@@ -39,6 +41,13 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
   const f: RiskFlag[] = [];
   const sec = `${x.sector ?? ""} ${x.industry ?? ""}`;
 
+  if (typeof x.news_age_hours === "number" && x.news_age_hours >= 0 && x.news_age_hours <= 24) {
+    f.push({
+      level: x.news_age_hours <= 6 ? "red" : "amber",
+      label: `Fresh news (${x.news_age_hours < 1 ? "<1h" : `${Math.round(x.news_age_hours)}h`} ago)`,
+      note: "A headline this recent means the move is catalyst-driven — read it before assuming the technical setup is the whole story.",
+    });
+  }
   if (typeof x.earnings_days === "number" && x.earnings_days >= 0 && x.earnings_days <= 7) {
     f.push({
       level: x.earnings_days <= 2 ? "red" : "amber",
