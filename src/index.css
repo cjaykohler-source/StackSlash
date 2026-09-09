@@ -476,6 +476,30 @@ body {
   font-weight: 600;
 }
 
+/* Dashboard "today" feed: one open frame, header inside, sized to line
+   up with the .top-movers-section frame in the next column. */
+.trigger-feed-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px 12px;
+}
+.trigger-feed-panel-title {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+}
+.trigger-feed-panel .trigger-feed th {
+  padding-top: 0;
+}
+
+/* Reports page: earlier-day dropdowns. */
+.reports-feed-history {
+  margin-top: 32px;
+}
+
 .trigger-feed-days {
   display: flex;
   flex-direction: column;
