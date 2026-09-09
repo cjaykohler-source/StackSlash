@@ -494,6 +494,12 @@ netlify/functions/
                            invokes refresh_factor_window_stats() to rebuild
                            factor_window_stats, the Isolator's trailing-window
                            metric table.
+  refresh-fundamentals-background.ts
+                           Background function (15-min ceiling). Pulls
+                           quarterly financials + forward earnings + Zacks
+                           ranks from DoltHub into the `fundamentals` table.
+                           Triggered by a weekly launchd job and the
+                           /settings "Refresh financials" button.
   backtest-triggers.ts    Manually-triggered: replays every backtestable
                            trigger against 5yr history, writes trigger_stats.
   deep-dive.ts            Job C — HTTP-triggered by a Postgres trigger on
@@ -661,8 +667,30 @@ factor columns (avg momentum rank over 40 sessions, etc.) are a future
 add — `factor_state` only started accumulating daily history in Sept 2026,
 so there's nothing to aggregate yet.
 
+**Financials (DoltHub, free):** `refresh-fundamentals-background.ts` +
+`lib/fundamentalsDolt.ts` pull quarterly balance sheets, income &
+cash-flow statements, the forward earnings calendar, and Zacks analyst
+ranks from the DoltHub `post-no-preference/earnings` dataset
+(CC BY-SA 4.0, updated weekly). Read-only SQL over HTTP —
+`lib/dolthub.ts`; public repo needs no auth, an optional `DOLTHUB_TOKEN`
+just raises rate-limit headroom. The API caps responses at 1,000 rows so
+every pull paginates; a full sync is ~100 requests / ~2 min, so it's a
+Netlify **background** function (15-min ceiling), triggered by a weekly
+launchd job (`scripts/launchd/com.stackslash.refresh-fundamentals.plist`,
+Mondays) and the "Refresh financials" button on `/settings` (which polls
+`job_runs` for completion). One `fundamentals` row per symbol: cash, net
+cash, book equity, **cash runway in quarters** (cash ÷ avg quarterly
+burn), **share dilution YoY**, revenue growth, net-cash-to-market-cap,
+book-to-market, next earnings date, Zacks rank + value/growth grades.
+`deep-dive.ts` reads it → new risk flags (**≤2Q runway** red, **shares
++20%/+50% YoY**, negative book value) and a `📊` line on the alert;
+forward earnings dates also land in `earnings`, reviving the
+imminent-earnings flag + `suppress_earnings_days`.
+
 **Placeholder / not yet built:** `factor_state.est_revision_30d` /
-`book_to_market` still unpopulated (FMP has them, not wired yet); exit
+`book_to_market` unpopulated *on `factor_state`* (the values live on
+`fundamentals` now — the Isolator will join that table in a follow-up);
+gross margin not yet parsed from the Dolt income statement; exit
 tracking only covers `momentum_rank_entry`/`momentum_breakout`;
 intraday-scan's volume-vs-average still proxies off the daily bar;
 edge-function-level auth gating (client-side + RLS is the real boundary

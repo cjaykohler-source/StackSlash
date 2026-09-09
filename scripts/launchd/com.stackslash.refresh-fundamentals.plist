@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.refresh-fundamentals</string>
+
+    <!-- Weekly financial-statement pull from DoltHub. Just POSTs the
+         deployed background function (which does the ~2-min DoltHub
+         sync). A background function accepts direct HTTP, so this could
+         also be a plain cron/curl anywhere; it lives here next to
+         eod-scan for one place to manage the host's jobs.
+         `--max-time 20` because the function returns 202 immediately. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/curl</string>
+        <string>-fsS</string>
+        <string>-X</string>
+        <string>POST</string>
+        <string>--max-time</string>
+        <string>20</string>
+        <string>https://stackslash.netlify.app/.netlify/functions/refresh-fundamentals-background</string>
+    </array>
+
+    <!-- Mondays 08:00 local (host is America/New_York) — after DoltHub's
+         weekend refresh of the post-no-preference/earnings dataset. -->
+    <key>StartCalendarInterval</key>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-refresh-fundamentals/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-refresh-fundamentals/launchd.err.log</string>
+</dict>
+</plist>

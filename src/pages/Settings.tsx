@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import logo from "../assets/SS_SingleLine_Logo.png";
@@ -158,6 +158,102 @@ export function Settings() {
           </p>
         </div>
       )}
+
+      <h2 className="settings-data-heading">Financials</h2>
+      <p className="settings-intro">
+        Balance sheet, cash flow, forward earnings dates and analyst ranks, pulled from the DoltHub
+        <code> post-no-preference/earnings</code> dataset (updated weekly). A weekly job keeps this
+        current; use the button for an on-demand refresh.
+      </p>
+      <FundamentalsRefresh />
+    </div>
+  );
+}
+
+interface JobRun {
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  rows_processed: number | null;
+  error: string | null;
+}
+
+function ago(iso: string): string {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
+function FundamentalsRefresh() {
+  const [last, setLast] = useState<JobRun | null>(null);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadLast = useCallback(async () => {
+    const { data } = await supabase
+      .from("job_runs")
+      .select("started_at, finished_at, status, rows_processed, error")
+      .eq("job_name", "refresh-fundamentals")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const row = (data as JobRun | null) ?? null;
+    setLast(row);
+    setRunning(row?.status === "running");
+  }, []);
+
+  useEffect(() => {
+    loadLast();
+  }, [loadLast]);
+
+  // While a run is in flight, poll for completion.
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(loadLast, 4000);
+    return () => clearInterval(id);
+  }, [running, loadLast]);
+
+  async function refresh() {
+    setError(null);
+    setRunning(true);
+    try {
+      const res = await fetch("/.netlify/functions/refresh-fundamentals-background", { method: "POST" });
+      // Background functions return 202 immediately; the poll picks up the result.
+      if (res.status >= 400) throw new Error(`Trigger failed (${res.status})`);
+      setTimeout(loadLast, 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="settings-data">
+      <div className="settings-actions">
+        <button className="link-button" onClick={refresh} disabled={running}>
+          {running ? "Pulling from DoltHub…" : "Refresh financials"}
+        </button>
+        {running && <span className="settings-field-hint">takes ~1–2 min</span>}
+      </div>
+      {error && <p className="tracking-error">{error}</p>}
+      {last && !running && (
+        <p className="settings-current">
+          {last.status === "ok" ? (
+            <>
+              Last refreshed <strong>{ago(last.finished_at ?? last.started_at)}</strong>
+              {last.rows_processed != null && <> · {last.rows_processed.toLocaleString()} symbols</>}
+            </>
+          ) : last.status === "error" ? (
+            <>Last run failed{last.error ? `: ${last.error}` : ""} ({ago(last.started_at)})</>
+          ) : (
+            <>Last run: {last.status}</>
+          )}
+        </p>
+      )}
+      {!last && !running && <p className="settings-current">Never refreshed.</p>}
     </div>
   );
 }

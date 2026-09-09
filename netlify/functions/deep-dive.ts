@@ -187,7 +187,8 @@ export default async (req: Request) => {
 
   // --- 2. Live multi-signal confirmation + risk context ---
   const nowIso = new Date().toISOString().slice(0, 10);
-  const [{ data: factors }, { data: regime }, { data: earn }, { data: cfg }] = await Promise.all([
+  const [{ data: factors }, { data: regime }, { data: earn }, { data: cfg }, { data: fundamentals }] =
+    await Promise.all([
     db
       .from("factor_state")
       .select("dist_sma200, volume_ratio_20d, vol_percentile_252d, ret_1m, last_close")
@@ -207,6 +208,11 @@ export default async (req: Request) => {
       .from("scan_config")
       .select("account_size, max_risk_pct, default_stop_pct, suppress_earnings_days")
       .eq("id", 1)
+      .maybeSingle(),
+    db
+      .from("fundamentals")
+      .select("runway_quarters, share_change_yoy, book_equity, net_cash_to_mktcap, revenue_growth_yoy, zacks_rank, next_earnings_date")
+      .eq("symbol_id", event.symbol_id)
       .maybeSingle(),
   ]);
 
@@ -246,6 +252,9 @@ export default async (req: Request) => {
     earnings_days: earningsDays,
     earnings_date: nearestEarnings,
     news_age_hours: newsAgeHours,
+    runway_quarters: fundamentals?.runway_quarters != null ? Number(fundamentals.runway_quarters) : null,
+    share_change_yoy: fundamentals?.share_change_yoy != null ? Number(fundamentals.share_change_yoy) : null,
+    book_equity: fundamentals?.book_equity != null ? Number(fundamentals.book_equity) : null,
   });
 
   const riskCfg = {
@@ -307,6 +316,17 @@ export default async (req: Request) => {
     trade,
     earnings: nearestEarnings ? { date: nearestEarnings, days: earningsDays } : null,
     news,
+    fundamentals: fundamentals
+      ? {
+          runway_quarters: fundamentals.runway_quarters != null ? Number(fundamentals.runway_quarters) : null,
+          share_change_yoy: fundamentals.share_change_yoy != null ? Number(fundamentals.share_change_yoy) : null,
+          net_cash_to_mktcap:
+            fundamentals.net_cash_to_mktcap != null ? Number(fundamentals.net_cash_to_mktcap) : null,
+          revenue_growth_yoy:
+            fundamentals.revenue_growth_yoy != null ? Number(fundamentals.revenue_growth_yoy) : null,
+          zacks_rank: fundamentals.zacks_rank != null ? Number(fundamentals.zacks_rank) : null,
+        }
+      : null,
     fired_on: snapshot,
     historical: hasReliableHistory
       ? {
@@ -367,12 +387,20 @@ export default async (req: Request) => {
   const newsLine = news.length
     ? `\n📰 ${news[0].headline.slice(0, 160)}${newsAgeHours != null ? ` (${newsAgeHours < 1 ? "<1h" : `${Math.round(newsAgeHours)}h`} ago)` : ""}`
     : "";
+  const fundBits: string[] = [];
+  const fz = fundamentals?.zacks_rank != null ? Number(fundamentals.zacks_rank) : null;
+  if (fz != null) fundBits.push(`Zacks ${["", "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"][fz] ?? fz}`);
+  if (fundamentals?.net_cash_to_mktcap != null)
+    fundBits.push(`net cash ${Math.round(Number(fundamentals.net_cash_to_mktcap) * 100)}% of cap`);
+  if (fundamentals?.revenue_growth_yoy != null)
+    fundBits.push(`rev ${Number(fundamentals.revenue_growth_yoy) > 0 ? "+" : ""}${Math.round(Number(fundamentals.revenue_growth_yoy) * 100)}% YoY`);
+  const fundLine = fundBits.length ? `\n📊 ${fundBits.join(" · ")}` : "";
 
   const alertResult = await dispatchAlert(db, {
     dossierId: dossier.id,
     dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}${redFlags.length ? ":rf" : ""}`,
     cooldownMinutes,
-    message: `${headline}${priceLine}${confluenceLine}${flagLine}${tradeLine}${newsLine}\nscore: ${score.toFixed(2)}`,
+    message: `${headline}${priceLine}${confluenceLine}${flagLine}${tradeLine}${fundLine}${newsLine}\nscore: ${score.toFixed(2)}`,
   });
 
   if (alertResult.status === "sent") {

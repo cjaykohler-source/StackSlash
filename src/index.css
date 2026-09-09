@@ -1251,6 +1251,30 @@ h1 .quote-tag {
   border-top: 1px solid var(--border);
   padding-top: 12px;
 }
+.settings-data-heading {
+  margin-top: 36px;
+}
+.settings-data {
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dossier-fundamentals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+.dossier-fundamental {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 7px;
+}
 
 /* ---------------------------------------------------------------------------
    Isolator screener

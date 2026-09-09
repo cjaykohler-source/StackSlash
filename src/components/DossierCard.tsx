@@ -43,6 +43,32 @@ interface Confirmation {
   note: string;
 }
 
+interface Fundamentals {
+  runway_quarters: number | null;
+  share_change_yoy: number | null;
+  net_cash_to_mktcap: number | null;
+  revenue_growth_yoy: number | null;
+  zacks_rank: number | null;
+}
+
+const ZACKS_LABEL = ["", "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"];
+
+function hasFundamentals(f: Fundamentals): boolean {
+  return Object.values(f).some((v) => v != null);
+}
+
+function fundamentalBits(f: Fundamentals): string[] {
+  const b: string[] = [];
+  if (f.runway_quarters != null) b.push(`~${f.runway_quarters.toFixed(1)}Q cash runway`);
+  if (f.share_change_yoy != null && Math.abs(f.share_change_yoy) >= 0.03)
+    b.push(`shares ${f.share_change_yoy > 0 ? "+" : ""}${Math.round(f.share_change_yoy * 100)}% YoY`);
+  if (f.net_cash_to_mktcap != null) b.push(`net cash ${Math.round(f.net_cash_to_mktcap * 100)}% of mkt cap`);
+  if (f.revenue_growth_yoy != null)
+    b.push(`revenue ${f.revenue_growth_yoy > 0 ? "+" : ""}${Math.round(f.revenue_growth_yoy * 100)}% YoY`);
+  if (f.zacks_rank != null) b.push(`Zacks: ${ZACKS_LABEL[f.zacks_rank] ?? f.zacks_rank}`);
+  return b;
+}
+
 export function DossierCard({ dossier }: { dossier: DossierCardData }) {
   const analysis = dossier.analysis as {
     trigger?: string;
@@ -54,6 +80,13 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
     trade?: { stop: number; stop_pct: number; shares: number; position_cost: number; max_loss: number } | null;
     earnings?: { date: string; days: number } | null;
     news?: { headline: string; url: string; source: string; ts: string }[];
+    fundamentals?: {
+      runway_quarters: number | null;
+      share_change_yoy: number | null;
+      net_cash_to_mktcap: number | null;
+      revenue_growth_yoy: number | null;
+      zacks_rank: number | null;
+    } | null;
     fired_on?: Record<string, unknown>;
     note?: string; // legacy placeholder-era dossiers only
     historical?: HistoricalStats;
@@ -111,6 +144,14 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
           <span className="dossier-trade-label">Risk-defined:</span> {trade.shares} sh ≈ $
           {trade.position_cost.toFixed(2)} · stop ${trade.stop.toFixed(2)} (−{Math.round(trade.stop_pct * 100)}%) ·
           max loss ${trade.max_loss.toFixed(2)}
+        </div>
+      )}
+
+      {analysis.fundamentals && hasFundamentals(analysis.fundamentals) && (
+        <div className="dossier-fundamentals">
+          {fundamentalBits(analysis.fundamentals).map((b) => (
+            <span key={b} className="dossier-fundamental">{b}</span>
+          ))}
         </div>
       )}
 
