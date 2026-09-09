@@ -1,9 +1,10 @@
 /**
  * US-equities session boundaries in Eastern time, as epoch-ms, for the
- * intraday ("Day") chart. The x-axis runs the full extended-hours span —
- * pre-market open (04:00 ET) to after-hours close (20:00 ET) — so a
- * partial session's line sits where it actually is in the day instead of
- * being stretched edge to edge.
+ * intraday ("Day") chart. The x-axis is fixed to the regular session
+ * (9:30a–4:00p ET) with a fixed set of hourly tick labels, and the price
+ * line fills in from the left as the day progresses — a half-finished
+ * session leaves the right side of the frame empty rather than being
+ * stretched to fit.
  */
 
 const ET = "America/New_York";
@@ -60,42 +61,33 @@ export function etClockLabel(at: number): string {
 
 export interface SessionAxis {
   date: string; // YYYY-MM-DD (ET)
-  domain: [number, number]; // first .. last bar of the session we have
-  ticks: number[];
-  open: number | null; // 9:30 ET, if inside the domain
-  close: number | null; // 16:00 ET, if inside the domain
+  domain: [number, number]; // regular-session open .. close
+  ticks: number[]; // fixed hourly labels, 9:30a → 4:00p
 }
 
+// 9:30a, then every hour to 4:00p.
+const TICK_HHMM: [number, number][] = [
+  [9, 30],
+  [10, 0],
+  [11, 0],
+  [12, 0],
+  [13, 0],
+  [14, 0],
+  [15, 0],
+  [16, 0],
+];
+
 /**
- * Axis for the intraday ("Day") chart, spanning the full width of the
- * session we actually have bars for — `firstTs`..`lastTs` — so the line
- * runs edge to edge like the other ranges instead of sitting in a sliver
- * in the middle. Pre-market / after-hours prints (when the feed has them)
- * are inside that span, so the edges naturally reach toward 4:00a / 8:00p.
- * The regular-session open/close are marked only when they fall inside
- * the data we have.
+ * Fixed regular-session axis (9:30a–4:00p ET) for the trading day that
+ * `anyTs` falls on. The domain and tick labels never move; the price
+ * line just fills in further from the left as more of the session's bars
+ * arrive.
  */
-export function sessionAxis(firstTs: number, lastTs: number): SessionAxis {
-  const date = etDateString(lastTs);
-  const span = Math.max(lastTs - firstTs, 60_000);
-  const STEP_MIN = [30, 60, 120, 180, 240];
-  const target = span / 6;
-  const stepMs = (STEP_MIN.find((m) => m * 60_000 >= target) ?? 360) * 60_000;
-
-  const ticks: number[] = [];
-  // stepMs divides an hour (or is a whole number of hours) and ET is a
-  // whole-hour offset from UTC, so epoch-aligned steps land on clean ET
-  // clock times.
-  const firstTick = Math.ceil(firstTs / stepMs) * stepMs;
-  for (let t = firstTick; t <= lastTs; t += stepMs) ticks.push(t);
-
-  const open = etWallClock(date, 9, 30);
-  const close = etWallClock(date, 16);
+export function sessionAxis(anyTs: number): SessionAxis {
+  const date = etDateString(anyTs);
   return {
     date,
-    domain: [firstTs, lastTs],
-    ticks,
-    open: open >= firstTs && open <= lastTs ? open : null,
-    close: close >= firstTs && close <= lastTs ? close : null,
+    domain: [etWallClock(date, 9, 30), etWallClock(date, 16)],
+    ticks: TICK_HHMM.map(([h, m]) => etWallClock(date, h, m)),
   };
 }

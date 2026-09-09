@@ -24,9 +24,9 @@ body {
 }
 
 .page {
-  max-width: 1280px;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 24px 37px 64px;
+  padding: 24px 20px 64px;
 }
 
 .page-header {
@@ -636,27 +636,35 @@ h1 .quote-tag {
   vertical-align: middle;
 }
 
-/* Dashboard two-column layout: feed left, live movers right. */
+/* Dashboard two-column layout: feed left, live movers right. The movers
+   column is wide enough to hold gainers and losers side by side. */
 .dashboard-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
   gap: 24px;
   align-items: start;
 }
 .dashboard-main {
   min-width: 0;
 }
-@media (max-width: 1024px) {
+@media (max-width: 1100px) {
   .dashboard-body {
     grid-template-columns: 1fr;
   }
 }
 .top-movers {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 520px) {
+  .top-movers {
+    grid-template-columns: 1fr;
+  }
 }
 .top-movers-section {
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
@@ -762,7 +770,7 @@ h1 .quote-tag {
 }
 .tracking-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 .tracked-card {

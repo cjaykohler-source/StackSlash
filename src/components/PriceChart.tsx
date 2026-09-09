@@ -3,7 +3,6 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -19,7 +18,7 @@ export interface PricePoint {
 
 interface Props {
   data: PricePoint[];
-  /** "intraday" = fixed extended-hours time axis; "calendar" = categorical dates */
+  /** "intraday" = fixed regular-session time axis; "calendar" = categorical dates */
   variant: "intraday" | "calendar";
   session?: SessionAxis; // required for the intraday variant
   height?: number;
@@ -58,9 +57,10 @@ function TooltipCard({
 /**
  * Shared price line for the symbol drill-down. Gradient area fill, themed
  * grid/axes, and a dark tooltip (no series label — the value is obviously
- * the price). The intraday variant pins the x-axis to the full
- * pre-market-to-after-hours span via `session` so a partial day reads
- * correctly; the calendar variant keeps recharts' categorical date axis.
+ * the price). The intraday variant pins the x-axis to the fixed
+ * regular-session window (9:30a–4:00p ET) via `session`, so the labels
+ * never move and the line just fills in from the left through the day;
+ * the calendar variant keeps recharts' categorical date axis.
  */
 export function PriceChart({ data, variant, session, height = 320 }: Props) {
   const gradId = useId().replace(/:/g, "");
@@ -90,10 +90,12 @@ export function PriceChart({ data, variant, session, height = 320 }: Props) {
               scale="time"
               domain={session.domain}
               ticks={session.ticks}
+              allowDataOverflow
               tickFormatter={(v: number) => etClockLabel(v)}
               tickLine={false}
               axisLine={{ stroke: "var(--border)" }}
               tick={{ fill: "var(--text-dim)", fontSize: 11 }}
+              interval={0}
               minTickGap={0}
             />
           ) : (
@@ -113,20 +115,6 @@ export function PriceChart({ data, variant, session, height = 320 }: Props) {
             tick={{ fill: "var(--text-dim)", fontSize: 11 }}
             tickFormatter={(v: number) => money(v)}
           />
-          {variant === "intraday" &&
-            session &&
-            [session.open, session.close].map(
-              (x) =>
-                x != null && (
-                  <ReferenceLine
-                    key={x}
-                    x={x}
-                    stroke="var(--text-dim)"
-                    strokeDasharray="2 3"
-                    strokeOpacity={0.6}
-                  />
-                ),
-            )}
           <Tooltip
             content={<TooltipCard variant={variant} />}
             cursor={{ stroke: "var(--text-dim)", strokeDasharray: "3 3" }}

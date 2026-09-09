@@ -97,16 +97,12 @@ export function SymbolDetail() {
     setLoading(true);
     if (r === "day") {
       // "Day" = the most recent session with data, not literally today.
-      // Points carry an epoch-ms x so PriceChart can run the line the full
-      // width of the session we have bars for.
+      // Points carry an epoch-ms x; the axis is the fixed 9:30a–4:00p ET
+      // window for that session and the line fills in from the left.
       const toPoints = (rows: { ts: string; price: number }[]): PricePoint[] =>
         rows.map((b) => ({ x: new Date(b.ts).getTime(), y: b.price }));
       const applySession = (pts: PricePoint[]) => {
-        setSession(
-          pts.length >= 2
-            ? sessionAxis(pts[0].x as number, pts[pts.length - 1].x as number)
-            : null,
-        );
+        setSession(pts.length ? sessionAxis(pts[pts.length - 1].x as number) : null);
       };
 
       const { data: latestRow } = await supabase
