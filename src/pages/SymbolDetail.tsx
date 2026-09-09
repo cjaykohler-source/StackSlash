@@ -224,7 +224,7 @@ export function SymbolDetail() {
           </h1>
           <CompanyDescription name={symbolName} />
         </div>
-        <Link to="/">← back to feed</Link>
+        <Link to="/" className="link-button">← Back to feed</Link>
       </header>
 
       <section>

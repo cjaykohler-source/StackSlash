@@ -80,7 +80,8 @@ body {
   gap: 8px;
 }
 
-.link-button {
+.link-button,
+.link-button:visited {
   background: none;
   border: 1px solid var(--border);
   color: var(--text-dim);
