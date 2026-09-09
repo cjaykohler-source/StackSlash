@@ -3,22 +3,25 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { etClockLabel, type SessionAxis } from "../lib/marketTime";
+import { etTimeLabel, type SessionAxis } from "../lib/marketTime";
 
 export interface PricePoint {
-  /** epoch-ms for the intraday variant, pre-formatted date label for calendar */
+  /** layout coordinate for intraday (see SessionAxis.toX); date label for calendar */
   x: number | string;
   y: number;
+  /** intraday only: the real epoch-ms, for the tooltip */
+  t?: number;
 }
 
 interface Props {
   data: PricePoint[];
-  /** "intraday" = fixed regular-session time axis; "calendar" = categorical dates */
+  /** "intraday" = fixed extended-day time axis; "calendar" = categorical dates */
   variant: "intraday" | "calendar";
   session?: SessionAxis; // required for the intraday variant
   height?: number;
@@ -39,12 +42,8 @@ function TooltipCard({
   if (!active || !payload?.length) return null;
   const p = payload[0];
   const when =
-    variant === "intraday"
-      ? new Intl.DateTimeFormat("en-US", {
-          timeZone: "America/New_York",
-          hour: "numeric",
-          minute: "2-digit",
-        }).format(new Date(p.payload.x as number)) + " ET"
+    variant === "intraday" && typeof p.payload.t === "number"
+      ? etTimeLabel(p.payload.t)
       : String(p.payload.x);
   return (
     <div className="price-chart-tip">
@@ -57,10 +56,13 @@ function TooltipCard({
 /**
  * Shared price line for the symbol drill-down. Gradient area fill, themed
  * grid/axes, and a dark tooltip (no series label — the value is obviously
- * the price). The intraday variant pins the x-axis to the fixed
- * regular-session window (9:30a–4:00p ET) via `session`, so the labels
- * never move and the line just fills in from the left through the day;
- * the calendar variant keeps recharts' categorical date axis.
+ * the price).
+ *
+ * The intraday variant runs a fixed 4:00a–8:00p ET axis (see
+ * lib/marketTime) where extended-hours hours are compressed to 1/3 width;
+ * `data[].x` is already the layout coordinate. Faint dividers mark the
+ * 9:30a / 4:00p regular-session bounds. The calendar variant keeps
+ * recharts' categorical date axis.
  */
 export function PriceChart({ data, variant, session, height = 320 }: Props) {
   const gradId = useId().replace(/:/g, "");
@@ -87,14 +89,13 @@ export function PriceChart({ data, variant, session, height = 320 }: Props) {
             <XAxis
               type="number"
               dataKey="x"
-              scale="time"
               domain={session.domain}
               ticks={session.ticks}
               allowDataOverflow
-              tickFormatter={(v: number) => etClockLabel(v)}
+              tickFormatter={(v: number) => session.tickLabels[v] ?? ""}
               tickLine={false}
               axisLine={{ stroke: "var(--border)" }}
-              tick={{ fill: "var(--text-dim)", fontSize: 11 }}
+              tick={{ fill: "var(--text-dim)", fontSize: 10 }}
               interval={0}
               minTickGap={0}
             />
@@ -115,6 +116,12 @@ export function PriceChart({ data, variant, session, height = 320 }: Props) {
             tick={{ fill: "var(--text-dim)", fontSize: 11 }}
             tickFormatter={(v: number) => money(v)}
           />
+          {variant === "intraday" && session && (
+            <>
+              <ReferenceLine x={session.open} stroke="var(--border)" strokeOpacity={0.9} />
+              <ReferenceLine x={session.close} stroke="var(--border)" strokeOpacity={0.9} />
+            </>
+          )}
           <Tooltip
             content={<TooltipCard variant={variant} />}
             cursor={{ stroke: "var(--text-dim)", strokeDasharray: "3 3" }}
