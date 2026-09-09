@@ -72,23 +72,26 @@ function timeOnly(iso: string): string {
 }
 
 /**
- * Live feed of fired triggers, grouped by day and updated in real time via
- * Supabase Realtime. This is the primary dashboard surface.
- *
- * Two sources, merged by timestamp:
+ * Fired-trigger feed, grouped by day and updated in real time via Supabase
+ * Realtime. Two sources, merged by timestamp:
  *  - `trigger_events` — the confluence gate's promoted cluster events
  *    (one row per cluster) plus non-gated events like momentum_exit.
  *  - `pending_fires` (un-promoted) — single trigger fires that haven't
  *    clustered with anything.
- * Price/change are their own columns; a symbol's signal count drives the
- * 2-signal / 3+-signal flags.
+ *
+ * Split across two surfaces by `mode`:
+ *  - "today"  — the dashboard. Today's fires only, in one open frame
+ *               (no dropdown, no date header), the "Trigger feed" label
+ *               inside the frame so it lines up with the movers column.
+ *  - "history" — the Reports page. Every earlier day, each a collapsed
+ *               dropdown.
  */
-export function TriggerFeed() {
+export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) {
   const [eventRows, setEventRows] = useState<FeedRow[]>([]);
   const [pendingRows, setPendingRows] = useState<FeedRow[]>([]);
   const [band, setBand] = useState(DEFAULT_BAND);
   const [loaded, setLoaded] = useState(false);
-  const [expandedDays, setExpandedDays] = useState<Set<string> | null>(null);
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     supabase
@@ -176,12 +179,11 @@ export function TriggerFeed() {
       setEventRows(events);
       setPendingRows(pending);
       setLoaded(true);
-      setExpandedDays((prev) => prev ?? new Set([dayKey(new Date().toISOString())]));
     }
     load();
 
     const channel = supabase
-      .channel("trigger_feed")
+      .channel(`trigger_feed_${mode}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "trigger_events" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "pending_fires" }, () => load())
       .subscribe();
@@ -190,7 +192,7 @@ export function TriggerFeed() {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [mode]);
 
   const rows = useMemo(
     () => [...eventRows, ...pendingRows].sort((a, b) => (a.ts < b.ts ? 1 : -1)),
@@ -212,10 +214,18 @@ export function TriggerFeed() {
     });
   }, [rows, quotes, quotesReady, band]);
 
-  const groups = useMemo<DayGroup[]>(() => {
+  const todayKey = dayKey(new Date().toISOString());
+
+  const todayRows = useMemo(
+    () => visibleRows.filter((r) => dayKey(r.ts) === todayKey),
+    [visibleRows, todayKey],
+  );
+
+  const historyGroups = useMemo<DayGroup[]>(() => {
     const byDay = new Map<string, FeedRow[]>();
     for (const row of visibleRows) {
       const key = dayKey(row.ts);
+      if (key === todayKey) continue;
       const existing = byDay.get(key);
       if (existing) existing.push(row);
       else byDay.set(key, [row]);
@@ -223,123 +233,144 @@ export function TriggerFeed() {
     return [...byDay.entries()]
       .sort(([a], [b]) => (a < b ? 1 : -1))
       .map(([key, dayRows]) => ({ key, label: dayLabel(key), rows: dayRows }));
-  }, [visibleRows]);
+  }, [visibleRows, todayKey]);
 
-  if (loaded && rows.length === 0) {
+  const renderRow = (row: FeedRow) => {
+    const quote = row.ticker ? quotes.get(row.ticker) : undefined;
+    const pct = quote ? Number((quote.changePct * 100).toFixed(1)) : null;
+    const pctDir = pct === null ? "" : pct > 0 ? "up" : pct < 0 ? "down" : "";
+    const subDollar = quote != null && quote.price < SUB_DOLLAR_FLAG_PRICE;
+    const isHigh = row.priority === "high" || row.signalCount >= 3;
     return (
-      <p className="empty-state">
-        No trigger activity yet — fires will show up here live once eod-scan / intraday-scan / the realtime worker run.
-      </p>
+      <tr key={row.key} className={isHigh || subDollar ? "trigger-feed-row-high" : undefined}>
+        <td>{timeOnly(row.ts)}</td>
+        <td>
+          <Link to={`/symbol/${row.ticker ?? row.symbol_id}`}>{row.ticker ?? row.symbol_id}</Link>
+          {row.signalCount >= 2 && (
+            <span
+              className={`confluence-badge${row.signalCount >= 3 ? " confluence-badge-high" : ""}`}
+              title={`${row.signalCount} independent triggers agreed: ${row.clusterTriggerNames
+                .map((n) => triggerLabel(n))
+                .join(", ")}`}
+            >
+              {row.signalCount >= 3 ? `${row.signalCount} signals` : "2 signals"}
+            </span>
+          )}
+          {subDollar && (
+            <span
+              className="confluence-badge confluence-badge-subfive"
+              title={`Trading under $${SUB_DOLLAR_FLAG_PRICE}/share — flagged high priority`}
+            >
+              UNDER ${SUB_DOLLAR_FLAG_PRICE}
+            </span>
+          )}
+        </td>
+        <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
+        <td className={`col-num ${pctDir}`}>
+          {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
+        </td>
+        <td>
+          {row.triggerName && TRIGGER_INFO[row.triggerName]?.summary ? (
+            <InfoTooltip text={TRIGGER_INFO[row.triggerName]!.summary}>
+              {triggerLabel(row.triggerName)}
+            </InfoTooltip>
+          ) : row.triggerName ? (
+            triggerLabel(row.triggerName)
+          ) : (
+            "—"
+          )}
+        </td>
+        <td className="col-category">{row.triggerName ? triggerCategoryLabel(row.triggerName) : "—"}</td>
+        <td>
+          {STATUS_INFO[row.status] ? (
+            <InfoTooltip underline={false} text={STATUS_INFO[row.status]}>
+              <span className={`status status-${row.status}`}>{row.status}</span>
+            </InfoTooltip>
+          ) : (
+            <span className={`status status-${row.status}`}>{row.status}</span>
+          )}
+        </td>
+      </tr>
+    );
+  };
+
+  const table = (rowsToRender: FeedRow[]) => (
+    <div className="trigger-feed-scroll">
+      <table className="trigger-feed">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Symbol</th>
+            <th className="col-num">Price</th>
+            <th className="col-num">Change</th>
+            <th>Trigger</th>
+            <th className="col-category">Category</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>{rowsToRender.map(renderRow)}</tbody>
+      </table>
+    </div>
+  );
+
+  // --- History surface (Reports page): earlier days as dropdowns ---
+  if (mode === "history") {
+    if (loaded && historyGroups.length === 0) {
+      return <p className="empty-state">No trigger activity from earlier days.</p>;
+    }
+    return (
+      <div className="trigger-feed-days">
+        {historyGroups.map((group) => (
+          <details
+            key={group.key}
+            className="trigger-feed-day"
+            open={expandedDays.has(group.key)}
+            onToggle={(e) => {
+              const open = e.currentTarget.open;
+              setExpandedDays((prev) => {
+                const next = new Set(prev);
+                if (open) next.add(group.key);
+                else next.delete(group.key);
+                return next;
+              });
+            }}
+          >
+            <summary>
+              {group.label} <span className="trigger-feed-day-count">({group.rows.length})</span>
+            </summary>
+            {table(group.rows)}
+          </details>
+        ))}
+      </div>
     );
   }
-  if (loaded && quotesReady && visibleRows.length === 0) {
-    return (
-      <p className="empty-state">
-        Nothing in the recent feed is in the ${band.price_min.toFixed(2)}–${band.price_max.toFixed(2)} band.
-      </p>
-    );
-  }
 
-  function toggleDay(key: string, isOpen: boolean) {
-    setExpandedDays((prev) => {
-      const next = new Set(prev ?? []);
-      if (isOpen) next.add(key);
-      else next.delete(key);
-      return next;
-    });
+  // --- Today surface (dashboard): one open frame, label inside ---
+  let body: React.ReactNode;
+  if (!loaded) {
+    body = <p className="top-movers-empty">Loading…</p>;
+  } else if (todayRows.length === 0) {
+    body =
+      rows.length === 0 ? (
+        <p className="top-movers-empty">
+          No trigger activity yet — fires show up here live once eod-scan / intraday-scan / the realtime
+          worker run.
+        </p>
+      ) : quotesReady ? (
+        <p className="top-movers-empty">
+          Nothing today is in the ${band.price_min.toFixed(2)}–${band.price_max.toFixed(2)} band.
+        </p>
+      ) : (
+        <p className="top-movers-empty">Loading quotes…</p>
+      );
+  } else {
+    body = table(todayRows);
   }
 
   return (
-    <div className="trigger-feed-days">
-      {groups.map((group) => (
-        <details
-          key={group.key}
-          className="trigger-feed-day"
-          open={expandedDays?.has(group.key) ?? false}
-          onToggle={(e) => toggleDay(group.key, e.currentTarget.open)}
-        >
-          <summary>
-            {group.label} <span className="trigger-feed-day-count">({group.rows.length})</span>
-          </summary>
-          <div className="trigger-feed-scroll">
-            <table className="trigger-feed">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Symbol</th>
-                  <th className="col-num">Price</th>
-                  <th className="col-num">Change</th>
-                  <th>Trigger</th>
-                  <th className="col-category">Category</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.rows.map((row) => {
-                  const quote = row.ticker ? quotes.get(row.ticker) : undefined;
-                  const pct = quote ? Number((quote.changePct * 100).toFixed(1)) : null;
-                  const pctDir = pct === null ? "" : pct > 0 ? "up" : pct < 0 ? "down" : "";
-                  const subDollar = quote != null && quote.price < SUB_DOLLAR_FLAG_PRICE;
-                  const isHigh = row.priority === "high" || row.signalCount >= 3;
-                  return (
-                    <tr key={row.key} className={isHigh || subDollar ? "trigger-feed-row-high" : undefined}>
-                      <td>{timeOnly(row.ts)}</td>
-                      <td>
-                        <Link to={`/symbol/${row.ticker ?? row.symbol_id}`}>{row.ticker ?? row.symbol_id}</Link>
-                        {row.signalCount >= 2 && (
-                          <span
-                            className={`confluence-badge${row.signalCount >= 3 ? " confluence-badge-high" : ""}`}
-                            title={`${row.signalCount} independent triggers agreed: ${row.clusterTriggerNames
-                              .map((n) => triggerLabel(n))
-                              .join(", ")}`}
-                          >
-                            {row.signalCount >= 3 ? `${row.signalCount} signals` : "2 signals"}
-                          </span>
-                        )}
-                        {subDollar && (
-                          <span
-                            className="confluence-badge confluence-badge-subfive"
-                            title={`Trading under $${SUB_DOLLAR_FLAG_PRICE}/share — flagged high priority`}
-                          >
-                            UNDER ${SUB_DOLLAR_FLAG_PRICE}
-                          </span>
-                        )}
-                      </td>
-                      <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
-                      <td className={`col-num ${pctDir}`}>
-                        {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
-                      </td>
-                      <td>
-                        {row.triggerName && TRIGGER_INFO[row.triggerName]?.summary ? (
-                          <InfoTooltip text={TRIGGER_INFO[row.triggerName]!.summary}>
-                            {triggerLabel(row.triggerName)}
-                          </InfoTooltip>
-                        ) : row.triggerName ? (
-                          triggerLabel(row.triggerName)
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="col-category">
-                        {row.triggerName ? triggerCategoryLabel(row.triggerName) : "—"}
-                      </td>
-                      <td>
-                        {STATUS_INFO[row.status] ? (
-                          <InfoTooltip underline={false} text={STATUS_INFO[row.status]}>
-                            <span className={`status status-${row.status}`}>{row.status}</span>
-                          </InfoTooltip>
-                        ) : (
-                          <span className={`status status-${row.status}`}>{row.status}</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      ))}
-    </div>
+    <section className="trigger-feed-panel">
+      <h2 className="trigger-feed-panel-title">Trigger feed</h2>
+      {body}
+    </section>
   );
 }

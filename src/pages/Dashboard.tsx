@@ -32,10 +32,7 @@ export function Dashboard() {
       <TrackingPanel />
       <div className="dashboard-body">
         <main className="dashboard-main">
-          <section>
-            <h2>Trigger feed</h2>
-            <TriggerFeed />
-          </section>
+          <TriggerFeed mode="today" />
         </main>
         <TopMovers />
       </div>

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { triggerLabel } from "../lib/triggerInfo";
+import { TriggerFeed } from "../components/TriggerFeed";
 
 interface RawEvent {
   symbol_id: number;
@@ -366,6 +367,11 @@ export function Reports() {
       {error && <p className="error">{error}</p>}
 
       <canvas ref={canvasRef} className={`report-canvas ${hasReport ? "" : "report-canvas-empty"}`} />
+
+      <section className="reports-feed-history">
+        <h2>Trigger feed — earlier days</h2>
+        <TriggerFeed mode="history" />
+      </section>
     </div>
   );
 }
