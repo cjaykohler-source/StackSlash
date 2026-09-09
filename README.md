@@ -13,6 +13,173 @@ below reflects the real, verified state of the system as of this commit
 — not aspirational. Where something is fixed-but-not-yet-confirmed, it
 says so explicitly rather than claiming success.
 
+**Most recent work: session of 2026-09-09 — see the section immediately
+below.** The rest of this handoff (research bundles, universe growth,
+the eod-scan scaling fix, worker status) is from earlier sessions and is
+still accurate.
+
+### Session 2026-09-09 — what shipped (PRs #18–#31, all merged & deployed)
+
+The account is now trading a real **$40** balance on **sub-$3 penny
+stocks**, so this session's throughline was: make the feed actually
+produce penny-tier signals, wrap every signal in enough context (news,
+fundamentals, risk flags) to not get run over, and give the user a
+screener to hunt setups directly. Netlify was upgraded to **Pro** partway
+through (unlocks background functions, lifts the build-minute cap that
+was queuing deploys).
+
+**Fundamentals — two free sources, wired end to end**
+
+- **#18 — FMP moved to the `/stable/` API.** The legacy `/v3/` endpoints
+  are dead for accounts created after Aug 2025. `lib/fmp.ts` now uses
+  `/stable/profile?symbol=X` (one symbol per call — batch form returns
+  `[]`) and `/stable/earnings-calendar` (no `from`/`to` on the free tier:
+  a trailing ~3-month window of *reported* quarters, no forward
+  calendar). `fundamentals-sync.ts` reworked: one calendar call →
+  `earnings.surprise_pct`; a ~90-symbol/run profile sweep into
+  `symbols.sector/industry/market_cap/is_etf/is_fund/is_adr`.
+  `deep-dive.ts` fetches a symbol's profile on demand if it fired before
+  the sweep reached it. Migration `fmp_free_tier_profile_and_surprise`
+  adds `factor_state.surprise_pct`, `symbols.is_adr/is_fund`, and re-keys
+  `earnings_surprise_drift` off `surprise_pct >= 0.10` (full SUE needs
+  per-symbol history, a paid endpoint). **No forward earnings calendar on
+  FMP free** → the "earnings in N days" flag and `suppress_earnings_days`
+  can't work from FMP.
+- **#28 — DoltHub financials.** The `post-no-preference/earnings` dataset
+  (Zacks-derived, ~10k US symbols, updated weekly, CC BY-SA 4.0) covers
+  the gap. `lib/dolthub.ts` reads it over the public SQL-over-HTTP API
+  (no auth; optional `DOLTHUB_TOKEN` env for rate-limit headroom;
+  responses cap at 1,000 rows so every pull paginates).
+  `lib/fundamentalsDolt.ts` pulls quarterly balance sheets, income &
+  cash-flow statements, the **forward earnings calendar**, and Zacks
+  analyst ranks for the active universe (~100 requests, ~2 min) and
+  reduces to one `fundamentals` row per symbol: cash, net cash, book
+  equity, **cash runway in quarters** (cash ÷ avg quarterly operating-
+  cash burn), **share dilution YoY**, revenue growth YoY,
+  net-cash-to-market-cap, book-to-market, next earnings date, Zacks rank
+  + value/growth grades. Forward earnings dates also upsert into
+  `earnings` (revives the imminent-earnings flag + `suppress_earnings_days`).
+  Runs as `refresh-fundamentals-background.ts` — a Netlify **background**
+  function (15-min ceiling) triggered by a weekly launchd job
+  (`scripts/launchd/com.stackslash.refresh-fundamentals.plist`, Mondays)
+  and the **"Refresh financials" button on `/settings`** (polls
+  `job_runs` for completion). Migration `add_fundamentals_table`. First
+  sync: 4,869 symbols, 1,555 with a runway estimate.
+
+**Isolator screener — `/isolator` (#23)**
+
+A screener over the whole tracked universe. A screen's `spec` is a list
+of AND-ed conditions, each either `snapshot` (a current `factor_state`
+column) or `window` (a trailing 20- or 40-session aggregate). Backed by:
+
+- `screen_symbols(spec jsonb)` — Postgres, `security invoker`, granted to
+  `authenticated`; ~0.5 s for a full-universe run. Helper `screen_cmp`.
+- `factor_window_stats` — one scalar row per `symbol × window_len ×
+  metric` (~180k rows, ~25 MB), rebuilt nightly by
+  `refresh_factor_window_stats()` (all ~18 metrics recomputed from
+  `bars_daily` OHLCV — return, range position, volume delta/slope, price
+  slope, realized vol, up-day %, avg/now/Δ Bollinger width, avg/now RSI,
+  …). `refresh-window-stats.ts` scheduled 23:00 UTC weekdays.
+- `screens` table (RLS: `is_preset` rows read-only) + **7 seeded presets**
+  — coiled spring, quiet accumulation, volatility contraction, washout
+  bounce, range breakout watch, fresh momentum leader, penny setups for a
+  $40 account.
+- `src/lib/screenFields.ts` (field catalogue + spec ↔ RPC helpers),
+  `src/pages/Isolator.tsx` (builder, saved searches, CSV export).
+
+Deferred: trailing aggregates of *non-price* factor columns (avg
+momentum-rank over 40 sessions, etc.) — `factor_state` only started
+keeping daily history this month, so there's nothing to aggregate yet.
+The nightly job and schema are ready for it.
+
+**intraday-scan was 100% dead during market hours — fixed (#24, #25)**
+
+`intraday-scan` queried `factor_state` / `regime_state` with `as_of =
+today`, but `eod-scan` only writes the current date *after the close*.
+So during every session the candidate query returned nothing and the job
+silently no-op'd (`rows_processed: 0`) — it had effectively never
+produced a technical-trigger fire during live hours. Now it resolves the
+latest `as_of` and merges three candidate sources: top-third
+cross-sectional momentum (the original design), **the liquid in-band
+universe** (`last_close <= scan_config.price_max AND dollar_vol_20d >=
+the floor`, top 800 by $ volume — the tradeable penny tier, which never
+ranks by momentum) and tracked symbols. `trigger_evaluations` insert
+batched. Verified against prod: produces sub-$3 oversold fires that
+weren't happening before.
+
+**News (#26, #27)**
+
+Alpaca's `/v1beta1/news` (Benzinga) works on the paper keys.
+`lib/alpaca.ts` gets `fetchNews()` — best-effort, returns `[]` on any
+failure. Three consumers: `deep-dive.ts` attaches the symbol's last ~4
+headlines to the dossier + the newest to the Discord alert, and a
+"fresh news (Nh ago)" risk flag fires when the latest headline is within
+24h; a public `news.ts` function (`GET ?symbol=X`, 5-min cache) feeds a
+"Recent news" panel on the symbol page (`SymbolNews.tsx`). #27 puts the
+symbol page's "Trigger status" and "Recent news" in an even 50/50 grid.
+
+**Chart overhaul (#19, #20, #22)**
+
+New `src/components/PriceChart.tsx` — gradient area fill, themed
+grid/axes, dark tooltip with no series label. `src/lib/marketTime.ts` —
+DST-correct ET helpers + a **piecewise intraday axis**: the "Day" chart
+spans 4:00a–8:00p ET, but each extended-hours hour is drawn at **1/3 the
+width** of a regular-session hour, hourly tick labels are fixed, and the
+price line fills in from the left through the day. Week/Month/Year/Max
+keep the categorical date axis.
+
+**Trigger feed + flags (#21, #30, #31)**
+
+- **#21** — the feed split by surface. Dashboard shows **today only** in
+  one always-open frame (no per-day dropdown, no date header), the
+  "Trigger feed" label moved inside the frame so it lines up with the
+  Top-movers column. The Reports page (`/reports`) gets a "Trigger feed —
+  earlier days" section with the collapsed per-day dropdowns.
+- **#30** — dropped the **Trigger** (name) column (specifics are on the
+  symbol page; **Category** kept), added a **Flags** column between Symbol
+  and Price. It shows the confluence badge, a `Sub-$1` chip, and the
+  linked dossier's **risk flags** as chips (feed query projects just
+  `dossiers(risk_flags:analysis->risk_flags)`, not the whole analysis
+  JSON). Flags are now **tri-colour by meaning, not severity**:
+  `RiskFlag.level` gained `"green"` — positives (Zacks Buy/Strong Buy,
+  revenue +25%+ YoY, net cash ≥35% of market cap) are green, clear
+  negatives (offering-sized volume, nano-cap, ≤2Q runway, ≥50% dilution)
+  red, two-sided/situational (earnings, news, biotech, parabolic, ADR,
+  sub-$1) amber. Confluence badges are all green now (3+ signals was red).
+- **#31** — de-dupe the sub-$1 chip (client-computed vs dossier flag) and
+  stop sub-$1 from triggering the red row highlight (it's amber now).
+
+Note: dossier flags only appear in the feed for events whose `deep-dive`
+ran *after* the fundamentals/news code deployed — older rows show `—`.
+
+**UI polish (#29)**
+
+Settings form is a 2-column grid (was a 520px column pinned left). The
+StackSlash wordmark links home on the Dashboard / Settings / Isolator
+headers. Symbol page: a large last-price + `▲ +$0.04 (2.31%) today`
+block replaces the small inline quote tag, and the quote polls every 30s
+(was: once on load). Tracking-panel quote poll 60s → **15s** (chart-
+series reload decoupled to 90s); `quotes` function edge cache 30s → 15s.
+
+**Price-update cadence** (post-session): symbol page 30s, tracking panel
+15s, trigger feed on load + on realtime insert, top movers 5 min.
+Underlying feed is Alpaca IEX with a 15s edge cache. Alpaca's free limit
+is 200 req/min — the frontend polls have enormous headroom (one batched
+call each); `intraday-bars-scan` (every 5 min, ~50–150 chunked requests/
+run) is the dominant consumer and should **not** be sped up.
+
+**Manual steps still pending on the Mac mini / Netlify**
+
+- Install the fundamentals launchd job:
+  `cp scripts/launchd/com.stackslash.refresh-fundamentals.plist
+  ~/Library/LaunchAgents/ && launchctl load
+  ~/Library/LaunchAgents/com.stackslash.refresh-fundamentals.plist`.
+  (`com.stackslash.eod-scan` and the worker are already loaded.) The
+  `/settings` button covers the refresh until then.
+- Optional: create a free `DOLTHUB_TOKEN` (dolthub.com → settings → API
+  Tokens) and add it to the Netlify env + local `.env`. Not required.
+- Confirm the Netlify `FMP_API_KEY` env var is the full 32-char value.
+
 ### The research this was built on
 
 Two document bundles were analyzed at the start of this project; the
@@ -41,18 +208,22 @@ improved returns; raw expected value is misleading for skewed payoffs
 
 | Piece | Where | Status |
 |---|---|---|
-| Frontend + functions | Netlify, site `stackslash` → https://stackslash.netlify.app | Live, auto-deploys from GitHub `main` |
-| Repo | https://github.com/cjaykohler-source/StackSlash | `main`, clean and pushed |
-| Database | Supabase project `wnzxvdfskmivbyqadtll` (org StackSlash) | Live — see current counts below |
-| Market data | Alpaca, **paper** keys (IEX feed) | No funded account needed for data-only use |
-| Alerts | Discord webhook, channel showing as `#heating_up` (bot name "HeatBot") | Working, verified with real fires |
+| Frontend + functions | Netlify **Pro**, site `stackslash` → https://stackslash.netlify.app | Live, auto-deploys from GitHub `main`. Pro unlocks background functions + lifts the build-minute cap. |
+| Repo | https://github.com/cjaykohler-source/StackSlash | `main`, clean and pushed (through PR #31) |
+| Database | Supabase project `wnzxvdfskmivbyqadtll` (org StackSlash), **free plan (500 MB)** | Live — see counts below. 419 MB used (of the 500 MB free-plan cap). |
+| Market data | Alpaca, **paper** keys (IEX feed, ~200 req/min) | No funded account needed for data-only use |
+| News | Alpaca `/v1beta1/news` (Benzinga) — same keys | Real-time headlines, headline-only on free tier |
+| Fundamentals | FMP `/stable/` (free) + DoltHub `post-no-preference/earnings` (free) | Profiles + trailing calendar from FMP; balance sheet / cash flow / forward calendar / Zacks ranks from DoltHub → the `fundamentals` table |
+| Alerts | Discord webhook, channel `#heating_up` (bot "HeatBot") | Working, verified with real fires |
 | Auth | Single Supabase Auth user, `cjaykohler@gmail.com` | Working |
-| Realtime outlier worker (`worker/`) | `launchd` on the always-on Mac mini (`stackslash-worker-host`, serial `QLPQFQPRXP`) | On the confluence-gate code; watches top ~28 by liquidity + tracked symbols (Alpaca free IEX websocket caps subs ~30). Fires route through `confluence-gate` |
-| eod-scan | ALSO `launchd` on the same Mac mini (`com.stackslash.eod-scan`, 17:45 ET weekdays) | Moved off Netlify — the scheduled function times out (~3-4 min) well before eod-scan finishes at ~5,000 symbols. `scripts/run-eod-scan.sh` + `scripts/launchd/`. |
+| Realtime outlier worker (`worker/`) | `launchd` on the Mac mini (`stackslash-worker-host`, serial `QLPQFQPRXP`) | Watches top ~28 by liquidity + tracked symbols (Alpaca free IEX websocket caps subs ~30). Fires route through `confluence-gate`. |
+| eod-scan | `launchd` on the same Mac mini (`com.stackslash.eod-scan`, 17:45 ET weekdays) | Off Netlify — the scheduled function times out (~3-4 min) at ~5,000 symbols. `scripts/run-eod-scan.sh` + `scripts/launchd/`. |
+| refresh-fundamentals | `launchd` on the same Mac mini (`com.stackslash.refresh-fundamentals`, Mondays) — **plist not yet installed** | POSTs the deployed background function weekly. Also driven by the `/settings` button. |
 
 Current DB snapshot: **~5,000 active symbols** (NYSE 1,744 + NASDAQ 3,024
-+ AMEX 231), `bars_daily` held to a rolling ~18-month window (Supabase
-free plan, 500 MB — see below), 9 enabled triggers.
++ AMEX 231), `bars_daily` held to a rolling ~18-month window, 9 enabled
+triggers. New tables this session: `screens`, `factor_window_stats`
+(~25 MB), `fundamentals`.
 
 ### Universe — NYSE + NASDAQ + AMEX common stock (grown 8 → 512 → 1,911 → ~5,000)
 
@@ -222,10 +393,26 @@ Action items:
 - [ ] Clean up stale `job_runs` row id 365 (`realtime-outlier-worker`,
   stuck at `status='running'` from a failed 12:02 UTC process on
   2026-09-08 — a one-line `update job_runs set status='error' …`).
-- [ ] Add a fundamentals/estimates data vendor to unblock
-  `earnings_surprise_drift` (still the only enabled trigger with no
-  backtest history, and now also the only long trigger that can never be
-  a confluence partner)
+- [x] **Add a fundamentals/estimates data vendor** — done 2026-09-09 (PR
+  #18 FMP `/stable/`, PR #28 DoltHub). `earnings_surprise_drift` is
+  re-keyed off `surprise_pct` and the forward earnings calendar now comes
+  from DoltHub. `est_revision_30d` / `book_to_market` on `factor_state`
+  are still empty — the values live on the `fundamentals` table now, and
+  wiring them onto `factor_state` (or joining `fundamentals` into
+  `screen_symbols`) is the follow-up.
+- [ ] **Install the `com.stackslash.refresh-fundamentals` launchd plist**
+  on the Mac mini (see the 2026-09-09 session section). Until then the
+  weekly financials refresh only happens if someone hits the `/settings`
+  button.
+- [ ] **Isolator × fundamentals** — join the `fundamentals` table into
+  `screen_symbols` and add a `fundamental` scope to `screenFields.ts` so
+  screens can filter on runway / dilution / Zacks rank / net-cash-to-
+  mktcap.
+- [ ] Parse gross margin from the DoltHub income statement (column pulled
+  but `fundamentals.gross_margin` currently always null).
+- [ ] Dossier flags in the trigger feed only populate for events whose
+  `deep-dive` ran after the 2026-09-09 deploy — not a bug, just a data
+  cutover; no action unless backfilling old dossiers is wanted.
 - [x] Run `backtest-triggers` against the full expanded universe — done
   2026-09-08 (local chunked re-run; `finalize_backtest_stats` doesn't
   bump `trigger_stats.computed_at` so that column still reads 09-04, but
@@ -270,7 +457,8 @@ Smaller known gaps (not blocking):
 Backlog (research-identified, not started):
 - [ ] Multi-Timeframe Trend Agreement
 - [ ] Candlestick Reversal at a Level
-- [ ] Estimate-Revision Breakout (blocked on the fundamentals gap above)
+- [ ] Estimate-Revision Breakout — DoltHub `eps_estimate` / `sales_estimate`
+  (weekly) could feed this now; not yet wired into `fundamentalsDolt.ts`.
 
 ### Everything built, roughly in the order it happened
 
@@ -440,12 +628,16 @@ src/                      Frontend (Vite + React + Supabase client)
                            Isolator (screener), About
   components/             AuthGuard, RegimeBanner, TriggerFeed, DossierCard,
                            SymbolSearch, SymbolProfile, QuoteTag (+useQuotes),
+                           PriceChart (range-toggle chart, intraday +
+                           calendar variants), SymbolNews (Benzinga panel),
                            TopMovers (sidebar, top_movers() RPC),
                            TrackingPanel (watchlist + live mini charts),
                            MarketBreadth (built, not currently rendered),
                            InfoTooltip, ProximityBar, CompanyDescription
   lib/                    Supabase client, shared TS types, screenFields.ts
-                           (Isolator field catalogue + spec helpers), triggerEval.ts
+                           (Isolator field catalogue + spec helpers),
+                           marketTime.ts (DST-correct ET + the piecewise
+                           intraday chart axis), triggerEval.ts
                            (client-side port of triggers.ts, display-only),
                            triggerProximity.ts, triggerInfo.ts (plain-English
                            labels, single source of truth), factorFormat.ts
@@ -469,10 +661,13 @@ netlify/functions/
                            by the realtime worker (which can't import the
                            lib). eod-scan / intraday-scan call the lib
                            in-process instead.
-  intraday-scan.ts        Job B — polls snapshots for top-momentum names,
-                           evaluates technical-category triggers only, on that
-                           candidate set only, cooldown-gated. Scheduled every
-                           10min during market hours.
+  intraday-scan.ts        Job B — evaluates technical-category triggers on a
+                           bounded candidate set from the LATEST factor_state
+                           (not as_of=today — that row doesn't exist mid-
+                           session): top-third momentum ∪ liquid in-band
+                           (price <= band ceiling, $ vol >= floor, top 800)
+                           ∪ tracked. Cooldown-gated, batched inserts.
+                           Scheduled every 10min during market hours.
   intraday-bars-scan.ts   1-min bars every 5min during market hours for a
                            PRIORITY set only (tracked symbols + today's
                            feed symbols + top ~300 by dollar volume, cap
@@ -542,6 +737,14 @@ netlify/functions/
                                 confluence-gate.ts.
     backfillSymbol.ts           backfillSymbolBars/backfillLatestIntradaySession
                                 — shared by backfill-history and onboard-symbol
+    fmp.ts                     Financial Modeling Prep /stable/ client
+                                (profile, trailing earnings calendar)
+    dolthub.ts                 DoltHub SQL-over-HTTP read client (paginates
+                                past the 1,000-row cap; optional DOLTHUB_TOKEN)
+    fundamentalsDolt.ts        syncFundamentalsFromDolt() — pulls statements +
+                                forward calendar + Zacks ranks -> `fundamentals`
+    riskFlags.ts               riskFlags() (tri-colour red/amber/green) +
+                                tradeSuggestion() — pure, feeds deep-dive
     notify.ts                  Telegram/Discord dispatch + dedup/cooldown
     jobRun.ts                   job_runs logging wrapper
 
@@ -595,10 +798,12 @@ worker/                   Separate deployable — persistent Alpaca websocket,
 
 ## What's real vs. placeholder
 
-**Real and functional:** schema/RLS/1,911-symbol universe across 9 enabled
-triggers; `eod-scan`/`intraday-scan` real factor computation, cross-
-sectional ranking, regime signal, cooldown-gated trigger evaluation
-(confirmed clean at the full ~1,911-symbol scale on 2026-09-08);
+**Real and functional:** schema/RLS/~5,000-symbol universe across 9
+enabled triggers; `eod-scan`/`intraday-scan` real factor computation,
+cross-sectional ranking, regime signal, cooldown-gated trigger evaluation
+(eod-scan confirmed clean at scale 2026-09-08; **intraday-scan's
+market-hours bug fixed 2026-09-09** — it had been silently producing zero
+fires during every live session, see the session section above);
 **the confluence gate** — a fire becomes a trigger_event/dossier/alert
 only as part of a cluster of ≥2 distinct same-direction triggers for one
 symbol within a rolling ~30h window, across all three fire sources; a
@@ -621,11 +826,13 @@ thin window. Treat all of these as directional, not reliable, until
 there's either more history (Supabase Pro) or more elapsed time.
 Symbol search/on-demand onboarding; per-symbol profile
 workups with live proximity bars; PNG performance reports; per-symbol
-`$price | ±x%` quote tags (feed + symbol page); the dashboard's live
-Top-20 gainers / Top-20 losers sidebar (`top_movers()` Postgres function
-over `bars_intraday`, % from the open, ~1-min refresh, ~900-name
-coverage); hover tooltips; company name/description. (Market breadth is
-built but pulled from the dashboard for now.)
+`$price | ±x%` quote tags (feed + symbol page, the symbol page now with a
+large price/change block that polls every 30s); the dashboard's live
+Top-35 gainers / Top-35 losers sidebar (`top_movers_v2` Postgres function
+over `bars_intraday`, % from the open, 5-min refresh, price-band-scoped);
+the Tracking watchlist panel (15s quote poll); hover tooltips; company
+name/description. (Market breadth is built but pulled from the dashboard
+for now.)
 
 **Fundamentals (FMP `/stable/`, free tier):** the legacy `/v3/` API is
 dead for accounts created after Aug 2025; `lib/fmp.ts` uses `/stable/`.
@@ -642,9 +849,11 @@ Two things work on the free tier:
   **activates `earnings_surprise_drift`** (keyed off `surprise_pct >=
   0.10` — full SUE needs per-symbol history, which is a paid endpoint).
 
-No forward earnings calendar means the "earnings in N days" gap-risk flag
-and `suppress_earnings_days` can't fire on the free tier — they light up
-only on FMP Starter+. Needs `FMP_API_KEY` in the env.
+FMP itself has no forward earnings calendar on the free tier — but the
+**forward calendar comes from DoltHub now** (see "Financials" below), so
+the "earnings in N days" flag and `suppress_earnings_days` do work.
+FMP is down to just the profile + trailing surprise. Needs `FMP_API_KEY`
+in the env.
 
 **Isolator (`/isolator`):** a screener over the whole tracked universe.
 A screen's `spec` (JSON) is a list of AND-ed conditions, each either
@@ -708,15 +917,24 @@ different risk profile than a quiet technical drift; the `news` function
 (`GET ?symbol=X`, public, 5-min edge cache) feeds a "Recent news" panel
 on the symbol page.
 
-**Risk flags & risk-defined sizing:** every dossier + alert now carries
-risk flags computed by `lib/riskFlags.ts` — fresh news (< 24h), imminent
-earnings (Starter+ only, with an optional alert-suppression window),
-extreme volatility, parabolic run, offering-sized volume, sub-$1,
-nano-cap (< $50M), foreign ADR, and biotech / crypto-AI binary-catalyst
-sectors — plus a suggested stop and position size from `scan_config`
-(`account_size`, `max_risk_pct`, `default_stop_pct`). The scanner still
-only sees price action; these flag the categories most likely to reverse
-on a small account, they don't substitute for a fundamental thesis.
+**Risk flags & risk-defined sizing:** every dossier + alert carries flags
+from `lib/riskFlags.ts`, **tri-coloured by meaning** (red = negative for
+the trade, amber = neutral / two-sided, green = positive):
+
+- red: offering-sized volume (5× normal), nano-cap (< $50M), ≤2Q cash
+  runway, ≥50% YoY dilution
+- amber: fresh news (< 24h), imminent earnings (+ optional alert
+  suppression), extreme volatility, parabolic run, > 100% above the
+  200-DMA, sub-$1, foreign ADR, biotech, crypto-AI sector, negative book
+  value, moderate runway (≤4Q) / dilution (≥20%)
+- green: Zacks Buy / Strong Buy, revenue +25%+ YoY, net cash ≥ 35% of
+  market cap
+
+Plus a suggested stop + position size from `scan_config` (`account_size`,
+`max_risk_pct`, `default_stop_pct`). In the trigger feed the dossier's
+flags render in a **Flags column** (red → amber → green order). The
+scanner still only sees price action; the flags don't substitute for a
+thesis, but they colour-code the context around each fire.
 
 **Confirmation logic & backtest history — real, with known shallow spots
 (not placeholders):**
