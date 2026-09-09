@@ -46,12 +46,47 @@ body {
 .symbol-header-title {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 .symbol-company-name {
   color: var(--text-dim);
   font-weight: 400;
+}
+.symbol-quote {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 2px 0 2px;
+}
+.symbol-quote-price {
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.symbol-quote-change {
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+.symbol-quote.up .symbol-quote-change {
+  color: var(--green);
+}
+.symbol-quote.down .symbol-quote-change {
+  color: var(--red);
+}
+.symbol-quote-today {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.symbol-quote-empty {
+  font-size: 2.1rem;
+  font-weight: 700;
+  color: var(--text-dim);
 }
 .company-description {
   margin: 0;
@@ -72,6 +107,15 @@ body {
   height: 36px; /* 28px + 30% */
   width: auto;
   display: block;
+}
+.brand-logo-link {
+  display: inline-flex;
+  line-height: 0;
+  border-radius: 4px;
+}
+.brand-logo-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .header-actions {
@@ -1200,42 +1244,53 @@ h1 .quote-tag {
 .settings-intro {
   color: var(--text-dim);
   font-size: 0.88rem;
-  max-width: 640px;
-  margin: 0 0 20px;
+  max-width: 760px;
+  margin: 0 0 22px;
+  line-height: 1.5;
 }
 .settings-form {
-  max-width: 520px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  max-width: 1040px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 40px;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .settings-form {
+    grid-template-columns: 1fr;
+  }
 }
 .settings-field {
-  display: grid;
-  grid-template-columns: 1fr 130px;
-  gap: 2px 12px;
-  align-items: baseline;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .settings-field-label {
   font-size: 0.9rem;
   font-weight: 600;
 }
 .settings-field input {
-  grid-row: span 2;
-  align-self: center;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 7px 9px;
+  padding: 8px 10px;
   color: var(--text);
   font-size: 0.9rem;
-  text-align: right;
   font-variant-numeric: tabular-nums;
+  width: 100%;
+  max-width: 200px;
+}
+.settings-field input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 .settings-field-hint {
   font-size: 0.78rem;
   color: var(--text-dim);
+  line-height: 1.45;
 }
 .settings-actions {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1246,16 +1301,17 @@ h1 .quote-tag {
   font-size: 0.85rem;
 }
 .settings-current {
+  grid-column: 1 / -1;
   color: var(--text-dim);
   font-size: 0.82rem;
   border-top: 1px solid var(--border);
   padding-top: 12px;
 }
 .settings-data-heading {
-  margin-top: 36px;
+  margin-top: 40px;
 }
 .settings-data {
-  max-width: 520px;
+  max-width: 760px;
   display: flex;
   flex-direction: column;
   gap: 10px;
