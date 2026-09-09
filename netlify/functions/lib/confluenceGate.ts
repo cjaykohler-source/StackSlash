@@ -298,30 +298,21 @@ export async function promotePending(db: SupabaseClient): Promise<PromotedEvent[
 
   const { data: fsRows } = await db
     .from("factor_state")
-    .select("symbol_id, as_of, dollar_vol_20d, rsi14")
+    .select("symbol_id, as_of, dollar_vol_20d, rsi14, last_close")
     .in("symbol_id", symIds)
     .order("as_of", { ascending: false })
     .limit(4000);
   const factorBySymbol = new Map<number, { dollar_vol_20d: number | null; rsi14: number | null; close?: number }>();
-  for (const r of (fsRows as { symbol_id: number; dollar_vol_20d: number | null; rsi14: number | null }[] | null) ??
-    []) {
-    if (!factorBySymbol.has(r.symbol_id)) factorBySymbol.set(r.symbol_id, r); // first = latest as_of
-  }
-
-  // Latest close per symbol as a price fallback for fires whose snapshot
-  // doesn't carry one (older stages, some sources).
-  const closeCutoff = new Date(Date.now() - 8 * 24 * 3_600_000).toISOString().slice(0, 10);
-  const { data: closeRows } = await db
-    .from("bars_daily")
-    .select("symbol_id, date, close")
-    .in("symbol_id", symIds)
-    .gte("date", closeCutoff)
-    .order("date", { ascending: false })
-    .limit(4000);
-  for (const r of (closeRows as { symbol_id: number; close: number }[] | null) ?? []) {
-    const f = factorBySymbol.get(r.symbol_id) ?? { dollar_vol_20d: null, rsi14: null };
-    if (f.close === undefined) f.close = Number(r.close);
-    factorBySymbol.set(r.symbol_id, f);
+  for (const r of (fsRows as
+    | { symbol_id: number; dollar_vol_20d: number | null; rsi14: number | null; last_close: number | null }[]
+    | null) ?? []) {
+    if (!factorBySymbol.has(r.symbol_id)) {
+      factorBySymbol.set(r.symbol_id, {
+        dollar_vol_20d: r.dollar_vol_20d,
+        rsi14: r.rsi14,
+        close: r.last_close ?? undefined,
+      }); // first = latest as_of
+    }
   }
 
   pending = pending.filter((r) =>
