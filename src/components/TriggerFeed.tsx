@@ -29,6 +29,32 @@ interface RiskFlag {
 // Feed flag display order: negatives first, positives last.
 const FLAG_ORDER: Record<RiskFlag["level"], number> = { red: 0, amber: 1, green: 2 };
 
+// Risk-flag labels carry dynamic values ("Nano-cap ($30M)", "Fresh news
+// (3h ago)"), so match on the stable prefix and render a fixed glyph that
+// maps to the underlying condition. The full label + note stays in the
+// hover tooltip.
+function flagIcon(label: string): string {
+  const l = label.toLowerCase();
+  if (l.startsWith("fresh news")) return "📰";
+  if (l.startsWith("earnings")) return "📅";
+  if (l.startsWith("extreme volatility")) return "🎢";
+  if (l.includes("in a month")) return "🚀";
+  if (l.includes("200-day avg")) return "📈";
+  if (l.startsWith("volume ")) return "🌊";
+  if (l.startsWith("sub-$1")) return "🪙";
+  if (l.startsWith("nano-cap")) return "🔬";
+  if (l.startsWith("foreign adr")) return "🌐";
+  if (l.includes("cash left")) return "⏳";
+  if (l.startsWith("shares +")) return "💧";
+  if (l.startsWith("negative book value")) return "🩸";
+  if (l.startsWith("biotech")) return "🧬";
+  if (l.startsWith("sentiment-driven")) return "🎲";
+  if (l.startsWith("zacks")) return "⭐";
+  if (l.startsWith("revenue +")) return "🌱";
+  if (l.startsWith("net cash")) return "🏦";
+  return "🚩";
+}
+
 interface FeedRow {
   key: string; // "e<id>" | "p<id>"
   ts: string;
@@ -274,26 +300,34 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         </td>
         <td className="col-flags">
           {row.signalCount >= 2 && (
-            <span
-              className={`confluence-badge${row.signalCount >= 3 ? " confluence-badge-high" : ""}`}
-              title={`${row.signalCount} independent triggers agreed: ${row.clusterTriggerNames
+            <InfoTooltip
+              underline={false}
+              text={`${row.signalCount} independent triggers agreed: ${row.clusterTriggerNames
                 .map((n) => triggerLabel(n))
                 .join(", ")}`}
             >
-              {row.signalCount >= 3 ? `${row.signalCount} signals` : "2 signals"}
-            </span>
+              <span
+                className={`confluence-badge${row.signalCount >= 3 ? " confluence-badge-high" : ""}`}
+              >
+                {row.signalCount}
+              </span>
+            </InfoTooltip>
           )}
           {subDollar && (
-            <span className="feed-flag feed-flag-amber" title="Trading under $1/share">
-              Sub-$1
-            </span>
+            <InfoTooltip underline={false} text="Sub-$1 — trading under $1/share, the lowest-price tier (highest manipulation and delisting risk).">
+              <span className="feed-flag feed-flag-amber">🪙</span>
+            </InfoTooltip>
           )}
           {[...row.riskFlags]
             .sort((a, b) => FLAG_ORDER[a.level] - FLAG_ORDER[b.level])
             .map((f) => (
-              <span key={f.label} className={`feed-flag feed-flag-${f.level}`} title={f.note ?? f.label}>
-                {f.label}
-              </span>
+              <InfoTooltip
+                key={f.label}
+                underline={false}
+                text={f.note ? `${f.label} — ${f.note}` : f.label}
+              >
+                <span className={`feed-flag feed-flag-${f.level}`}>{flagIcon(f.label)}</span>
+              </InfoTooltip>
             ))}
         </td>
         <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
