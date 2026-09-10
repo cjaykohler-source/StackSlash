@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { triggerLabel, triggerCategoryLabel } from "../lib/triggerInfo";
 import { InfoTooltip } from "./InfoTooltip";
+import { FlagIcon, flagIconName } from "./FlagIcon";
 import { useQuotes } from "./QuoteTag";
 
 // The feed shows every trigger fire — single-trigger fires (still sitting
@@ -274,26 +275,38 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         </td>
         <td className="col-flags">
           {row.signalCount >= 2 && (
-            <span
-              className={`confluence-badge${row.signalCount >= 3 ? " confluence-badge-high" : ""}`}
-              title={`${row.signalCount} independent triggers agreed: ${row.clusterTriggerNames
+            <InfoTooltip
+              underline={false}
+              text={`${row.signalCount} independent triggers agreed: ${row.clusterTriggerNames
                 .map((n) => triggerLabel(n))
                 .join(", ")}`}
             >
-              {row.signalCount >= 3 ? `${row.signalCount} signals` : "2 signals"}
-            </span>
+              <span
+                className={`confluence-badge${row.signalCount >= 3 ? " confluence-badge-high" : ""}`}
+              >
+                {row.signalCount}
+              </span>
+            </InfoTooltip>
           )}
           {subDollar && (
-            <span className="feed-flag feed-flag-amber" title="Trading under $1/share">
-              Sub-$1
-            </span>
+            <InfoTooltip underline={false} text="Sub-$1 — trading under $1/share, the lowest-price tier (highest manipulation and delisting risk).">
+              <span className="feed-flag feed-flag-amber">
+                <FlagIcon name="subdollar" />
+              </span>
+            </InfoTooltip>
           )}
           {[...row.riskFlags]
             .sort((a, b) => FLAG_ORDER[a.level] - FLAG_ORDER[b.level])
             .map((f) => (
-              <span key={f.label} className={`feed-flag feed-flag-${f.level}`} title={f.note ?? f.label}>
-                {f.label}
-              </span>
+              <InfoTooltip
+                key={f.label}
+                underline={false}
+                text={f.note ? `${f.label} — ${f.note}` : f.label}
+              >
+                <span className={`feed-flag feed-flag-${f.level}`}>
+                  <FlagIcon name={flagIconName(f.label)} />
+                </span>
+              </InfoTooltip>
             ))}
         </td>
         <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
