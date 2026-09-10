@@ -119,3 +119,19 @@ export function triggerCategoryLabel(name: string): string {
 export function humanize(key: string): string {
   return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+// Which side of a trade a fire represents, for the feed's Buy / Sell split.
+// "sell" = an exit signal (close a long) or a bearish/short trigger;
+// everything else is a bullish entry.
+const SELL_TRIGGERS = new Set([
+  "bb_rsi_confluence_short",
+  "macd_bearish_cross",
+  "volatility_squeeze_breakout_short",
+]);
+
+export function triggerSide(name: string | null): "buy" | "sell" {
+  if (!name) return "buy";
+  if (SELL_TRIGGERS.has(name)) return "sell";
+  if (TRIGGER_INFO[name]?.category === "exit") return "sell";
+  return "buy";
+}
