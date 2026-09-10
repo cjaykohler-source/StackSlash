@@ -90,12 +90,14 @@ export function intradayFactors(input: IntradayFactorInput): IntradayFactors {
   let orHi = -Infinity;
   let orLo = Infinity;
 
+  const barMinutes: number[] = [];
   for (const b of bars) {
     if (b.price > hi) hi = b.price;
     if (b.price < lo) lo = b.price;
     pv += b.price * b.volume;
     vol += b.volume;
-    const minute = (b.ts - openTs) / 60_000;
+    const minute = Math.floor((b.ts - openTs) / 60_000);
+    barMinutes.push(minute);
     if (minute >= 0 && minute < OPENING_RANGE_MIN) {
       if (b.price > orHi) orHi = b.price;
       if (b.price < orLo) orLo = b.price;
@@ -106,17 +108,24 @@ export function intradayFactors(input: IntradayFactorInput): IntradayFactors {
   const orHigh = orHi === -Infinity ? null : orHi;
   const orLow = orLo === Infinity ? null : orLo;
 
-  // Time-of-day RVOL: cumulative session volume vs the trailing-average
-  // cumulative volume through the same minute of the session.
+  // Time-of-day RVOL: session volume vs the trailing-average volume for
+  // the SAME minutes of the session. Summing the expectation only over
+  // minutes that actually printed (not every minute up to now) keeps a
+  // sparsely-covered IEX name from looking low-volume just because it
+  // skipped minutes. Needs a reasonably populated profile to trust.
   let rvol: number | null = null;
+  const MIN_PROFILE_MINUTES = 60;
   if (minuteVolume && minuteVolume.length) {
-    const lastMinute = Math.min(
-      minuteVolume.length - 1,
-      Math.max(0, Math.floor((bars[n - 1].ts - openTs) / 60_000)),
-    );
-    let expectedCum = 0;
-    for (let m = 0; m <= lastMinute; m++) expectedCum += minuteVolume[m] ?? 0;
-    if (expectedCum > 0) rvol = vol / expectedCum;
+    const nonZero = minuteVolume.filter((v) => v > 0);
+    if (nonZero.length >= MIN_PROFILE_MINUTES) {
+      const fill = nonZero.reduce((a, b) => a + b, 0) / nonZero.length;
+      let expected = 0;
+      for (const m of barMinutes) {
+        if (m < 0 || m >= minuteVolume.length) continue;
+        expected += minuteVolume[m] > 0 ? minuteVolume[m] : fill;
+      }
+      if (expected > 0) rvol = vol / expected;
+    }
   }
 
   let orBreak: -1 | 0 | 1 | null = null;

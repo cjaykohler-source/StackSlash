@@ -23,6 +23,9 @@ import { etDateString, etWallClock } from "./lib/etTime";
 
 const CHECKPOINT_MIN = 5;
 const MAX_FORWARD_DAYS = 30;
+// fields the sim can supply at a checkpoint: intraday factors + a
+// news_age_hours computed from backfilled symbol_news.
+const SIMULABLE_FIELDS = new Set(["news_age_hours"]);
 const PURE_INTRADAY_FIELDS = new Set([
   "rvol",
   "or_break",
@@ -81,8 +84,11 @@ export default async (req: Request) => {
     const usable = (triggers ?? []).filter((t) => {
       if (body.triggerNames?.includes(t.name)) return true;
       const fields = ((t.definition as TriggerDefinition)?.all ?? []).map((c) => c.field);
-      return fields.every((f) => PURE_INTRADAY_FIELDS.has(f));
+      return fields.every((f) => PURE_INTRADAY_FIELDS.has(f) || SIMULABLE_FIELDS.has(f));
     });
+    const needsNews = usable.some((t) =>
+      ((t.definition as TriggerDefinition)?.all ?? []).some((c) => c.field === "news_age_hours"),
+    );
     if (!usable.length) return { rowsProcessed: 0, result: { triggers: [] as string[], symbols: 0, fires: 0, runIds: [] as string[] } };
 
     // The band symbols backfill-intraday covered (same selection): in-band
@@ -118,6 +124,33 @@ export default async (req: Request) => {
       ),
     ];
     if (!deepSymbols.length) return { rowsProcessed: 0, result: { triggers: [] as string[], symbols: 0, fires: 0, runIds: [] as string[] } };
+
+    // symbol -> sorted headline timestamps (ms), for a checkpoint-time news_age_hours
+    const newsTsBySymbol = new Map<number, number[]>();
+    if (needsNews) {
+      const { data: tickRows } = await db.from("symbols").select("id, ticker").in("id", deepSymbols);
+      const idByTicker = new Map(
+        ((tickRows as { id: number; ticker: string }[] | null) ?? []).map((r) => [r.ticker, r.id]),
+      );
+      for (let from = 0; ; from += 1000) {
+        const { data } = await db
+          .from("symbol_news")
+          .select("created_at, symbols")
+          .gte("created_at", sinceIso)
+          .order("created_at", { ascending: true })
+          .range(from, from + 999);
+        const rows = (data as { created_at: string; symbols: string[] }[] | null) ?? [];
+        for (const n of rows) {
+          const t = Date.parse(n.created_at);
+          for (const tk of n.symbols ?? []) {
+            const sid = idByTicker.get(tk);
+            if (sid == null) continue;
+            (newsTsBySymbol.get(sid) ?? newsTsBySymbol.set(sid, []).get(sid)!).push(t);
+          }
+        }
+        if (rows.length < 1000) break;
+      }
+    }
 
     const simRows: Record<string, unknown>[] = [];
     let processed = 0;
@@ -176,12 +209,24 @@ export default async (req: Request) => {
         // (leave-one-out is overkill; just use a flat per-minute mean here)
         const minuteVol = perMinuteMean(sessions, sessionDate, openTs);
 
+        const newsTs = newsTsBySymbol.get(symbolId);
+
         // walk checkpoints
         let fired: { trigger: string; idx: number; price: number } | null = null;
         for (let i = 20; i < regBars.length && !fired; i += CHECKPOINT_MIN) {
           const soFar = regBars.slice(0, i + 1);
           const f = intradayFactors({ bars: soFar, priorClose, openTs, minuteVolume: minuteVol, atr20: null });
           const inputs: TriggerInputs = { ...f };
+          if (newsTs?.length) {
+            const nowMs = soFar[soFar.length - 1].ts;
+            // newest headline at or before this checkpoint
+            let newest = -1;
+            for (const ts of newsTs) {
+              if (ts <= nowMs && ts > newest) newest = ts;
+              if (ts > nowMs) break;
+            }
+            if (newest > 0) inputs.news_age_hours = (nowMs - newest) / 3_600_000;
+          }
           for (const t of usable) {
             if (evaluateTrigger(t.definition as unknown as TriggerDefinition, inputs)) {
               fired = { trigger: t.name, idx: i, price: soFar[soFar.length - 1].price };

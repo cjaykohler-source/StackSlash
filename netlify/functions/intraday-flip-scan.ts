@@ -3,6 +3,7 @@ import { withJobRun } from "./lib/jobRun";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 import { filterByCooldown } from "./lib/cooldown";
 import { stageAndPromote } from "./lib/confluenceGate";
+import { openFlipPositions } from "./lib/flipPositions";
 import { etDateString } from "./lib/etTime";
 
 /**
@@ -24,7 +25,7 @@ export default async () => {
   const db = getSupabaseAdmin();
 
   await withJobRun(db, "intraday-flip-scan", async () => {
-    if (!isLikelyMarketHours()) return { rowsProcessed: 0, result: { fired: 0, promoted: 0 } };
+    if (!isLikelyMarketHours()) return { rowsProcessed: 0, result: { fired: 0, promoted: 0, opened: 0 } };
 
     const sessionDate = etDateString(Date.now());
     const today = new Date().toISOString().slice(0, 10);
@@ -36,7 +37,7 @@ export default async () => {
       .eq("speed", "fast")
       .eq("direction", "long");
     if (te) throw te;
-    if (!triggers?.length) return { rowsProcessed: 0, result: { fired: 0, promoted: 0 } };
+    if (!triggers?.length) return { rowsProcessed: 0, result: { fired: 0, promoted: 0, opened: 0 } };
     const cooldownByTriggerId = new Map(triggers.map((t) => [t.id, t.cooldown_minutes] as const));
 
     // intraday factors for today's session
@@ -51,7 +52,32 @@ export default async () => {
       ifsRows.push(...((data as Record<string, unknown>[] | null) ?? []));
       if (!data || data.length < 1000) break;
     }
-    if (!ifsRows.length) return { rowsProcessed: 0, result: { fired: 0, promoted: 0 } };
+    if (!ifsRows.length) return { rowsProcessed: 0, result: { fired: 0, promoted: 0, opened: 0 } };
+
+    const symIdsAll = ifsRows.map((r) => r.symbol_id as number);
+
+    // news_age_hours for catalyst_momentum: hours since each symbol's
+    // newest symbol_news headline (only symbols with one in the last ~4h
+    // can ever satisfy the < 2h condition, with slack).
+    const newsAgeBySymbol = new Map<number, number>();
+    if (triggers.some((t) => ((t.definition as TriggerDefinition)?.all ?? []).some((c) => c.field === "news_age_hours"))) {
+      const { data: tickRows } = await db.from("symbols").select("id, ticker").in("id", symIdsAll);
+      const idByTicker = new Map(
+        ((tickRows as { id: number; ticker: string }[] | null) ?? []).map((r) => [r.ticker, r.id]),
+      );
+      const { data: news } = await db
+        .from("symbol_news")
+        .select("created_at, symbols")
+        .gte("created_at", new Date(Date.now() - 4 * 3_600_000).toISOString())
+        .order("created_at", { ascending: false });
+      for (const n of (news as { created_at: string; symbols: string[] }[] | null) ?? []) {
+        const ageH = (Date.now() - Date.parse(n.created_at)) / 3_600_000;
+        for (const tk of n.symbols ?? []) {
+          const sid = idByTicker.get(tk);
+          if (sid != null && !newsAgeBySymbol.has(sid)) newsAgeBySymbol.set(sid, ageH); // first = newest
+        }
+      }
+    }
 
     // daily factor fields any fast trigger needs (only squeeze, for now)
     const needsDaily = triggers.some((t) =>
@@ -67,7 +93,7 @@ export default async () => {
         .maybeSingle();
       const asOf = (asOfRow as { as_of: string } | null)?.as_of;
       if (asOf) {
-        const symIds = ifsRows.map((r) => r.symbol_id as number);
+        const symIds = symIdsAll;
         for (let i = 0; i < symIds.length; i += 500) {
           const { data } = await db
             .from("factor_state")
@@ -89,6 +115,8 @@ export default async () => {
         ...(row as Record<string, number | boolean | null>),
         ...(dailyBySymbol.get(symbolId) ?? {}),
       };
+      const newsAge = newsAgeBySymbol.get(symbolId);
+      if (newsAge != null) inputs.news_age_hours = newsAge;
       for (const t of triggers) {
         const fired = evaluateTrigger(t.definition as unknown as TriggerDefinition, inputs);
         evaluations.push({ trigger_id: t.id, symbol_id: symbolId, inputs, fired });
@@ -108,7 +136,17 @@ export default async () => {
       { source: "intraday-flip-scan", tradeDate: today },
     );
 
-    return { rowsProcessed: ifsRows.length, result: { fired: coolable.length, promoted: promoted.length } };
+    // Open the managed flip position now — eod-scan step 6 only sees its
+    // own promoted events, so a fast fire promoted here would otherwise
+    // never get a position.
+    const priceBySymbolId = new Map<number, number>();
+    for (const r of ifsRows) {
+      const p = Number(r.last_price);
+      if (Number.isFinite(p) && p > 0) priceBySymbolId.set(r.symbol_id as number, p);
+    }
+    const opened = await openFlipPositions(db, promoted, priceBySymbolId);
+
+    return { rowsProcessed: ifsRows.length, result: { fired: coolable.length, promoted: promoted.length, opened } };
   });
 
   return new Response("ok");
