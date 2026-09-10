@@ -2,20 +2,18 @@ import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 
 /**
- * Keeps bars_daily / bars_weekly to a rolling ~18-month window.
+ * Keeps bars_daily / bars_weekly to a rolling ~5-year window.
  *
- * The universe is ~5,000 symbols (NYSE + NASDAQ + AMEX common stock) on
- * Supabase's free 500 MB plan — a full 5-year daily history for all of
- * them doesn't fit. 18 months still covers the 252-trading-day lookbacks
- * (12-1 momentum, 200/252-day MAs, vol percentile) with room for a real
- * backtest window; the 5-Year chart range is capped accordingly.
+ * Was 18 months on the free 500 MB plan (a full 5-year history for the
+ * ~5,000-symbol universe didn't fit). On Pro (8 GB) the full window is
+ * back — backtest-triggers now runs on ~4 evaluable years instead of ~8
+ * months, and the "5-Year" chart range is real again.
  *
- * Scheduled via netlify.toml: once daily, alongside eod-scan. Only DELETEs
- * — the space isn't returned to the OS without a VACUUM FULL (which can't
- * run on a schedule), but Postgres reuses it, so the table stays roughly
- * flat instead of growing without bound.
+ * Scheduled via netlify.toml. Only DELETEs — space isn't returned to the
+ * OS without a VACUUM FULL, but Postgres reuses it, so the table stays
+ * roughly flat instead of growing without bound.
  */
-const RETAIN_DAYS = 550;
+const RETAIN_DAYS = 5 * 365 + 30;
 
 export default async () => {
   const db = getSupabaseAdmin();
