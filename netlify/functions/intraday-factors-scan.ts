@@ -53,7 +53,7 @@ export default async () => {
     const [{ data: bandRows }, { data: trackedFs }] = await Promise.all([
       db
         .from("factor_state")
-        .select("symbol_id, last_close, symbols(ticker, alert_excluded)")
+        .select("symbol_id, last_close, realized_vol_20d, symbols(ticker, alert_excluded)")
         .eq("as_of", asOf)
         .not("last_close", "is", null)
         .lte("last_close", priceMax)
@@ -63,13 +63,18 @@ export default async () => {
       trackedIds.size
         ? db
             .from("factor_state")
-            .select("symbol_id, last_close, symbols(ticker, alert_excluded)")
+            .select("symbol_id, last_close, realized_vol_20d, symbols(ticker, alert_excluded)")
             .eq("as_of", asOf)
             .in("symbol_id", [...trackedIds])
         : Promise.resolve({ data: [] as unknown[] }),
     ]);
 
-    type Row = { symbol_id: number; last_close: number | null; symbols: { ticker: string; alert_excluded: boolean } | null };
+    type Row = {
+      symbol_id: number;
+      last_close: number | null;
+      realized_vol_20d: number | null;
+      symbols: { ticker: string; alert_excluded: boolean } | null;
+    };
     const bySymbol = new Map<number, Row>();
     for (const r of [...((bandRows as unknown as Row[]) ?? []), ...((trackedFs as unknown as Row[]) ?? [])]) {
       if (!r.symbols?.ticker || r.symbols.alert_excluded) continue;
@@ -125,12 +130,20 @@ export default async () => {
         .filter((b) => b.ts >= openTs && b.ts < openTs + 390 * 60_000);
       if (ib.length < 2) return null;
 
+      // Rough ATR proxy from the annualized 20-day return vol on
+      // factor_state: daily vol = annual / sqrt(252); ATR (a high-low
+      // range) runs ~1.4x a close-to-close move. Good enough for the
+      // range_expansion >= 2 gate.
+      const px = c.last_close != null ? Number(c.last_close) : null;
+      const rv = c.realized_vol_20d != null ? Number(c.realized_vol_20d) : null;
+      const atr20 = px && rv ? (px * rv) / 15.87 * 1.4 : null;
+
       const f = intradayFactors({
         bars: ib,
-        priorClose: c.last_close != null ? Number(c.last_close) : null,
+        priorClose: px,
         openTs,
         minuteVolume: profileBySymbol.get(c.symbol_id) ?? null,
-        atr20: null, // range_expansion added later
+        atr20,
       });
 
       return {
