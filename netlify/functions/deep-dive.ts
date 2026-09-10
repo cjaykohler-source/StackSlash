@@ -32,7 +32,7 @@ import { fetchProfile } from "./lib/fmp";
  * blind 0.5 — still a real read, just a narrower one.
  */
 
-const HISTORICAL_HORIZON_DAYS = 10;
+const DEFAULT_HISTORICAL_HORIZON_DAYS = 3; // overridden by scan_config.score_horizon_days
 const MIN_RELIABLE_SAMPLE = 30;
 
 export default async (req: Request) => {
@@ -159,6 +159,16 @@ export default async (req: Request) => {
   // contributing trigger (sample-size weighted) rather than reading only
   // the primary trigger's stats — the whole point of the cluster is that
   // more than one signal agreed.
+  const { data: horizonCfg } = await db
+    .from("scan_config")
+    .select("score_horizon_days")
+    .eq("id", 1)
+    .maybeSingle();
+  const historicalHorizonDays = Number(
+    (horizonCfg as { score_horizon_days?: number } | null)?.score_horizon_days ??
+      DEFAULT_HISTORICAL_HORIZON_DAYS,
+  );
+
   const statTriggerIds = confluence?.triggers.length
     ? confluence.triggers.map((t) => t.id)
     : [event.trigger_id];
@@ -166,7 +176,7 @@ export default async (req: Request) => {
     .from("trigger_stats")
     .select("trigger_id, sample_size, win_rate, avg_return, cev_score")
     .in("trigger_id", statTriggerIds)
-    .eq("horizon_days", HISTORICAL_HORIZON_DAYS);
+    .eq("horizon_days", historicalHorizonDays);
 
   const usableStats = (statRows ?? []).filter((s) => (s.sample_size ?? 0) > 0 && s.win_rate !== null);
   const totalSample = usableStats.reduce((a, s) => a + (s.sample_size ?? 0), 0);
@@ -335,7 +345,7 @@ export default async (req: Request) => {
     fired_on: snapshot,
     historical: hasReliableHistory
       ? {
-          horizon_days: HISTORICAL_HORIZON_DAYS,
+          horizon_days: historicalHorizonDays,
           sample_size: stats!.sample_size,
           win_rate: stats!.win_rate,
           avg_return: stats!.avg_return,

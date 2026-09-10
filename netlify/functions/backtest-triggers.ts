@@ -44,7 +44,10 @@ import type { Bar } from "./lib/indicators";
  * previously-accumulated raw returns first.
  */
 
-const HORIZONS = [5, 10, 20];
+// Short horizons (1-3d) matter most for the quick-flip strategy this is
+// tuned for; 5/10/20 kept for continuity with the earlier swing-oriented
+// stats and for triggers that genuinely drift.
+const HORIZONS = [1, 2, 3, 5, 10, 20];
 const LOOKBACK_WINDOW = 300; // bars fed to computeFactors per day — covers the deepest indicator lookback (~260) with room to spare
 const MIN_HISTORY_BEFORE_EVAL = 260; // don't evaluate until ret_12m_ex1m/dist_sma200 etc. have enough history to be non-null
 
