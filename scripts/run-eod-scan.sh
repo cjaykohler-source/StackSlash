@@ -13,6 +13,6 @@ set +a
 LOGDIR="$HOME/Library/Logs/stackslash-eod-scan"
 mkdir -p "$LOGDIR"
 echo "=== $(date -u '+%Y-%m-%dT%H:%M:%SZ') starting eod-scan ===" >> "$LOGDIR/eod-scan.log"
-npx --yes tsx -e "import r from './netlify/functions/eod-scan'; const t=Date.now(); r().then(x=>x.text()).then(o=>console.log('RESULT:',o,'in',((Date.now()-t)/1000).toFixed(0)+'s')).catch(e=>{console.error('ERR:',e && e.message || e); process.exit(1)})" \
+npx --yes tsx -e "import r from './netlify/functions/eod-scan'; const t=Date.now(); r().then(x=>x.text()).then(o=>console.log('RESULT:',o,'in',((Date.now()-t)/1000).toFixed(0)+'s')).catch(e=>{console.error('ERR:', e && e.stack || (e && typeof e==='object' ? JSON.stringify(e) : e)); process.exit(1)})" \
   >> "$LOGDIR/eod-scan.log" 2>&1
 echo "=== $(date -u '+%Y-%m-%dT%H:%M:%SZ') done ===" >> "$LOGDIR/eod-scan.log"
