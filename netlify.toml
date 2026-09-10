@@ -33,8 +33,8 @@
 
 # ---------------------------------------------------------------------------
 # Scheduled functions (Netlify cron). Times are UTC.
-# eod-scan:           21:30 UTC ~ 30 min after US market close (16:00 ET /
-#                     20:00 UTC, adjust for DST as needed), Mon-Fri.
+# eod-scan:           NOT here — runs via launchd on the Mac mini at 17:45
+#                     ET / 21:45 UTC (see the note lower down).
 # intraday-scan:      every 10 minutes during roughly 13:00-21:00 UTC (US
 #                     market hours), Mon-Fri — technical triggers on the
 #                     momentum-filtered candidate set only.
@@ -55,8 +55,12 @@
 # changes, so trigger_stats keeps reflecting what the triggers actually do.
 #
 # prune-bars-intraday / prune-trigger-evaluations / prune-bars-daily:
-# once daily after close — rolling retention on the tables that would
-# otherwise grow unbounded (see each function's own comment).
+# once daily, ~22:20 UTC — rolling retention on the tables that would
+# otherwise grow unbounded (see each function's own comment). Moved off
+# 21:45 UTC: that collided with the launchd eod-scan (17:45 ET / 21:45
+# UTC), and the prunes' large DELETEs saturated the free-tier DB enough
+# that eod-scan's first query got a fast 504 ("Gateway Timeout") and the
+# whole run aborted in ~5s. eod-scan finishes by ~21:50; prune after.
 # weekly-bars-scan: once weekly (Monday mornings) — aggregates bars_daily
 # into bars_weekly for longer-term trend context.
 #
@@ -78,13 +82,13 @@
   schedule = "*/5 13-23 * * 1-5"
 
 [functions."prune-bars-intraday"]
-  schedule = "45 21 * * 1-5"
+  schedule = "20 22 * * 1-5"
 
 [functions."prune-trigger-evaluations"]
-  schedule = "45 21 * * 1-5"
+  schedule = "20 22 * * 1-5"
 
 [functions."prune-bars-daily"]
-  schedule = "50 21 * * 1-5"
+  schedule = "25 22 * * 1-5"
 
 [functions."fundamentals-sync"]
   schedule = "0 6,21 * * *"
