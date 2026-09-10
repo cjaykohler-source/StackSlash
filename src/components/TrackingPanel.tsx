@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { supabase } from "../lib/supabaseClient";
-import { etDateString } from "../lib/marketTime";
+import { etDateString, sessionAxis } from "../lib/marketTime";
+import { PriceChart, type PricePoint } from "./PriceChart";
 import { useQuotes, type Quote } from "./QuoteTag";
 
 interface Tracked {
@@ -239,7 +239,19 @@ function TrackedCard({
   const changePct = quote?.changePct ?? null;
   const price = quote?.price ?? (points.length ? points[points.length - 1].price : null);
   const dir = changePct == null ? "" : changePct > 0 ? "up" : changePct < 0 ? "down" : "";
-  const stroke = dir === "up" ? "#25e979" : dir === "down" ? "#e74c3c" : "#8b93a7";
+  const stroke =
+    dir === "up" ? "var(--brand-green)" : dir === "down" ? "var(--red)" : "var(--text-dim)";
+
+  // Map to PriceChart's model. Intraday uses the same fixed 4a–8p ET
+  // session frame as the symbol page (line fills in from the left as the
+  // session runs); the daily fallback keeps a plain categorical axis.
+  const daySession = intraday ? sessionAxis(Date.now()) : null;
+  const chartData: PricePoint[] = daySession
+    ? points.map((p) => ({ x: daySession.toX(p.t), y: p.price, t: p.t }))
+    : points.map((p) => ({
+        x: new Date(p.t).toLocaleDateString([], { month: "short", day: "numeric" }),
+        y: p.price,
+      }));
 
   return (
     <div className="tracked-card">
@@ -266,26 +278,14 @@ function TrackedCard({
           </span>
         ) : (
           <>
-            <ResponsiveContainer width="100%" height={72}>
-              <LineChart data={points} margin={{ top: 4, bottom: 4, left: 0, right: 0 }}>
-                <YAxis hide domain={["dataMin", "dataMax"]} />
-                <Tooltip
-                  labelFormatter={() => ""}
-                  formatter={(v: number) => [`$${v.toFixed(2)}`, ""]}
-                  separator=""
-                  contentStyle={{
-                    fontSize: "0.75rem",
-                    padding: "2px 6px",
-                    background: "var(--panel)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "6px",
-                  }}
-                  itemStyle={{ color: "var(--text)" }}
-                  wrapperStyle={{ outline: "none" }}
-                />
-                <Line type="monotone" dataKey="price" stroke={stroke} strokeWidth={1.75} dot={false} isAnimationActive={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <PriceChart
+              data={chartData}
+              variant={intraday ? "intraday" : "calendar"}
+              session={daySession ?? undefined}
+              compact
+              height={72}
+              stroke={stroke}
+            />
             {!intraday && <span className="tracked-chart-tag">~30d daily</span>}
             {intraday && sessionLabel && (
               <span className="tracked-chart-tag">{sessionLabel} session</span>

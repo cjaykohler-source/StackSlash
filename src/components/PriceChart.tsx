@@ -25,6 +25,12 @@ interface Props {
   variant: "intraday" | "calendar";
   session?: SessionAxis; // required for the intraday variant
   height?: number;
+  /** Strip axes/grid/labels down to a sparkline — same fixed session frame,
+   *  just no chrome. Used by the dashboard's tracked-symbol mini charts. */
+  compact?: boolean;
+  /** Override the auto up/down line colour (compact cards colour off the
+   *  live quote's since-the-open change instead of first-vs-last point). */
+  stroke?: string;
 }
 
 const money = (v: number) =>
@@ -64,10 +70,11 @@ function TooltipCard({
  * 9:30a / 4:00p regular-session bounds. The calendar variant keeps
  * recharts' categorical date axis.
  */
-export function PriceChart({ data, variant, session, height = 320 }: Props) {
+export function PriceChart({ data, variant, session, height, compact = false, stroke }: Props) {
   const gradId = useId().replace(/:/g, "");
   const up = data.length >= 2 && data[data.length - 1].y >= data[0].y;
-  const stroke = up ? "var(--green)" : "var(--red)";
+  const lineColor = stroke ?? (up ? "var(--green)" : "var(--red)");
+  const h = height ?? (compact ? 72 : 320);
 
   const values = data.map((d) => d.y);
   const lo = Math.min(...values);
@@ -75,27 +82,33 @@ export function PriceChart({ data, variant, session, height = 320 }: Props) {
   const pad = (hi - lo) * 0.08 || hi * 0.02 || 1;
 
   return (
-    <div className="price-chart">
-      <ResponsiveContainer width="100%" height={height}>
-        <AreaChart data={data} margin={{ top: 10, right: 16, bottom: 4, left: 4 }}>
+    <div className={`price-chart${compact ? " price-chart-compact" : ""}`}>
+      <ResponsiveContainer width="100%" height={h}>
+        <AreaChart
+          data={data}
+          margin={compact ? { top: 4, right: 2, bottom: 2, left: 2 } : { top: 10, right: 16, bottom: 4, left: 4 }}
+        >
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={stroke} stopOpacity={0.28} />
-              <stop offset="100%" stopColor={stroke} stopOpacity={0} />
+              <stop offset="0%" stopColor={lineColor} stopOpacity={0.28} />
+              <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
+          {!compact && (
+            <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} vertical={false} />
+          )}
           {variant === "intraday" && session ? (
             <XAxis
               type="number"
               dataKey="x"
               domain={session.domain}
-              ticks={session.ticks}
+              ticks={compact ? [] : session.ticks}
               allowDataOverflow
               tickFormatter={(v: number) => session.tickLabels[v] ?? ""}
               tickLine={false}
               axisLine={{ stroke: "var(--border)" }}
-              tick={{ fill: "var(--text-dim)", fontSize: 10 }}
+              tick={compact ? false : { fill: "var(--text-dim)", fontSize: 10 }}
+              height={compact ? 2 : undefined}
               interval={0}
               minTickGap={0}
             />
@@ -104,13 +117,15 @@ export function PriceChart({ data, variant, session, height = 320 }: Props) {
               dataKey="x"
               tickLine={false}
               axisLine={{ stroke: "var(--border)" }}
-              tick={{ fill: "var(--text-dim)", fontSize: 11 }}
+              tick={compact ? false : { fill: "var(--text-dim)", fontSize: 11 }}
+              height={compact ? 2 : undefined}
               minTickGap={40}
             />
           )}
           <YAxis
             domain={[lo - pad, hi + pad]}
-            width={58}
+            width={compact ? 0 : 58}
+            hide={compact}
             tickLine={false}
             axisLine={false}
             tick={{ fill: "var(--text-dim)", fontSize: 11 }}
@@ -118,8 +133,8 @@ export function PriceChart({ data, variant, session, height = 320 }: Props) {
           />
           {variant === "intraday" && session && (
             <>
-              <ReferenceLine x={session.open} stroke="var(--border)" strokeOpacity={0.9} />
-              <ReferenceLine x={session.close} stroke="var(--border)" strokeOpacity={0.9} />
+              <ReferenceLine x={session.open} stroke="var(--border)" strokeOpacity={compact ? 0.6 : 0.9} />
+              <ReferenceLine x={session.close} stroke="var(--border)" strokeOpacity={compact ? 0.6 : 0.9} />
             </>
           )}
           <Tooltip
@@ -129,8 +144,8 @@ export function PriceChart({ data, variant, session, height = 320 }: Props) {
           <Area
             type="monotone"
             dataKey="y"
-            stroke={stroke}
-            strokeWidth={2}
+            stroke={lineColor}
+            strokeWidth={compact ? 1.75 : 2}
             fill={`url(#${gradId})`}
             dot={false}
             activeDot={{ r: 3, strokeWidth: 0 }}
