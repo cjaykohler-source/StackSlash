@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { supabase } from "../lib/supabaseClient";
+import { etDateString } from "../lib/marketTime";
 import { useQuotes, type Quote } from "./QuoteTag";
 
 interface Tracked {
@@ -136,6 +137,11 @@ function TrackedCard({
 }) {
   const [series, setSeries] = useState<Point[]>([]);
   const [intraday, setIntraday] = useState(true);
+  // Which ET session the intraday line is showing. When the newest bars we
+  // have are from a prior session (early morning, or a thin name that
+  // hasn't printed on IEX yet today), the card shows that session and
+  // labels it — rather than silently looking like "today".
+  const [sessionLabel, setSessionLabel] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
   useEffect(() => {
@@ -156,10 +162,19 @@ function TrackedCard({
         .limit(500);
       if (cancelledRef.current) return;
       let rows = ((data as { ts: string; price: number }[] | null) ?? []).reverse();
-      // Keep just the latest session present.
+      // Keep just one ET session: today's if we have any of it, otherwise
+      // the most recent prior session (dated by ET, not the UTC calendar —
+      // after-hours bars run past midnight UTC).
       if (rows.length) {
-        const lastDay = rows[rows.length - 1].ts.slice(0, 10);
-        rows = rows.filter((r) => r.ts.slice(0, 10) === lastDay);
+        const todayET = etDateString(Date.now());
+        const hasToday = rows.some((r) => etDateString(new Date(r.ts)) === todayET);
+        const targetDay = hasToday ? todayET : etDateString(new Date(rows[rows.length - 1].ts));
+        rows = rows.filter((r) => etDateString(new Date(r.ts)) === targetDay);
+        setSessionLabel(
+          targetDay === todayET
+            ? null
+            : new Date(`${targetDay}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" }),
+        );
       }
       if (rows.length >= 2) {
         setIntraday(true);
@@ -174,8 +189,16 @@ function TrackedCard({
         const body = (await res.json()) as { bars?: { ts: string; price: number }[] };
         if (cancelledRef.current) return;
         if ((body.bars?.length ?? 0) >= 2) {
+          const b = body.bars!;
+          const todayET = etDateString(Date.now());
+          const barDay = etDateString(new Date(b[b.length - 1].ts));
+          setSessionLabel(
+            barDay === todayET
+              ? null
+              : new Date(`${barDay}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" }),
+          );
           setIntraday(true);
-          setSeries(fromIntradayRows(body.bars!));
+          setSeries(fromIntradayRows(b));
           return;
         }
       } catch {
@@ -192,6 +215,7 @@ function TrackedCard({
       if (cancelledRef.current) return;
       const drows = (daily as { date: string; close: number }[] | null) ?? [];
       setIntraday(false);
+      setSessionLabel(null);
       setSeries(drows.reverse().map((r) => ({ t: new Date(`${r.date}T00:00:00Z`).getTime(), price: Number(r.close) })));
     }
     loadSeries();
@@ -202,11 +226,13 @@ function TrackedCard({
     };
   }, [tracked.symbol_id, tracked.ticker]);
 
-  // On an intraday series, append the current quote as the latest point
-  // so the line's tip moves between 5-min bar ingests. Don't do this on
-  // the daily fallback series (would leave a huge time gap).
+  // On today's intraday series, append the current quote as the latest
+  // point so the line's tip moves between 5-min bar ingests. Skip it on
+  // the daily fallback and on a prior-session line — grafting a live
+  // price onto yesterday's bars just draws a spike to nowhere.
+  const showingToday = intraday && sessionLabel === null;
   const points = [...series];
-  if (intraday && quote && (points.length === 0 || quote.price !== points[points.length - 1].price)) {
+  if (showingToday && quote && (points.length === 0 || quote.price !== points[points.length - 1].price)) {
     points.push({ t: Date.now(), price: quote.price });
   }
 
@@ -235,7 +261,9 @@ function TrackedCard({
       </div>
       <div className="tracked-chart">
         {points.length < 2 ? (
-          <span className="tracked-chart-empty">No chart data</span>
+          <span className="tracked-chart-empty">
+            {showingToday ? "Waiting for today's prints…" : "No chart data"}
+          </span>
         ) : (
           <>
             <ResponsiveContainer width="100%" height={72}>
@@ -259,6 +287,9 @@ function TrackedCard({
               </LineChart>
             </ResponsiveContainer>
             {!intraday && <span className="tracked-chart-tag">~30d daily</span>}
+            {intraday && sessionLabel && (
+              <span className="tracked-chart-tag">{sessionLabel} session</span>
+            )}
           </>
         )}
       </div>
