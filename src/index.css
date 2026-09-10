@@ -678,11 +678,12 @@ body {
   width: 20px;
   height: 20px;
   margin: 2px 4px 2px 0;
-  font-size: 0.72rem;
-  line-height: 1;
   border-radius: 4px;
   border: 1px solid transparent;
   cursor: default;
+}
+.feed-flag svg {
+  display: block;
 }
 .feed-flag-red {
   background: rgba(231, 76, 60, 0.14);
@@ -692,6 +693,7 @@ body {
 .feed-flag-amber {
   background: rgba(240, 160, 32, 0.14);
   color: var(--amber);
+  border-color: rgba(240, 160, 32, 0.35);
 }
 .feed-flag-green {
   background: rgba(37, 233, 121, 0.14);
