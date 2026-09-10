@@ -93,6 +93,11 @@
 [functions."intraday-factors-scan"]
   schedule = "*/5 13-20 * * 1-5"
 
+# intraday-flip-scan: every 5 min, offset +2 min so it reads fresh
+# intraday_factor_state. Evaluates the enabled fast flip triggers.
+[functions."intraday-flip-scan"]
+  schedule = "2-59/5 13-20 * * 1-5"
+
 # refresh-intraday-volume-profile: nightly, after the intraday jobs stop —
 # EWMA-accumulates the per-minute volume profile that RVOL divides by.
 [functions."refresh-intraday-volume-profile"]
