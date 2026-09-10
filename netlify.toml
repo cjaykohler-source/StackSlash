@@ -101,3 +101,9 @@
 # trailing-window metric table the Isolator screener reads.
 [functions."refresh-window-stats"]
   schedule = "0 23 * * 1-5"
+
+# record-fire-outcomes: 23:10 UTC weekdays — after eod-scan's bars_daily
+# upsert. Fills fire_outcomes (realized forward return of every promoted
+# entry trigger_event) — the live counterpart to backtest-triggers.
+[functions."record-fire-outcomes"]
+  schedule = "10 23 * * 1-5"
