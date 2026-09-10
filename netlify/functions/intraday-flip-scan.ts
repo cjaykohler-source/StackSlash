@@ -3,6 +3,7 @@ import { withJobRun } from "./lib/jobRun";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 import { filterByCooldown } from "./lib/cooldown";
 import { stageAndPromote } from "./lib/confluenceGate";
+import { openFlipPositions } from "./lib/flipPositions";
 import { etDateString } from "./lib/etTime";
 
 /**
@@ -24,7 +25,7 @@ export default async () => {
   const db = getSupabaseAdmin();
 
   await withJobRun(db, "intraday-flip-scan", async () => {
-    if (!isLikelyMarketHours()) return { rowsProcessed: 0, result: { fired: 0, promoted: 0 } };
+    if (!isLikelyMarketHours()) return { rowsProcessed: 0, result: { fired: 0, promoted: 0, opened: 0 } };
 
     const sessionDate = etDateString(Date.now());
     const today = new Date().toISOString().slice(0, 10);
@@ -36,7 +37,7 @@ export default async () => {
       .eq("speed", "fast")
       .eq("direction", "long");
     if (te) throw te;
-    if (!triggers?.length) return { rowsProcessed: 0, result: { fired: 0, promoted: 0 } };
+    if (!triggers?.length) return { rowsProcessed: 0, result: { fired: 0, promoted: 0, opened: 0 } };
     const cooldownByTriggerId = new Map(triggers.map((t) => [t.id, t.cooldown_minutes] as const));
 
     // intraday factors for today's session
@@ -51,7 +52,7 @@ export default async () => {
       ifsRows.push(...((data as Record<string, unknown>[] | null) ?? []));
       if (!data || data.length < 1000) break;
     }
-    if (!ifsRows.length) return { rowsProcessed: 0, result: { fired: 0, promoted: 0 } };
+    if (!ifsRows.length) return { rowsProcessed: 0, result: { fired: 0, promoted: 0, opened: 0 } };
 
     const symIdsAll = ifsRows.map((r) => r.symbol_id as number);
 
@@ -135,7 +136,17 @@ export default async () => {
       { source: "intraday-flip-scan", tradeDate: today },
     );
 
-    return { rowsProcessed: ifsRows.length, result: { fired: coolable.length, promoted: promoted.length } };
+    // Open the managed flip position now — eod-scan step 6 only sees its
+    // own promoted events, so a fast fire promoted here would otherwise
+    // never get a position.
+    const priceBySymbolId = new Map<number, number>();
+    for (const r of ifsRows) {
+      const p = Number(r.last_price);
+      if (Number.isFinite(p) && p > 0) priceBySymbolId.set(r.symbol_id as number, p);
+    }
+    const opened = await openFlipPositions(db, promoted, priceBySymbolId);
+
+    return { rowsProcessed: ifsRows.length, result: { fired: coolable.length, promoted: promoted.length, opened } };
   });
 
   return new Response("ok");

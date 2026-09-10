@@ -6,6 +6,7 @@ import { computeFactors, computeRegime } from "./lib/dailySnapshot";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 import { filterByCooldown } from "./lib/cooldown";
 import { stageAndPromote, ENTRY_TRIGGER_NAMES } from "./lib/confluenceGate";
+import { openFlipPositions } from "./lib/flipPositions";
 import { mapWithConcurrency } from "./lib/concurrency";
 
 /**
@@ -402,63 +403,62 @@ export default async () => {
       const speedById = new Map(
         ((speedRows as { id: number; speed: string }[] | null) ?? []).map((t) => [t.id, t.speed]),
       );
-      // Don't open a second position for a symbol that already has one open.
-      const { data: alreadyOpen } = await db
-        .from("shadow_positions")
-        .select("symbol_id")
-        .eq("status", "open")
-        .in(
-          "symbol_id",
-          longEvents.map((ev) => ev.symbol_id),
-        );
-      const openSymbolIds = new Set((alreadyOpen ?? []).map((p) => p.symbol_id));
+      // Flip positions (any contributing trigger is 'fast') — usually
+      // already opened intraday by intraday-flip-scan; this covers a fast
+      // fire that only clustered at EOD. Shared helper so the exit_rules
+      // handling matches.
+      await openFlipPositions(db, promotedEvents, priceBySymbolId);
 
-      // Flip stop/target params, snapshotted onto each row so a later
-      // scan_config edit doesn't retroactively move a live position's rules.
-      const { data: cfgRow } = await db
-        .from("scan_config")
-        .select("default_stop_pct, flip_profit_target_pct, flip_trail_pct, flip_time_stop_days")
-        .eq("id", 1)
-        .maybeSingle();
-      const hardStopPct = Number(cfgRow?.default_stop_pct ?? 0.12);
-      const flipRules = {
-        profit_target_pct: Number(cfgRow?.flip_profit_target_pct ?? 0.15),
-        trail_pct: Number(cfgRow?.flip_trail_pct ?? 0.1),
-        hard_stop_pct: hardStopPct,
-        time_stop_days: Number(cfgRow?.flip_time_stop_days ?? 4),
-      };
-      const round2 = (n: number) => Math.round(n * 100) / 100;
-      const nowIso = new Date().toISOString();
+      // Swing positions (all contributing triggers slow) — opened here.
+      const swingEvents = longEvents.filter(
+        (ev) => !ev.confluence.triggers.some((t) => speedById.get(t.id) === "fast"),
+      );
+      if (swingEvents.length) {
+        const { data: alreadyOpen } = await db
+          .from("shadow_positions")
+          .select("symbol_id")
+          .eq("status", "open")
+          .in(
+            "symbol_id",
+            swingEvents.map((ev) => ev.symbol_id),
+          );
+        const openSymbolIds = new Set((alreadyOpen ?? []).map((p) => p.symbol_id));
+        const { data: cfgRow } = await db
+          .from("scan_config")
+          .select("default_stop_pct")
+          .eq("id", 1)
+          .maybeSingle();
+        const hardStopPct = Number(cfgRow?.default_stop_pct ?? 0.12);
+        const round2 = (n: number) => Math.round(n * 100) / 100;
+        const nowIso = new Date().toISOString();
 
-      const newPositions = [];
-      for (const ev of longEvents) {
-        if (openSymbolIds.has(ev.symbol_id)) continue;
-        const names = ev.confluence.triggers.map((t) => t.name).filter((n): n is string => !!n);
-        const anyFast = ev.confluence.triggers.some((t) => speedById.get(t.id) === "fast");
-        const strategy = anyFast ? "flip" : "swing";
-        const momentumName = names.find((n) => ENTRY_TRIGGER_NAMES.has(n));
-        const primaryName =
-          ev.confluence.triggers.find((t) => t.id === ev.trigger_id)?.name ?? names[0] ?? "unknown";
-        const entryPrice = priceBySymbolId.get(ev.symbol_id) ?? null;
-        newPositions.push({
-          symbol_id: ev.symbol_id,
-          entry_trigger_event_id: ev.id,
-          entry_trigger_name: momentumName ?? primaryName,
-          entry_date: today,
-          entry_ts: nowIso,
-          entry_price: entryPrice,
-          status: "open" as const,
-          strategy,
-          stop_price: entryPrice != null ? round2(entryPrice * (1 - hardStopPct)) : null,
-          high_water: entryPrice,
-          rules: strategy === "flip" ? flipRules : null,
-        });
-        openSymbolIds.add(ev.symbol_id);
-      }
-
-      if (newPositions.length) {
-        const { error } = await db.from("shadow_positions").insert(newPositions);
-        if (error) throw error;
+        const newPositions = [];
+        for (const ev of swingEvents) {
+          if (openSymbolIds.has(ev.symbol_id)) continue;
+          const names = ev.confluence.triggers.map((t) => t.name).filter((n): n is string => !!n);
+          const momentumName = names.find((n) => ENTRY_TRIGGER_NAMES.has(n));
+          const primaryName =
+            ev.confluence.triggers.find((t) => t.id === ev.trigger_id)?.name ?? names[0] ?? "unknown";
+          const entryPrice = priceBySymbolId.get(ev.symbol_id) ?? null;
+          newPositions.push({
+            symbol_id: ev.symbol_id,
+            entry_trigger_event_id: ev.id,
+            entry_trigger_name: momentumName ?? primaryName,
+            entry_date: today,
+            entry_ts: nowIso,
+            entry_price: entryPrice,
+            status: "open" as const,
+            strategy: "swing" as const,
+            stop_price: entryPrice != null ? round2(entryPrice * (1 - hardStopPct)) : null,
+            high_water: entryPrice,
+            rules: null,
+          });
+          openSymbolIds.add(ev.symbol_id);
+        }
+        if (newPositions.length) {
+          const { error } = await db.from("shadow_positions").insert(newPositions);
+          if (error) throw error;
+        }
       }
     }
 
