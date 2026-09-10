@@ -135,15 +135,28 @@ export default async () => {
       chunks.push(tickers.slice(i, i + chunkSize));
     }
 
-    async function fetchChunk(chunk: string[]): Promise<[string, Bar[]][]> {
-      const chunkBars = new Map<string, Bar[]>();
+    // Full OHLCV — factor computation only needs close/volume (Bar), but
+    // bars_daily also feeds MFE/MAE in record-fire-outcomes.ts and other
+    // OHLC readers, so persist open/high/low too (backfill-history already
+    // does; the recent-catch-up pull here used to drop them, leaving
+    // close-only rows for every recent session).
+    type OhlcBar = { date: string; open: number; high: number; low: number; close: number; volume: number };
+    async function fetchChunk(chunk: string[]): Promise<[string, OhlcBar[]][]> {
+      const chunkBars = new Map<string, OhlcBar[]>();
       let pageToken: string | undefined;
       do {
         const { bars, nextPageToken } = await fetchDailyBars(chunk, start, end, pageToken);
         for (const [ticker, tickerBars] of Object.entries(bars)) {
           const existing = chunkBars.get(ticker) ?? [];
           existing.push(
-            ...tickerBars.map((b) => ({ date: b.t.slice(0, 10), close: b.c, volume: b.v })),
+            ...tickerBars.map((b) => ({
+              date: b.t.slice(0, 10),
+              open: b.o,
+              high: b.h,
+              low: b.l,
+              close: b.c,
+              volume: b.v,
+            })),
           );
           chunkBars.set(ticker, existing);
         }
@@ -153,7 +166,7 @@ export default async () => {
     }
 
     const chunkResults = await mapWithConcurrency(chunks, 3, fetchChunk);
-    const recentBarsBySymbol = new Map<string, Bar[]>(chunkResults.flat());
+    const recentBarsBySymbol = new Map<string, OhlcBar[]>(chunkResults.flat());
 
     // --- 2. Upsert the fresh recent bars ---
     const barRows = [];
@@ -161,7 +174,15 @@ export default async () => {
       const symbolId = byTicker.get(ticker);
       if (!symbolId) continue;
       for (const b of bars) {
-        barRows.push({ symbol_id: symbolId, date: b.date, close: b.close, volume: b.volume });
+        barRows.push({
+          symbol_id: symbolId,
+          date: b.date,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+          volume: b.volume,
+        });
       }
     }
     // Chunked rather than one giant upsert: at ~505 symbols x up to 400
