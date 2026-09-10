@@ -81,6 +81,12 @@
 [functions."intraday-bars-scan"]
   schedule = "*/5 13-23 * * 1-5"
 
+# manage-positions: every 5 min during market hours — the exit half of the
+# flip pipeline. Walks open 'flip' shadow_positions against profit-target /
+# trailing / hard / time stops and fires a momentum_exit event on a close.
+[functions."manage-positions"]
+  schedule = "*/5 13-20 * * 1-5"
+
 [functions."prune-bars-intraday"]
   schedule = "20 22 * * 1-5"
 

@@ -396,51 +396,67 @@ export default async () => {
       { source: "eod-scan", tradeDate: today },
     );
 
-    // --- 6. Open shadow positions for new momentum-style entries ---
-    // Only momentum_rank_entry and momentum_breakout carry a holding-
-    // period exit rule in the research (12-1 month momentum, ~3-12 month
-    // hold; the faster 20-day breakout variant). The mean-reversion/
-    // short-horizon triggers (BB/RSI confluence, squeeze breakout, MACD
-    // cross, outlier) have different exit logic entirely and aren't
-    // tracked here — see the Trigger Backlog in README.md.
-    //
-    // Post-confluence-gate: a position opens off a promoted cluster event
-    // whose contributing triggers include an entry trigger — i.e. a
-    // momentum entry that was confirmed by at least one other signal, not
-    // a standalone fire.
-    const entryEvents = promotedEvents
-      .map((ev) => ({
-        ev,
-        entryName: ev.confluence.triggers
-          .map((t) => t.name)
-          .find((n): n is string => !!n && ENTRY_TRIGGER_NAMES.has(n)),
-      }))
-      .filter((x): x is { ev: (typeof promotedEvents)[number]; entryName: string } => !!x.entryName);
+    // --- 6. Open shadow positions for new long entries ---
+    // Every promoted long cluster opens a hypothetical position:
+    //  - 'swing'  — the cluster includes a momentum entry
+    //    (momentum_rank_entry / momentum_breakout). Held per the 12-1
+    //    momentum research; exited by step 7 (rank drop / weekly reversal
+    //    / 180 days).
+    //  - 'flip'   — everything else. Managed intraday by
+    //    manage-positions.ts against profit-target / trailing / hard /
+    //    time stops from scan_config; step 7 leaves these alone.
+    const longEvents = promotedEvents.filter((ev) => ev.confluence.direction === "long");
 
-    if (entryEvents.length) {
-      // Don't open a second shadow position for a symbol that already
-      // has one open — a fresh entry-trigger fire on something you're
-      // (hypothetically) already holding isn't a new position.
+    if (longEvents.length) {
+      // Don't open a second position for a symbol that already has one open.
       const { data: alreadyOpen } = await db
         .from("shadow_positions")
         .select("symbol_id")
         .eq("status", "open")
         .in(
           "symbol_id",
-          entryEvents.map((x) => x.ev.symbol_id),
+          longEvents.map((ev) => ev.symbol_id),
         );
       const openSymbolIds = new Set((alreadyOpen ?? []).map((p) => p.symbol_id));
 
+      // Flip stop/target params, snapshotted onto each row so a later
+      // scan_config edit doesn't retroactively move a live position's rules.
+      const { data: cfgRow } = await db
+        .from("scan_config")
+        .select("default_stop_pct, flip_profit_target_pct, flip_trail_pct, flip_time_stop_days")
+        .eq("id", 1)
+        .maybeSingle();
+      const hardStopPct = Number(cfgRow?.default_stop_pct ?? 0.12);
+      const flipRules = {
+        profit_target_pct: Number(cfgRow?.flip_profit_target_pct ?? 0.15),
+        trail_pct: Number(cfgRow?.flip_trail_pct ?? 0.1),
+        hard_stop_pct: hardStopPct,
+        time_stop_days: Number(cfgRow?.flip_time_stop_days ?? 4),
+      };
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+      const nowIso = new Date().toISOString();
+
       const newPositions = [];
-      for (const { ev, entryName } of entryEvents) {
+      for (const ev of longEvents) {
         if (openSymbolIds.has(ev.symbol_id)) continue;
+        const names = ev.confluence.triggers.map((t) => t.name).filter((n): n is string => !!n);
+        const momentumName = names.find((n) => ENTRY_TRIGGER_NAMES.has(n));
+        const strategy = momentumName ? "swing" : "flip";
+        const primaryName =
+          ev.confluence.triggers.find((t) => t.id === ev.trigger_id)?.name ?? names[0] ?? "unknown";
+        const entryPrice = priceBySymbolId.get(ev.symbol_id) ?? null;
         newPositions.push({
           symbol_id: ev.symbol_id,
           entry_trigger_event_id: ev.id,
-          entry_trigger_name: entryName,
+          entry_trigger_name: momentumName ?? primaryName,
           entry_date: today,
-          entry_price: priceBySymbolId.get(ev.symbol_id) ?? null,
+          entry_ts: nowIso,
+          entry_price: entryPrice,
           status: "open" as const,
+          strategy,
+          stop_price: entryPrice != null ? round2(entryPrice * (1 - hardStopPct)) : null,
+          high_water: entryPrice,
+          rules: strategy === "flip" ? flipRules : null,
         });
         openSymbolIds.add(ev.symbol_id);
       }
@@ -451,11 +467,13 @@ export default async () => {
       }
     }
 
-    // --- 7. Check open shadow positions for an exit condition ---
+    // --- 7. Check open SWING positions for an exit condition ---
+    // Flip positions are managed by manage-positions.ts, not here.
     const { data: openPositions, error: posErr } = await db
       .from("shadow_positions")
       .select("id, symbol_id, entry_date")
-      .eq("status", "open");
+      .eq("status", "open")
+      .eq("strategy", "swing");
     if (posErr) throw posErr;
 
     if (openPositions?.length) {
