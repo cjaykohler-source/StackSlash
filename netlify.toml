@@ -38,9 +38,10 @@
 # intraday-scan:      every 10 minutes during roughly 13:00-21:00 UTC (US
 #                     market hours), Mon-Fri — technical triggers on the
 #                     momentum-filtered candidate set only.
-# intraday-bars-scan: every 5 minutes, same window — populates bars_intraday
-#                     (the "Day" chart range) for the whole active universe,
-#                     not just candidates. Separate cadence/scope from
+# intraday-bars-scan: every 5 minutes, 13:00-23:55 UTC (regular session +
+#                     most of after-hours) — populates bars_intraday (the
+#                     "Day" chart range) for the whole active universe, not
+#                     just candidates. Separate cadence/scope/window from
 #                     intraday-scan on purpose (see the function's comment).
 # Netlify cron does not support "only during market hours" natively beyond
 # the hour range below; intraday-scan also no-ops outside market hours as
@@ -68,8 +69,13 @@
 [functions."intraday-scan"]
   schedule = "*/10 13-20 * * 1-5"
 
+# 13:00-23:55 UTC = 9:00 AM - ~6:55 PM ET in EDT (an hour earlier in EST):
+# regular session plus most of after-hours, so the dashboard's "as of"
+# stamp keeps advancing into the evening instead of freezing at ~4:50 PM.
+# Premarket (4:00-9:00 AM ET) is still not covered — thin penny-stock
+# prints, not worth the extra Alpaca load.
 [functions."intraday-bars-scan"]
-  schedule = "*/5 13-20 * * 1-5"
+  schedule = "*/5 13-23 * * 1-5"
 
 [functions."prune-bars-intraday"]
   schedule = "45 21 * * 1-5"

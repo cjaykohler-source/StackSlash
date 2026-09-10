@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import { etTimeLabel } from "../lib/marketTime";
 
 interface Mover {
   ticker: string;
@@ -19,23 +20,37 @@ const TOP_N = 35;
  * `top_movers()` Postgres function over `bars_intraday` — no Alpaca call —
  * so it's only as complete as that day's intraday coverage, and refreshes
  * every 5 minutes (the rate the underlying bars_intraday data updates).
+ *
+ * The "as of" stamp is the timestamp of the freshest `bars_intraday` bar,
+ * i.e. when these numbers were actually pulled — not the page-load time,
+ * so a stale stamp (market closed, coverage gap) is visible as stale.
  */
 export function TopMovers() {
   const [movers, setMovers] = useState<Mover[] | null>(null);
+  const [asOf, setAsOf] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      const { data, error } = await supabase.rpc("top_movers", { n: TOP_N });
+      const [moversRes, tsRes] = await Promise.all([
+        supabase.rpc("top_movers", { n: TOP_N }),
+        supabase
+          .from("bars_intraday")
+          .select("ts")
+          .order("ts", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
       if (cancelled) return;
-      if (error) {
+      if (moversRes.error) {
         setFailed(true);
         return;
       }
       setFailed(false);
-      setMovers((data as Mover[]) ?? []);
+      setMovers((moversRes.data as Mover[]) ?? []);
+      setAsOf(tsRes.data?.ts ? new Date(tsRes.data.ts as string).getTime() : null);
     }
 
     load();
@@ -53,6 +68,9 @@ export function TopMovers() {
 
   return (
     <aside className="top-movers">
+      {asOf !== null && (
+        <p className="top-movers-asof">as of {etTimeLabel(asOf)}</p>
+      )}
       <MoverList title="Top gainers" rows={gainers} loading={movers === null} />
       <MoverList title="Top losers" rows={losers} loading={movers === null} />
     </aside>
