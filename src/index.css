@@ -743,6 +743,15 @@ h1 .quote-tag {
     grid-template-columns: 1fr;
   }
 }
+.top-movers-asof {
+  grid-column: 1 / -1;
+  margin: 0 0 -4px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
 .top-movers-section {
   min-width: 0;
   border: 1px solid var(--border);
