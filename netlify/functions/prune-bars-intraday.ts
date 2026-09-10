@@ -2,20 +2,21 @@ import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 
 /**
- * Deletes bars_intraday rows older than 7 days. This table is the "Day"
- * chart range's 1-min bars for the whole active universe — it only ever
- * needs the trailing week, and with no retention it would grow ~84 KB per
- * symbol per trading day forever (measured, not estimated). Longer-term
- * trend context comes from bars_daily/bars_weekly instead, so pruning
- * this doesn't lose anything those need.
+ * Deletes bars_intraday rows older than RETAIN_DAYS. This table is the
+ * "Day" chart's 1-min bars AND — since the logic revamp — the history the
+ * intraday flip triggers backtest against, so it needs a real window now,
+ * not just the trailing week it kept on the free plan (~400 MB at 90 days
+ * for the band-symbol coverage, comfortable in Pro's 8 GB).
  *
- * Scheduled via netlify.toml: once daily, alongside eod-scan.
+ * Scheduled via netlify.toml: once daily.
  */
+const RETAIN_DAYS = 90;
+
 export default async () => {
   const db = getSupabaseAdmin();
 
   await withJobRun(db, "prune-bars-intraday", async () => {
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const cutoff = new Date(Date.now() - RETAIN_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
     const { error, count } = await db
       .from("bars_intraday")
