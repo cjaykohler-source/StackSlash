@@ -53,6 +53,31 @@ export default async () => {
     }
     if (!ifsRows.length) return { rowsProcessed: 0, result: { fired: 0, promoted: 0 } };
 
+    const symIdsAll = ifsRows.map((r) => r.symbol_id as number);
+
+    // news_age_hours for catalyst_momentum: hours since each symbol's
+    // newest symbol_news headline (only symbols with one in the last ~4h
+    // can ever satisfy the < 2h condition, with slack).
+    const newsAgeBySymbol = new Map<number, number>();
+    if (triggers.some((t) => ((t.definition as TriggerDefinition)?.all ?? []).some((c) => c.field === "news_age_hours"))) {
+      const { data: tickRows } = await db.from("symbols").select("id, ticker").in("id", symIdsAll);
+      const idByTicker = new Map(
+        ((tickRows as { id: number; ticker: string }[] | null) ?? []).map((r) => [r.ticker, r.id]),
+      );
+      const { data: news } = await db
+        .from("symbol_news")
+        .select("created_at, symbols")
+        .gte("created_at", new Date(Date.now() - 4 * 3_600_000).toISOString())
+        .order("created_at", { ascending: false });
+      for (const n of (news as { created_at: string; symbols: string[] }[] | null) ?? []) {
+        const ageH = (Date.now() - Date.parse(n.created_at)) / 3_600_000;
+        for (const tk of n.symbols ?? []) {
+          const sid = idByTicker.get(tk);
+          if (sid != null && !newsAgeBySymbol.has(sid)) newsAgeBySymbol.set(sid, ageH); // first = newest
+        }
+      }
+    }
+
     // daily factor fields any fast trigger needs (only squeeze, for now)
     const needsDaily = triggers.some((t) =>
       ((t.definition as TriggerDefinition)?.all ?? []).some((c) => c.field === "bb_width_percentile_126d"),
@@ -67,7 +92,7 @@ export default async () => {
         .maybeSingle();
       const asOf = (asOfRow as { as_of: string } | null)?.as_of;
       if (asOf) {
-        const symIds = ifsRows.map((r) => r.symbol_id as number);
+        const symIds = symIdsAll;
         for (let i = 0; i < symIds.length; i += 500) {
           const { data } = await db
             .from("factor_state")
@@ -89,6 +114,8 @@ export default async () => {
         ...(row as Record<string, number | boolean | null>),
         ...(dailyBySymbol.get(symbolId) ?? {}),
       };
+      const newsAge = newsAgeBySymbol.get(symbolId);
+      if (newsAge != null) inputs.news_age_hours = newsAge;
       for (const t of triggers) {
         const fired = evaluateTrigger(t.definition as unknown as TriggerDefinition, inputs);
         evaluations.push({ trigger_id: t.id, symbol_id: symbolId, inputs, fired });

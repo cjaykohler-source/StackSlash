@@ -98,6 +98,11 @@
 [functions."intraday-flip-scan"]
   schedule = "2-59/5 13-20 * * 1-5"
 
+# news-scan: whole-market Benzinga feed -> symbol_news, every 5 min
+# 12:00-21:00 UTC (includes the pre-market catalyst window).
+[functions."news-scan"]
+  schedule = "*/5 12-20 * * 1-5"
+
 # refresh-intraday-volume-profile: nightly, after the intraday jobs stop —
 # EWMA-accumulates the per-minute volume profile that RVOL divides by.
 [functions."refresh-intraday-volume-profile"]

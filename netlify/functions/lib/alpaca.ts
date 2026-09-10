@@ -236,3 +236,35 @@ export async function fetchNews(
     return [];
   }
 }
+
+/**
+ * Whole-market news feed since `start`, oldest-first, paginated. For
+ * news-scan (poll everything, filter to the band client-side) and
+ * backfill-news. Throws on a hard failure so the caller's job_run records
+ * it — unlike fetchNews this isn't best-effort chrome.
+ */
+export async function fetchNewsFeed(
+  start: string,
+  opts: { end?: string; maxPages?: number } = {},
+): Promise<NewsItem[]> {
+  const out: NewsItem[] = [];
+  let pageToken: string | undefined;
+  const maxPages = opts.maxPages ?? 40;
+  for (let page = 0; page < maxPages; page++) {
+    const params = new URLSearchParams({ start, limit: "50", sort: "asc" });
+    if (opts.end) params.set("end", opts.end);
+    if (pageToken) params.set("page_token", pageToken);
+    const res = await fetch(`${dataBaseUrl()}/v1beta1/news?${params.toString()}`, { headers: authHeaders() });
+    if (res.status === 429) {
+      await sleep(2000);
+      page--;
+      continue;
+    }
+    if (!res.ok) throw new Error(`Alpaca news feed failed: ${res.status} ${await res.text()}`);
+    const body = (await res.json()) as { news?: NewsItem[]; next_page_token?: string | null };
+    out.push(...(body.news ?? []));
+    pageToken = body.next_page_token ?? undefined;
+    if (!pageToken) break;
+  }
+  return out;
+}
