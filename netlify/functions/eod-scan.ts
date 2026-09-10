@@ -397,17 +397,23 @@ export default async () => {
     );
 
     // --- 6. Open shadow positions for new long entries ---
-    // Every promoted long cluster opens a hypothetical position:
-    //  - 'swing'  — the cluster includes a momentum entry
-    //    (momentum_rank_entry / momentum_breakout). Held per the 12-1
-    //    momentum research; exited by step 7 (rank drop / weekly reversal
-    //    / 180 days).
-    //  - 'flip'   — everything else. Managed intraday by
-    //    manage-positions.ts against profit-target / trailing / hard /
-    //    time stops from scan_config; step 7 leaves these alone.
+    // Every promoted long cluster opens a hypothetical position, classed
+    // by the speed of its contributing triggers (triggers.speed):
+    //  - 'flip'  — any contributing trigger is 'fast' (the Phase 3
+    //    intraday triggers). Managed by manage-positions.ts against
+    //    profit-target / trailing / hard / time stops.
+    //  - 'swing' — all contributing triggers are 'slow' (everything
+    //    enabled today). Held ~weeks; exited by step 7 (rank drop /
+    //    weekly reversal / 180d). The sim-flip-exits backtest showed the
+    //    currently-enabled longs behave this way — fast-flip stops
+    //    destroy their edge.
     const longEvents = promotedEvents.filter((ev) => ev.confluence.direction === "long");
 
     if (longEvents.length) {
+      const { data: speedRows } = await db.from("triggers").select("id, speed");
+      const speedById = new Map(
+        ((speedRows as { id: number; speed: string }[] | null) ?? []).map((t) => [t.id, t.speed]),
+      );
       // Don't open a second position for a symbol that already has one open.
       const { data: alreadyOpen } = await db
         .from("shadow_positions")
@@ -440,8 +446,9 @@ export default async () => {
       for (const ev of longEvents) {
         if (openSymbolIds.has(ev.symbol_id)) continue;
         const names = ev.confluence.triggers.map((t) => t.name).filter((n): n is string => !!n);
+        const anyFast = ev.confluence.triggers.some((t) => speedById.get(t.id) === "fast");
+        const strategy = anyFast ? "flip" : "swing";
         const momentumName = names.find((n) => ENTRY_TRIGGER_NAMES.has(n));
-        const strategy = momentumName ? "swing" : "flip";
         const primaryName =
           ev.confluence.triggers.find((t) => t.id === ev.trigger_id)?.name ?? names[0] ?? "unknown";
         const entryPrice = priceBySymbolId.get(ev.symbol_id) ?? null;
@@ -469,9 +476,16 @@ export default async () => {
 
     // --- 7. Check open SWING positions for an exit condition ---
     // Flip positions are managed by manage-positions.ts, not here.
+    //  - momentum entries: the 12-1 research exit rules (rank drop /
+    //    weekly reversal / 180d).
+    //  - other swing entries (bb_rsi / macd / squeeze): a plain
+    //    swing_time_stop_days hold + a wide disaster stop. The
+    //    momentum-rank exit would fire instantly on these (an oversold
+    //    entry is by definition low-rank), killing the ~10-day hold the
+    //    sim showed is where their edge sits.
     const { data: openPositions, error: posErr } = await db
       .from("shadow_positions")
-      .select("id, symbol_id, entry_date")
+      .select("id, symbol_id, entry_date, entry_price, entry_trigger_name")
       .eq("status", "open")
       .eq("strategy", "swing");
     if (posErr) throw posErr;
@@ -481,6 +495,13 @@ export default async () => {
       const momentumExitTriggerId = (
         await db.from("triggers").select("id").eq("name", "momentum_exit").maybeSingle()
       ).data?.id;
+      const { data: swingCfg } = await db
+        .from("scan_config")
+        .select("swing_time_stop_days, swing_disaster_stop_pct")
+        .eq("id", 1)
+        .maybeSingle();
+      const swingTimeStopDays = Number(swingCfg?.swing_time_stop_days ?? 10);
+      const swingDisasterPct = Number(swingCfg?.swing_disaster_stop_pct ?? 0.25);
 
       const exitEvents: Record<string, unknown>[] = [];
       const closedPositionUpdates: { id: number; exit_reason: string; exit_price: number | null }[] = [];
@@ -494,11 +515,19 @@ export default async () => {
         const daysHeld = Math.floor(
           (new Date(today).getTime() - new Date(pos.entry_date).getTime()) / (24 * 60 * 60 * 1000),
         );
+        const isMomentumEntry = ENTRY_TRIGGER_NAMES.has(pos.entry_trigger_name as string);
 
-        let exitReason: "rank_dropped" | "weekly_reversal" | "max_hold_period" | null = null;
-        if (momentumRankPct !== null && momentumRankPct < 0.67) exitReason = "rank_dropped";
-        else if (ret1wRankPct !== null && ret1wRankPct <= 0.1) exitReason = "weekly_reversal";
-        else if (daysHeld > 180) exitReason = "max_hold_period";
+        let exitReason: string | null = null;
+        if (isMomentumEntry) {
+          if (momentumRankPct !== null && momentumRankPct < 0.67) exitReason = "rank_dropped";
+          else if (ret1wRankPct !== null && ret1wRankPct <= 0.1) exitReason = "weekly_reversal";
+          else if (daysHeld > 180) exitReason = "max_hold_period";
+        } else {
+          const entryPx = pos.entry_price != null ? Number(pos.entry_price) : null;
+          const lastPx = priceBySymbolId.get(pos.symbol_id) ?? null;
+          if (entryPx && lastPx && lastPx <= entryPx * (1 - swingDisasterPct)) exitReason = "disaster_stop";
+          else if (daysHeld >= swingTimeStopDays) exitReason = "time_stop";
+        }
 
         if (exitReason) {
           const exitPrice = priceBySymbolId.get(pos.symbol_id) ?? null;

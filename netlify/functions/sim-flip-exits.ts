@@ -38,6 +38,8 @@ export default async (req: Request) => {
     startDate?: string;
     endDate?: string;
     runId?: string;
+    // which triggers to replay — explicit list, else all speed='fast'
+    triggerNames?: string[];
     // optional rule overrides for parameter sweeps (default: scan_config)
     hardStopPct?: number;
     profitTargetPct?: number;
@@ -130,12 +132,11 @@ export default async (req: Request) => {
     if (body.startDate) evalDates = evalDates.filter((d) => d >= body.startDate!);
     if (body.endDate) evalDates = evalDates.filter((d) => d <= body.endDate!);
 
-    const { data: triggers, error: trigErr } = await db
-      .from("triggers")
-      .select("id, name, definition")
-      .eq("enabled", true)
-      .eq("direction", "long")
-      .in("category", ["technical", "breakout"]);
+    let trigQ = db.from("triggers").select("id, name, definition").eq("enabled", true).eq("direction", "long");
+    trigQ = body.triggerNames?.length
+      ? trigQ.in("name", body.triggerNames)
+      : trigQ.eq("speed", "fast");
+    const { data: triggers, error: trigErr } = await trigQ;
     if (trigErr) throw trigErr;
     if (!triggers?.length) return { rowsProcessed: 0, result: { runId, fires: 0, evalDates: 0 } };
 
