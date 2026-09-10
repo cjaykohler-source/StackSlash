@@ -87,6 +87,17 @@
 [functions."manage-positions"]
   schedule = "*/5 13-20 * * 1-5"
 
+# intraday-factors-scan: every 5 min during market hours — computes live
+# session-shape factors (RVOL, VWAP, gap, opening range) for the tradeable
+# band into intraday_factor_state. Read by the Phase 3 fast triggers.
+[functions."intraday-factors-scan"]
+  schedule = "*/5 13-20 * * 1-5"
+
+# refresh-intraday-volume-profile: nightly, after the intraday jobs stop —
+# EWMA-accumulates the per-minute volume profile that RVOL divides by.
+[functions."refresh-intraday-volume-profile"]
+  schedule = "35 23 * * 1-5"
+
 [functions."prune-bars-intraday"]
   schedule = "20 22 * * 1-5"
 
