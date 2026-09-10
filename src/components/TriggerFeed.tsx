@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { triggerLabel, triggerCategoryLabel } from "../lib/triggerInfo";
+import { triggerLabel, triggerCategoryLabel, triggerSide } from "../lib/triggerInfo";
 import { InfoTooltip } from "./InfoTooltip";
 import { FlagIcon, flagIconName } from "./FlagIcon";
 import { useQuotes } from "./QuoteTag";
@@ -41,6 +41,7 @@ interface FeedRow {
   priority: "normal" | "high" | null;
   status: string; // "pending" for un-promoted single fires
   riskFlags: RiskFlag[]; // from the linked dossier (promoted events only)
+  side: "buy" | "sell"; // exit / bearish triggers -> "sell"
 }
 
 interface DayGroup {
@@ -178,6 +179,10 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
             label: x.label,
             note: x.note,
           })),
+          side:
+            conf?.direction === "short"
+              ? ("sell" as const)
+              : triggerSide(r.triggers?.name ?? null),
         };
       });
 
@@ -194,6 +199,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         priority: null,
         status: "pending",
         riskFlags: [],
+        side: triggerSide(r.triggers?.name ?? null),
       }));
 
       setEventRows(events);
@@ -346,6 +352,30 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
     </div>
   );
 
+  // Buy Signals / Sell Signals split. `showEmpty` keeps both headers on
+  // the dashboard so the split is always visible; history hides an empty
+  // side to cut clutter.
+  const sidedSections = (rowsToRender: FeedRow[], showEmpty: boolean) => {
+    const block = (title: string, side: "buy" | "sell") => {
+      const sideRows = rowsToRender.filter((r) => r.side === side);
+      if (!sideRows.length && !showEmpty) return null;
+      return (
+        <div className={`trigger-feed-side trigger-feed-side-${side}`}>
+          <h3 className="trigger-feed-side-title">
+            {title} <span className="trigger-feed-side-count">{sideRows.length}</span>
+          </h3>
+          {sideRows.length ? table(sideRows) : <p className="top-movers-empty">None.</p>}
+        </div>
+      );
+    };
+    return (
+      <>
+        {block("Buy Signals", "buy")}
+        {block("Sell Signals", "sell")}
+      </>
+    );
+  };
+
   // --- History surface (Reports page): earlier days as dropdowns ---
   if (mode === "history") {
     if (loaded && historyGroups.length === 0) {
@@ -371,7 +401,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
             <summary>
               {group.label} <span className="trigger-feed-day-count">({group.rows.length})</span>
             </summary>
-            {table(group.rows)}
+            {sidedSections(group.rows, false)}
           </details>
         ))}
       </div>
@@ -397,7 +427,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         <p className="top-movers-empty">Loading quotes…</p>
       );
   } else {
-    body = table(todayRows);
+    body = sidedSections(todayRows, true);
   }
 
   return (

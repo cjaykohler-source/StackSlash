@@ -539,6 +539,32 @@ body {
   padding-top: 0;
 }
 
+/* Buy Signals / Sell Signals split */
+.trigger-feed-side + .trigger-feed-side {
+  margin-top: 16px;
+}
+.trigger-feed-side-title {
+  margin: 0 0 6px;
+  padding-left: 8px;
+  border-left: 3px solid var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+}
+.trigger-feed-side-buy .trigger-feed-side-title {
+  border-left-color: var(--brand-green);
+  color: var(--brand-green);
+}
+.trigger-feed-side-sell .trigger-feed-side-title {
+  border-left-color: var(--red);
+  color: var(--red);
+}
+.trigger-feed-side-count {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
 /* Reports page: earlier-day dropdowns. */
 .reports-feed-history {
   margin-top: 32px;
