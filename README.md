@@ -35,11 +35,14 @@ Specifically:
   fast) was reported as the one survivor at profit factor **1.32** over
   49 trades. **It does not survive either.** That PF was the best of 8
   exit-rule variants swept the same afternoon (gross PF 0.805-1.397,
-  most below 1.0), and it is gross of costs: with the cost model applied
-  the chosen variant is **net PF 0.791** (mean −0.53%), and 0.911 even at
-  the one-tick floor alone. Excluding its single best trade the gross
-  mean is −3.03%. Still **enabled** pending a decision; see "Standing
-  cautions".
+  most below 1.0), and it is gross of costs. Charged per trade with
+  `tradingCosts.roundTripCostPct()` — the wider of one tick and the
+  symbol's Corwin-Schultz estimate, averaging 1.22% on these entries —
+  the chosen variant is **net PF 0.779** (mean −0.57%). Every one of the
+  8 variants is below 1.0 on that model (best 0.979, n=9). It only clears
+  1.0 (PF 1.10) if you assume the tightest spread physically possible, one
+  tick. Excluding its single best trade the gross mean is −3.03%. Still
+  **enabled** pending a decision; see "Standing cautions".
 
 A follow-up hold-duration sweep on 2026-09-11 closed the last open
 question — *is there simply some other holding period that works?* — in
@@ -820,7 +823,7 @@ in 5 years across the whole ~5,000-symbol universe — they are not
 | `earnings_surprise_drift` | earnings | slow | long | ✅ (inert) | needs a paid estimates feed FMP's free tier doesn't have |
 | `realtime_outlier_zscore` | outlier | slow | long | ✅ | tick-level, no backtest possible; live-confirmation-scored only |
 | `momentum_exit` | exit | slow | long | ✅ | the swing exit path (rank-drop/weekly-reversal/180d for momentum entries; time+disaster stop for others) |
-| `catalyst_momentum` | intraday | fast | long | ✅ | gross PF 1.32/n=49 was best of 8 variants; **net PF 0.791** after costs — no edge |
+| `catalyst_momentum` | intraday | fast | long | ✅ | gross PF 1.32/n=49 was best of 8 variants; **net PF 0.779** on the cost model (1.10 only at a one-tick spread) — no edge |
 | `rvol_breakout` | intraday | fast | long | ❌ | PF 0.72 once RVOL was correctly calibrated |
 | `vwap_reclaim` | intraday | fast | long | ❌ | PF 0.80 — catches falling knives |
 | `gap_and_go` | intraday | fast | long | ❌ | n=41, inconclusive |
