@@ -112,3 +112,18 @@ export async function dispatchAlert(
     throw err;
   }
 }
+
+/**
+ * Operational alerts — infrastructure problems, not trade signals.
+ * Deliberately bypasses the `alerts` table and its dedup/cooldown
+ * machinery, which is keyed to dossiers and would be meaningless here.
+ * Used by data-integrity-check; keep the volume low enough that seeing
+ * one always means something.
+ */
+export async function sendOperationalAlert(text: string): Promise<"sent" | "skipped"> {
+  const channel = channelFromEnv();
+  if (!channel) return "skipped";
+  if (channel === "telegram") await sendTelegram(text);
+  if (channel === "discord") await sendDiscord(text);
+  return "sent";
+}
