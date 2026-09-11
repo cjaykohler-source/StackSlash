@@ -32,9 +32,14 @@ Specifically:
 - Intraday "flip" triggers (`rvol_breakout`, `vwap_reclaim`,
   `gap_and_go`) — negative once RVOL was correctly calibrated. **Disabled.**
 - `catalyst_momentum` (fresh news + volume spike + above VWAP, exited
-  fast) is the one survivor: profit factor **1.32** over 49 backtested
-  trades — small sample, single regime, not proven. **Enabled**, being
-  watched live via `fire_outcomes`.
+  fast) was reported as the one survivor at profit factor **1.32** over
+  49 trades. **It does not survive either.** That PF was the best of 8
+  exit-rule variants swept the same afternoon (gross PF 0.805-1.397,
+  most below 1.0), and it is gross of costs: with the cost model applied
+  the chosen variant is **net PF 0.791** (mean −0.53%), and 0.911 even at
+  the one-tick floor alone. Excluding its single best trade the gross
+  mean is −3.03%. Still **enabled** pending a decision; see "Standing
+  cautions".
 
 A follow-up hold-duration sweep on 2026-09-11 closed the last open
 question — *is there simply some other holding period that works?* — in
@@ -747,10 +752,24 @@ the 403 non-Netlify-caller guard together. Keeping Netlify for frontend
 hosting costs nothing and preserves external access.
 
 ### Standing cautions
-- **`sim-intraday-flips` has never been audited for the #54 bug family.**
-  It produced `catalyst_momentum`'s PF 1.32 (n=49, one regime) — the only
-  signal this project leans on. It walks `bars_intraday`, so its exposure
-  is different but analogous. Do this before trusting that number.
+- **`sim-intraday-flips` was audited 2026-09-11 and is not fixed.** It
+  produced `catalyst_momentum`'s PF 1.32, which is net PF 0.791 once
+  costs are charged (see the verdict). Open defects, none yet corrected:
+  - **No cost model** — #57 wired `tradingCosts` into `sim-flip-exits`
+    only. Every `isim_*` `flip_sim` row is gross.
+  - **Lookahead in the RVOL denominator.** `perMinuteMean()` averages
+    every *other* session of the 90-day window, including sessions after
+    the one being simulated, so a checkpoint's RVOL knows future volume.
+  - **No gap / split guard on the daily roll.** After the entry session
+    it walks `bars_daily` by index, so a halt fills a `time_stop` (or a
+    stop) at a post-halt price — the exact #54 failure `sim-flip-exits`
+    now abandons as `incomplete`.
+  - **Mixed price bases.** Entry is a `bars_intraday` price; exits are
+    `bars_daily` OHLC. Both come from Alpaca with `adjustment: "split"`
+    *as of fetch time*, and rows are never re-fetched, so a split inside
+    the window leaves the two series on different scales.
+  - **Latent 1000-row cap**: the band query ends in `.limit(1000)`. The
+    band is ~824 names today, so it is not truncating yet.
 - **`confluenceGate.ts`'s fallbacks have drifted from `scan_config`**
   (`price_max: 3` / `150000` vs `5.00` / `50000`). Live inconsistency.
 - **The Reports live-vs-backtest panel** (item 4, Phase 8) is unbuilt.
@@ -801,7 +820,7 @@ in 5 years across the whole ~5,000-symbol universe — they are not
 | `earnings_surprise_drift` | earnings | slow | long | ✅ (inert) | needs a paid estimates feed FMP's free tier doesn't have |
 | `realtime_outlier_zscore` | outlier | slow | long | ✅ | tick-level, no backtest possible; live-confirmation-scored only |
 | `momentum_exit` | exit | slow | long | ✅ | the swing exit path (rank-drop/weekly-reversal/180d for momentum entries; time+disaster stop for others) |
-| **`catalyst_momentum`** | intraday | **fast** | long | ✅ | **PF 1.32/n=49 — the one backtested edge** |
+| `catalyst_momentum` | intraday | fast | long | ✅ | gross PF 1.32/n=49 was best of 8 variants; **net PF 0.791** after costs — no edge |
 | `rvol_breakout` | intraday | fast | long | ❌ | PF 0.72 once RVOL was correctly calibrated |
 | `vwap_reclaim` | intraday | fast | long | ❌ | PF 0.80 — catches falling knives |
 | `gap_and_go` | intraday | fast | long | ❌ | n=41, inconclusive |
