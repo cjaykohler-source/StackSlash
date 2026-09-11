@@ -2,6 +2,8 @@ import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 import { computeFactors, computeRegime } from "./lib/dailySnapshot";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
+import { fetchAllPaginated } from "./lib/fetchAllPaginated";
+import { netOfCosts, roundTripCostPct } from "./lib/tradingCosts";
 
 /**
  * Historical simulation of the Phase 1 flip exit engine.
@@ -59,6 +61,11 @@ export default async (req: Request) => {
     profitTargetPct?: number;
     trailPct?: number;
     timeStopDays?: number;
+    // Charge modelled round-trip costs (default true). Set false only to
+    // reproduce a historical gross-return run — every number this project
+    // produced before 2026-09-11 was implicitly costs:false, and that is
+    // why they looked tradeable.
+    applyCosts?: boolean;
   } = {};
   try {
     body = await req.json();
@@ -128,6 +135,17 @@ export default async (req: Request) => {
     }
     const spy = symbols.find((s) => s.ticker === "SPY");
     if (!spy) throw new Error("SPY not in symbols");
+
+    const applyCosts = body.applyCosts !== false;
+    const spreadBySymbol = new Map<number, number>();
+    if (applyCosts) {
+      const spreadRows = await fetchAllPaginated<{ symbol_id: number; spread_pct: number | null }>((from, to) =>
+        db.from("symbol_spread_estimates").select("symbol_id, spread_pct").range(from, to),
+      );
+      for (const r of spreadRows) if (r.spread_pct != null) spreadBySymbol.set(r.symbol_id, Number(r.spread_pct));
+      // No estimate for a symbol is not an error — roundTripCostPct falls
+      // back to the Reg NMS tick floor, which needs no data.
+    }
 
     const months = body.months ?? 18;
     const fetchFrom = body.startDate
@@ -237,9 +255,15 @@ export default async (req: Request) => {
         if ((f.dollar_vol_20d ?? 0) < minVol) continue;
 
         const inputs: TriggerInputs = { ...f, risk_on: regime?.risk_on ?? null };
+        // Round-trip cost is a property of the symbol and its price, not
+        // of the trigger — resolve once per entry, apply to every fire.
+        const costPct = applyCosts ? roundTripCostPct(entryPrice, spreadBySymbol.get(sid) ?? null) : null;
+
         for (const t of triggers) {
           if (!evaluateTrigger(t.definition as unknown as TriggerDefinition, inputs)) continue;
           const sim = walkExit(bars, eIdx, entryPrice, rules);
+          const gross = sim.pnlPct;
+          const net = gross != null && costPct != null ? netOfCosts(gross, costPct) : gross;
           simRows.push({
             run_id: runId,
             trigger_name: t.name,
@@ -249,7 +273,9 @@ export default async (req: Request) => {
             exit_date: sim.exitDate,
             exit_reason: sim.reason,
             exit_price: sim.exitPrice != null ? round4(sim.exitPrice) : null,
-            pnl_pct: sim.pnlPct != null ? round4(sim.pnlPct) : null,
+            pnl_pct: net != null ? round4(net) : null,
+            pnl_pct_gross: gross != null ? round4(gross) : null,
+            cost_pct: costPct != null ? round4(costPct) : null,
             bars_held: sim.barsHeld,
             cal_days_held: sim.calDays,
             mfe_pct: sim.mfe != null ? round4(sim.mfe) : null,
