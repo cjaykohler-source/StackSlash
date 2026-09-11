@@ -22,6 +22,8 @@ interface TriggerBreakdown {
   winRate: number | null;
   avgReturn: number | null;
   sampleSize: number;
+  meanExclTop1pct: number | null;
+  top1pctProfitShare: number | null;
 }
 
 interface ConfluentSymbol {
@@ -200,6 +202,21 @@ function measureAndDraw(canvas: HTMLCanvasElement, data: ReportData) {
           : "No backtested history yet.";
       ctx.fillText(statsLine, MARGIN + 12, y + 14);
       y += rowH;
+
+      // An average carried by a handful of fires is not something a
+      // 1-2 position account can expect to realize — call it out next to
+      // the average rather than leaving the average to speak for itself.
+      if (t.meanExclTop1pct !== null && (t.avgReturn ?? 0) > 0 && t.meanExclTop1pct < 0) {
+        ctx.fillStyle = COLORS.red;
+        ctx.fillText(
+          `⚠ Tail-driven: ${pct(t.meanExclTop1pct)} excluding its best 1% of fires` +
+            (t.top1pctProfitShare !== null ? ` — that 1% is ${pct(t.top1pctProfitShare)} of gross profit` : ""),
+          MARGIN + 12,
+          y + 14,
+        );
+        ctx.fillStyle = COLORS.textDim;
+        y += rowH;
+      }
     }
   }
   y += sectionGapH;
@@ -267,19 +284,23 @@ export function Reports() {
       for (const e of rawEvents) triggerCounts.set(e.trigger_id, (triggerCounts.get(e.trigger_id) ?? 0) + 1);
       const triggerIds = [...triggerCounts.keys()];
 
-      let statsByTrigger = new Map<number, { win_rate: number | null; avg_return: number | null; sample_size: number }>();
+      type StatRow = {
+        trigger_id: number;
+        win_rate: number | null;
+        avg_return: number | null;
+        sample_size: number;
+        mean_excl_top1pct: number | null;
+        top1pct_profit_share: number | null;
+      };
+      let statsByTrigger = new Map<number, StatRow>();
       if (triggerIds.length) {
         const { data: statsData, error: statsErr } = await supabase
           .from("trigger_stats")
-          .select("trigger_id, win_rate, avg_return, sample_size")
+          .select("trigger_id, win_rate, avg_return, sample_size, mean_excl_top1pct, top1pct_profit_share")
           .in("trigger_id", triggerIds)
           .eq("horizon_days", 5);
         if (statsErr) throw statsErr;
-        statsByTrigger = new Map(
-          ((statsData as { trigger_id: number; win_rate: number | null; avg_return: number | null; sample_size: number }[]) ?? []).map(
-            (s) => [s.trigger_id, s],
-          ),
-        );
+        statsByTrigger = new Map(((statsData as StatRow[]) ?? []).map((s) => [s.trigger_id, s]));
       }
 
       const triggers: TriggerBreakdown[] = triggerIds.map((id) => {
@@ -291,6 +312,8 @@ export function Reports() {
           winRate: stat?.win_rate ?? null,
           avgReturn: stat?.avg_return ?? null,
           sampleSize: stat?.sample_size ?? 0,
+          meanExclTop1pct: stat?.mean_excl_top1pct ?? null,
+          top1pctProfitShare: stat?.top1pct_profit_share ?? null,
         };
       });
 

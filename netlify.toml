@@ -134,3 +134,10 @@
 # entry trigger_event) — the live counterpart to backtest-triggers.
 [functions."record-fire-outcomes"]
   schedule = "10 23 * * 1-5"
+
+# data-integrity-check: 23:45 UTC daily — last job of the night, after
+# every writer (eod-scan, prunes, fire-outcomes) has finished, so it
+# audits the day's final state. Alerts only on regressions against the
+# previous run; see the function's own header.
+[functions."data-integrity-check"]
+  schedule = "45 23 * * *"
