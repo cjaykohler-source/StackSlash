@@ -27,6 +27,18 @@ const LOOKBACK_WINDOW = 300;
 const MIN_HISTORY_BEFORE_EVAL = 260;
 const MAX_FORWARD_BARS = 40; // hard cap on the exit walk
 
+// Halts/delistings and broken split adjustment both show up as a
+// discontinuity between consecutive bars. The time stop here is measured
+// in calendar days, so a gap can't misalign the horizon the way it does
+// in backtest-triggers — but the position would still be "managed"
+// straight through the discontinuity, booking a fabricated take_profit on
+// a scale break (OGEN alternates ~$3 and ~$213 in this universe) or a
+// time_stop filled at a post-halt price nobody could have traded into.
+// A position spanning one of these can't be honestly simulated, so it's
+// abandoned as incomplete rather than recorded at a made-up exit.
+const MAX_BAR_GAP_DAYS = 10;
+const SPLIT_ARTIFACT_RATIO = 10;
+
 type Ohlc = { date: string; open: number; high: number; low: number; close: number; volume: number };
 
 export default async (req: Request) => {
@@ -279,6 +291,14 @@ function walkExit(bars: Ohlc[], entryIdx: number, entry: number, r: WalkRules) {
   for (let i = entryIdx + 1; i <= end; i++) {
     const b = bars[i];
     if (!(b.high > 0) || !(b.low > 0)) continue;
+
+    const prev = bars[i - 1];
+    const gapDays = Math.round((Date.parse(b.date) - Date.parse(prev.date)) / 86400_000);
+    const scaleRatio = prev.close > 0 ? b.close / prev.close : 1;
+    if (gapDays > MAX_BAR_GAP_DAYS || scaleRatio >= SPLIT_ARTIFACT_RATIO || scaleRatio <= 1 / SPLIT_ARTIFACT_RATIO) {
+      return { reason: null, exitDate: null, exitPrice: null, pnlPct: null, barsHeld: 0, calDays: 0, mfe, mae, incomplete: true };
+    }
+
     const barsHeld = i - entryIdx;
     const calDays = Math.round((Date.parse(b.date) - Date.parse(entryDate)) / 86400_000);
     mfe = Math.max(mfe, b.high / entry - 1);

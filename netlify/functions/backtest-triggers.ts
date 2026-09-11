@@ -21,14 +21,20 @@ import type { Bar } from "./lib/indicators";
  *   stateless per-symbol factor check — not something a day-by-day
  *   factor replay can evaluate the same way.
  *
- * Known limitation: assumes each symbol's own bar sequence has no gaps
- * (no halts/delistings) — forward-return "N trading days later" is
- * computed as +N array index within that symbol's own bar array, and
- * cross-sectional ranking within computeFactors uses each symbol's value
- * as of the same calendar date. A gap in one symbol's data would misalign
- * its own forward-return horizon without erroring — acceptable for the
- * continuously-traded large-cap symbols currently in the universe, worth
- * revisiting if more thinly-traded names are added.
+ * Data-integrity guards (added 2026-09-11, after this cost real accuracy):
+ * forward-return "N trading days later" is computed as +N array index
+ * within a symbol's own bar array. That is only "N trading days" if the
+ * series has no holes, which stopped being true when the universe grew
+ * from large caps to ~5,000 sub-$5 names — see horizonIsAligned() and
+ * hasSplitArtifact() below for what goes wrong and how much it moved the
+ * numbers. Fires whose exit bar fails either guard are dropped rather
+ * than recorded, and counted into skippedGapMisaligned /
+ * skippedSplitArtifact on the response so the rejection rate stays
+ * visible instead of silently shaping trigger_stats.
+ *
+ * Still assumed: cross-sectional ranking within computeFactors uses each
+ * symbol's value as of the same calendar date, so a symbol simply missing
+ * a given day is excluded from that day's ranking rather than misaligned.
  *
  * Chunking: at S&P-500 scale a full run exceeds Netlify's execution
  * timeout. The cross-sectional factors (momentum_rank_pct etc.) need
@@ -50,6 +56,46 @@ import type { Bar } from "./lib/indicators";
 const HORIZONS = [1, 2, 3, 5, 10, 20];
 const LOOKBACK_WINDOW = 300; // bars fed to computeFactors per day — covers the deepest indicator lookback (~260) with room to spare
 const MIN_HISTORY_BEFORE_EVAL = 260; // don't evaluate until ret_12m_ex1m/dist_sma200 etc. have enough history to be non-null
+
+// A symbol's bars are indexed positionally, so "N trading days later" is
+// bars[idx + N]. Across a halt, delisting, or listing gap that silently
+// becomes "N *bars* later" — which can span years. The header's original
+// caveat ("acceptable for the continuously-traded large-cap symbols
+// currently in the universe") stopped holding when the universe grew to
+// ~5,000 sub-$5 names: 736 of them (14.7%) carry a >7-day gap and 193 a
+// >30-day one, and those gaps sit on exactly the halt/delist/reverse-split
+// events with the largest dislocations. The misaligned returns are
+// therefore both enormous and systematically optimistic — they were
+// supplying ~85% of bb_rsi_confluence_long's measured edge, and all of
+// macd_bullish_cross's. Require the exit bar to land within a plausible
+// calendar window for the horizon (~1.45 calendar days per trading day,
+// plus slack for holidays).
+const CAL_DAYS_PER_TRADING_DAY = 1.45;
+const GAP_SLACK_DAYS = 5;
+
+// A reverse split re-scales a symbol's entire history. When only part of
+// a series carries the adjustment the two scales interleave and produce
+// fabricated moves of many thousand percent — observed in this universe
+// as CETX closing at $2,639,700/share and OGEN alternating between ~$3
+// and ~$213. No real session moves 10x, so treat that as a scale break
+// rather than a price.
+const SPLIT_ARTIFACT_RATIO = 10;
+
+function horizonIsAligned(entryDate: string, exitDate: string, horizon: number): boolean {
+  const spanDays = (Date.parse(exitDate) - Date.parse(entryDate)) / 86_400_000;
+  return spanDays <= Math.ceil(horizon * CAL_DAYS_PER_TRADING_DAY) + GAP_SLACK_DAYS;
+}
+
+function hasSplitArtifact(bars: Bar[], fromIdx: number, toIdx: number): boolean {
+  for (let i = Math.max(1, fromIdx + 1); i <= toIdx; i++) {
+    const prev = bars[i - 1].close;
+    const cur = bars[i].close;
+    if (prev <= 0) continue;
+    const ratio = cur / prev;
+    if (ratio >= SPLIT_ARTIFACT_RATIO || ratio <= 1 / SPLIT_ARTIFACT_RATIO) return true;
+  }
+  return false;
+}
 
 export default async (req: Request) => {
   if (req.method !== "POST") {
@@ -203,6 +249,8 @@ export default async (req: Request) => {
     }
 
     let evaluatedDays = 0;
+    let skippedGapMisaligned = 0;
+    let skippedSplitArtifact = 0;
     for (const date of evalDates) {
       const windowBySymbolId = new Map<number, Bar[]>();
       const idxBySymbolId = new Map<number, number>();
@@ -232,6 +280,14 @@ export default async (req: Request) => {
           for (const horizon of HORIZONS) {
             const exitIdx = idx + horizon;
             if (exitIdx >= bars.length) continue;
+            if (!horizonIsAligned(bars[idx].date, bars[exitIdx].date, horizon)) {
+              skippedGapMisaligned++;
+              continue;
+            }
+            if (hasSplitArtifact(bars, idx, exitIdx)) {
+              skippedSplitArtifact++;
+              continue;
+            }
             const rawReturn = bars[exitIdx].close / entryClose - 1;
             byHorizon.get(horizon)!.push(rawReturn * directionMultiplier);
           }
@@ -272,7 +328,10 @@ export default async (req: Request) => {
       statRowCount = data;
     }
 
-    return { rowsProcessed: evaluatedDays, result: { firesThisChunk: rawRows.length, statRows: statRowCount } };
+    return {
+      rowsProcessed: evaluatedDays,
+      result: { firesThisChunk: rawRows.length, statRows: statRowCount, skippedGapMisaligned, skippedSplitArtifact },
+    };
   });
 
   return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
