@@ -87,7 +87,21 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
       note: "Stretched far from any support.",
     });
   }
-  if ((x.volume_ratio_20d ?? 0) >= 5) {
+  // The 25x tier is not a judgement call — it is the one entry-time
+  // feature in this universe that measurably predicts anything. Across
+  // 17,505 backtested band entries held 18 sessions, fires at >=25x
+  // normal volume returned a mean of -10.0% and a median of -16.2%
+  // (profit factor 0.489) against roughly break-even for every lower
+  // volume bucket. Nothing tested predicts the winners; this predicts the
+  // disasters, which is worth saying loudly on the dossier.
+  if ((x.volume_ratio_20d ?? 0) >= 25) {
+    f.push({
+      level: "red",
+      label: `Volume ${Math.round(x.volume_ratio_20d ?? 0)}x normal — likely distribution`,
+      note:
+        "Historically the worst entry condition in this universe: backtested fires at >=25x volume averaged -10% over 18 sessions (median -16%), vs roughly break-even below that. A volume spike this size on a micro-cap is usually someone else's exit, not the start of a move.",
+    });
+  } else if ((x.volume_ratio_20d ?? 0) >= 5) {
     f.push({
       level: "red",
       label: `Volume ${Math.round(x.volume_ratio_20d ?? 0)}x normal`,

@@ -1,5 +1,7 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
+import { fetchAllPaginated } from "./lib/fetchAllPaginated";
+import { roundTripCostPct } from "./lib/tradingCosts";
 
 /**
  * Fills `fire_outcomes` — the realized forward return of every promoted
@@ -33,9 +35,9 @@ import { withJobRun } from "./lib/jobRun";
  */
 
 const BACKFILL_DAYS = 20; // how far back to create missing stubs
-const STALE_DAYS = 20; // stop waiting for forward bars past this
-const HORIZONS = [1, 2, 3, 5, 10];
-const MAX_H = 10;
+const STALE_DAYS = 32; // stop waiting for forward bars past this — must exceed the 20-bar horizon in calendar terms
+const HORIZONS = [1, 2, 3, 5, 10, 20];
+const MAX_H = 20;
 const FETCH_CONCURRENCY = 25;
 
 type OutcomeRow = {
@@ -166,6 +168,14 @@ export default async (_req?: Request) => {
       batch.forEach((sid, j) => barsBySymbol.set(sid, fetched[j]));
     }
 
+    const spreadBySymbol = new Map<number, number>();
+    {
+      const spreadRows = await fetchAllPaginated<{ symbol_id: number; spread_pct: number | null }>((from, to) =>
+        db.from("symbol_spread_estimates").select("symbol_id, spread_pct").range(from, to),
+      );
+      for (const s of spreadRows) if (s.spread_pct != null) spreadBySymbol.set(s.symbol_id, Number(s.spread_pct));
+    }
+
     const nowMs = Date.now();
     const patches: { id: number; patch: Record<string, unknown> }[] = [];
 
@@ -193,6 +203,11 @@ export default async (_req?: Request) => {
         bars_observed: barsObserved,
         updated_at: nowIso(),
         complete: barsObserved >= MAX_H || ageDays > STALE_DAYS,
+        // Recorded, not subtracted: ret_* stays the gross realized move so
+        // it remains directly comparable to backtest_returns_raw. Storing
+        // the cost alongside lets a reader net them consistently instead of
+        // guessing whether a given column already had costs taken out.
+        cost_pct: roundTripCostPct(entryPrice, spreadBySymbol.get(r.symbol_id) ?? null),
       };
       for (const h of HORIZONS) {
         const c = forward[h - 1] ? num(forward[h - 1].close) : null;

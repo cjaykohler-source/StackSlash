@@ -141,3 +141,10 @@
 # previous run; see the function's own header.
 [functions."data-integrity-check"]
   schedule = "45 23 * * *"
+
+# refresh-spread-estimates: Sundays 07:00 UTC — recomputes the
+# Corwin-Schultz per-symbol spread estimates every cost-adjusted backtest
+# divides by. Weekly because the estimate averages ~250 sessions and
+# doesn't move day to day.
+[functions."refresh-spread-estimates"]
+  schedule = "0 7 * * 0"
