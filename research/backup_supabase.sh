@@ -40,7 +40,8 @@ echo "=== backing up to $OUT ==="
 
 if [ -n "${DATABASE_URL:-}" ]; then
   echo "using pg_dump via DATABASE_URL"
-  PGDUMP="$(command -v pg_dump || echo /Applications/Postgres.app/Contents/Versions/latest/bin/pg_dump)"
+  # Homebrew's libpq is keg-only, so its pg_dump is not on PATH by default.
+  PGDUMP="$(command -v pg_dump || { [ -x /opt/homebrew/opt/libpq/bin/pg_dump ] && echo /opt/homebrew/opt/libpq/bin/pg_dump; } || echo /Applications/Postgres.app/Contents/Versions/latest/bin/pg_dump)"
   "$PGDUMP" --no-owner --no-privileges "$DATABASE_URL" | gzip > "$OUT"
 else
   echo "using supabase CLI (run 'supabase link --project-ref $PROJECT_REF' if this fails)"

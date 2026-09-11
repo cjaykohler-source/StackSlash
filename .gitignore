@@ -12,3 +12,6 @@ dist/
 # is deliberately not version-controlled and not backed up.
 research/.venv/
 research/data/
+
+# Supabase CLI link state (`supabase link`) — machine-local.
+supabase/.temp/
