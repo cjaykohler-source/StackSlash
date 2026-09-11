@@ -36,6 +36,18 @@ Specifically:
   trades — small sample, single regime, not proven. **Enabled**, being
   watched live via `fire_outcomes`.
 
+A follow-up hold-duration sweep on 2026-09-11 closed the last open
+question — *is there simply some other holding period that works?* — in
+the negative for every duration from 1 day to 6 months, and found the
+mechanism behind it. **The return distribution is a lottery, not an
+edge:** median return is negative at every horizon tested, win rate is
+under 50% everywhere, and deleting the best 1% of trades turns every
+single duration negative. The best mean edge found anywhere (+0.52%) is
+also smaller than the bid-ask spread on these names. See "The
+hold-duration sweep" below for the full table — and note it had to be
+run on repaired data, because it surfaced a sixth instance of a
+silent-corruption bug family (see "The forward-return misalignment bug").
+
 **What this means practically:** the system is a solid, real-time
 screening and monitoring tool (Isolator, live feed, dossiers, news,
 risk flags, quote tags) built on genuinely correct plumbing. It is *not*
@@ -258,6 +270,109 @@ without an explicit `.range()` loop is a latent silent-truncation bug at
 this symbol count.** Grep for bare `.select()` calls on `symbols` or any
 other 1,000+ row table before trusting a new script's output.
 
+### The forward-return misalignment bug (2026-09-11)
+
+Found while re-running `backtest-triggers` at full scale after #49
+merged. Same shape as the 1000-row family — no error, just quietly wrong
+numbers, in the optimistic direction — and it had been corrupting every
+`trigger_stats` number ever produced on the current universe.
+
+`backtest-triggers` computes "N trading days later" as `+N` array index
+into a symbol's own bar array. **Its own header already documented this
+as a known limitation**, safe only for "the continuously-traded
+large-cap symbols currently in the universe, worth revisiting if more
+thinly-traded names are added." The universe then went from large caps
+to ~5,000 sub-$5 micro-caps and nobody revisited it.
+
+- **736 of 4,997 symbols (14.7%)** carry a bar gap >7 days; 193 carry
+  one >30 days. A fire on the bar before a delisting gap recorded a
+  "3-day return" that was really a multi-year one (AKTS jumps
+  2024-12-17 → 2026-01-09; ATTO 2023-07-21 → 2026-08-05). Those gaps
+  sit on precisely the halt / delist / reverse-split events with the
+  largest dislocations, so the bad returns are both enormous and
+  systematically *positive*.
+- **89 of the 824 band symbols** have partially-applied split
+  adjustment, interleaving two price scales within one series — CETX
+  closing at $2,639,700/share, OGEN alternating between ~$3 and ~$213,
+  `bb_rsi_confluence_long` recording a single +40,297% three-day return.
+
+What it was worth, at the 3-day horizon:
+
+| trigger | mean (all) | trades >+100% | mean excluding them |
+|---|---|---|---|
+| `bb_rsi_confluence_long` | +2.416% | 497 / 231,398 (0.21%) | **+0.369%** |
+| `macd_bullish_cross` | +0.228% | 333 / 283,856 (0.12%) | **−0.107%** |
+| `volatility_squeeze_breakout_long` | +0.152% | 10 / 4,130 (0.24%) | **−0.225%** |
+
+0.21% of trades were supplying 85% of `bb_rsi_confluence_long`'s
+apparent edge; the other two flip from positive to outright negative.
+
+Fixed in **#54**: `horizonIsAligned()` requires the exit bar to land
+within a plausible calendar window (~1.45 calendar days per trading
+day + slack); `hasSplitArtifact()` rejects any ≥10x single-session
+close-to-close move as a scale break rather than a price. Rejected
+fires are counted onto the response (`skippedGapMisaligned`,
+`skippedSplitArtifact`) so the rejection rate stays visible.
+`sim-flip-exits` measures its time stop in calendar days so it can't
+misalign the horizon the same way, but would still book a fabricated
+`take_profit` on a scale break or a `time_stop` filled at a post-halt
+price — those walks now abandon as `incomplete`.
+
+**Lesson, and it is the same one twice now: a "known limitation" comment
+is a time bomb if the condition that made it acceptable can change.**
+This one named its own trigger condition ("if more thinly-traded names
+are added"), that condition was met, and the note was never revisited.
+Every `trigger_stats` number produced before #54 — including the full
+5-year run completed on 2026-09-11 — is affected and needs regenerating.
+
+### The hold-duration sweep (2026-09-11)
+
+The question the earlier phases never directly answered: *is there some
+holding period that works?* Swept every duration from 1 day to 6 months
+(126 trading days) against the 18,598 `sw5_purehold` signal events,
+recomputed in SQL with the #54 guards applied (18,122 clean entries,
+824 symbols, 2022-12 → 2026-09, band-scoped).
+
+| bucket | best hold | win rate | mean | **median** | PF |
+|---|---|---|---|---|---|
+| 1-5 d | 1 d (PF) / 5 d (mean) | 46.9% | +0.183% / +0.315% | −0.13% / −0.58% | **1.099** / 1.075 |
+| 6-10 d | 9 d | 45.9% | +0.449% | −1.09% | 1.081 |
+| 11-15 d | 12 d | 45.6% | +0.412% | −1.22% | 1.065 |
+| 16-30 d | 18 d | 45.5% | +0.521% | −1.55% | 1.070 |
+
+Peak mean across everything under 6 months is **18 trading days**
+(+0.521%, PF 1.070, n=17,505). Past 23 days everything turns negative.
+Win rate falls monotonically with hold length — 46.9% at 1 day, 43.6%
+at 30 days, **38.3% at 6 months** — and median return is negative at
+*every* horizon, worsening monotonically from −0.13% to −11.3%.
+
+**Why none of it is tradeable**, in three numbers:
+
+1. **The edge is one percent of trades.** Delete the top 1% and every
+   duration goes negative: 1d +0.183% → −0.167%; 3d +0.293% → −0.327%;
+   18d +0.521% → −0.685%; 80d +0.512% → −2.393%. The top 1% supplies
+   15-18% of all gross profit, the top 5% supplies ~40-45%. With 1-2
+   concurrent positions on $40 you are trading the median, and the
+   median loses at every horizon.
+2. **It is regime-dependent.** At 18 days: PF 0.865 (2023) → 1.505
+   (2024) → 1.218 (2025) → **0.844 (2026 YTD)**. Consistent with the
+   swing-hold finding above. Short holds are more stable but weaker
+   (3-day: 0.96 / 1.18 / 1.04 / 1.14).
+3. **Costs exceed the edge.** Median entry price is $2.72, so a *one
+   cent* round-trip spread is 0.37% — and these are illiquid sub-$5
+   names where 2-5 cent spreads are normal (0.7-1.8%). The best mean
+   edge found anywhere from 1 day to 6 months is +0.52%, measured
+   close-to-close assuming free fills. **The spread alone is larger
+   than the entire signal.**
+
+This independently re-derives the research bundle's "statistically
+indistinguishable from random chance" conclusion for penny-stock
+price/volume prediction — this time with the mechanism attached, rather
+than as a prior nobody had tested. Note also that this weakens the case
+for paid Alpaca SIP data: the failure is a negative median and a
+cost structure, not a data-resolution problem, so a better feed does
+not address it.
+
 ### Other fixes from this session
 - **`jobRun.ts`**: `describeError()` replaces `String(err)`, which
   turned a thrown `PostgrestError` (not an `Error` instance) into the
@@ -279,37 +394,68 @@ other 1,000+ row table before trusting a new script's output.
   negative expectancy at every horizon, on top of the pre-existing
   "unreachable percentile threshold at this symbol count" issue.
 
-### Open PRs from this session (not yet merged as of this commit)
+### PR state as of this commit
 - **#49** — the three `.select()` pagination fixes (`backfill-history`,
   `backtest-triggers`, `sim-flip-exits`) + `bandOnly` mode + GOAWAY
-  retries. The 5-year backfill and the corrected swing numbers above
-  were run locally against prod ahead of merge; merge this before
-  trusting any *new* backtest run.
-- **#32** — an older, now-superseded README handoff PR from the prior
-  session; safe to close once this rewrite is confirmed as `main`'s
-  README.
+  retries. **Merged 2026-09-11.**
+- **#51 / #52 / #53** — `run-backtest-full.sh`, the chunked full-scale
+  `backtest-triggers` runner for the mini, plus resumability
+  (`START_CHUNK=N`) and a switch from quarterly to monthly chunks.
+  **Merged.** Quarterly chunks reliably died at a ~10-minute HTTP/2
+  GOAWAY wall (9m52s-9m58s across repeated fresh-process retries — a
+  hard local session limit, not flakiness); monthly chunks clear it.
+  50 chunks, ~2021-09-10 → 2026-09-10.
+- **#54** — the forward-return gap / split-artifact guards described
+  above. **Open.** Merge this, then regenerate `trigger_stats`, because
+  every number in it predates the fix.
+- **#50** — this README rewrite. Open.
+- **#32** — an older, now-superseded README handoff PR. Closed.
 
 ### If you pick this up next — recommended next steps, in order
-1. Merge #49, pull on the mini.
-2. Re-run `backtest-triggers {"reset": true}` at the full 5,000-symbol /
-   5-year scale (chunk by date range — see the function's own header —
-   it will not complete in one call at this size; run from the mini,
-   not locally, to avoid the HTTP/2 session issue above).
-3. Decide the strategic direction given the verdict at the top of this
-   file: run as a discretionary screening tool, keep only
-   `catalyst_momentum` live and watch `fire_outcomes` for ~6 weeks
-   before trusting it, consider paid Alpaca SIP data (real full-market
-   volume might make RVOL/VWAP work where IEX doesn't), or reconsider
-   the universe (the underlying factor research is built for liquid
-   small/mid-caps, not sub-$5 micro-caps).
-4. If continuing the trigger search: Phase 5 (confluence redefined by
-   speed class), Phase 6 (stop hard-gating mean-reversion/intraday
-   triggers on `risk_on`), Phase 7 (repoint the realtime worker at
-   in-band movers instead of top-dollar-volume names), Phase 8 (a
-   Reports panel comparing live `fire_outcomes` to backtest
-   `trigger_stats`) are sketched in `docs/logic-revamp-plan.md` but not
-   built — lower priority now that the trigger search itself came back
-   mostly negative.
+1. Merge **#54**, pull on the mini, and re-run `./run-backtest-full.sh`
+   (it resets on chunk 1 and re-accumulates). Every `trigger_stats`
+   number currently in the DB was produced without the gap/split
+   guards and is optimistically wrong. Watch the new
+   `skippedGapMisaligned` / `skippedSplitArtifact` counters on each
+   chunk's response — if those are large, that is the bug's real
+   footprint.
+2. **Decide the strategic direction. This is the actual decision, and
+   the evidence for it is now as complete as this data can make it.**
+   Across ~35 trigger/exit variants, a 5-year multi-regime backtest,
+   and a full 1-day-to-6-month hold-duration sweep, nothing on this
+   universe has an edge that survives its own transaction costs. The
+   honest options:
+   - **Run it as a discretionary screening tool** — the plumbing is
+     genuinely good and the Isolator/dossier/news surface is useful for
+     deciding what to look at. Stop expecting the triggers to be
+     signals. This is the recommendation the data supports.
+   - **Watch `catalyst_momentum` live** for ~6 weeks via `fire_outcomes`
+     before trusting it. Note its PF 1.32 comes from n=49 in a single
+     regime, and was produced by `sim-intraday-flips`, which has *not*
+     yet been audited for the #54 bug family.
+   - **Reconsider the universe.** The factor research this was built on
+     targets liquid small/mid-caps. The sub-$5 band's spread alone
+     (0.4-1.8% round trip) exceeds every edge measured here. This is
+     the single change most likely to make any of the existing logic
+     work.
+   - **Paid Alpaca SIP data ($99/mo)** would fix IEX's volume
+     undercounting and could plausibly rescue the RVOL/VWAP intraday
+     triggers — but note the hold-duration sweep's finding that the
+     failure is a negative median and a cost structure, not a
+     data-resolution problem. Scope it to one month and re-run
+     `sim-intraday-flips` before committing to more.
+3. If continuing the trigger search anyway: Phase 5 (confluence
+   redefined by speed class), Phase 6 (stop hard-gating
+   mean-reversion/intraday triggers on `risk_on`), Phase 7 (repoint the
+   realtime worker at in-band movers instead of top-dollar-volume
+   names), Phase 8 (a Reports panel comparing live `fire_outcomes` to
+   backtest `trigger_stats`) are sketched in `docs/logic-revamp-plan.md`
+   but not built — low priority given everything above.
+4. **Audit `sim-intraday-flips` for the #54 bug family** before
+   trusting `catalyst_momentum`'s PF 1.32. It walks `bars_intraday`
+   rather than `bars_daily`, so it has a different but analogous
+   exposure, and it is currently the only signal the project is leaning
+   on.
 
 ## Universe & storage
 
@@ -332,6 +478,17 @@ further backfills (e.g. more `bars_intraday` history, or intraday
 history for a wider symbol set) if a next phase needs it.
 
 ## Trigger disposition (current, as of this commit)
+
+**Every PF in this table predates #54's gap/split guards and is
+optimistically biased** — the guards were measured to be worth roughly
++2.0pp of mean return on `bb_rsi_confluence_long` and to flip
+`macd_bullish_cross` and `volatility_squeeze_breakout_long` from
+positive to negative at the 3-day horizon. Regenerate before relying on
+any of them. Two further notes from the 2026-09-11 sweep:
+`bb_rsi_confluence_short` and `macd_bearish_cross` fired **zero times**
+in 5 years across the whole ~5,000-symbol universe — they are not
+"negative expectancy" so much as unreachable, like
+`momentum_rank_entry`'s percentile threshold.
 
 | trigger | category | speed | direction | enabled | why |
 |---|---|---|---|---|---|
