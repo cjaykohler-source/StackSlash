@@ -86,7 +86,9 @@ bad_syms as (
   select distinct symbol_id from bars_daily where close > 10000
 ),
 clean as (
-  select b.symbol_id, b.date, b.open, b.high, b.low, b.close, b.volume
+  -- The loader stores date as PostgREST's JSON string (VARCHAR); cast once
+  -- here so window ordering, date_diff and the time split see a real DATE.
+  select b.symbol_id, b.date::date as date, b.open, b.high, b.low, b.close, b.volume
   from bars_daily b
   where b.symbol_id not in (select symbol_id from bad_syms)
     and b.open > 0 and b.high > 0 and b.low > 0 and b.close > 0
