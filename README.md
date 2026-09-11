@@ -648,12 +648,16 @@ worthless; one identifiable at 10:00 is tradeable.
   **Merged 2026-09-11.** Every `trigger_stats` number predating it is
   optimistically wrong and needs regenerating.
 - **#55** — `docs/measurement-rebuild-plan.md`, the five-workstream
-  scope. **Open.**
-- **#56** — items 1 + 2 + 3 of that plan: tail-concentration columns,
-  the cost model, the integrity checks, `fetchAllPaginated()`, the 25x
-  volume risk flag, `fire_outcomes` to 20d, `min_live_sample`, and the
-  local DuckDB warehouse + session cohort analyzer. **Open.**
-- **#50** — this README. Open.
+  scope. **Merged 2026-09-11.**
+- **#56** — tail-concentration columns, the integrity checks
+  (`data-integrity-check.ts`), `fetchAllPaginated()`. **Merged
+  2026-09-11** (the `data-integrity-check` schedule lands with #57).
+- **#57** — the cost model, the 25x volume risk flag, `fire_outcomes` to
+  20d, `refresh-spread-estimates`, the `data-integrity-check` schedule,
+  and the local DuckDB warehouse (`research/`) + session cohort
+  analyzer + backup script. **Open.**
+- **#50** — the previous README rewrite. **Merged 2026-09-11.**
+- **#58** — this README. **Open.**
 - **#32** — an older, now-superseded README handoff PR. Closed.
 
 ## The plan forward
@@ -661,7 +665,8 @@ worthless; one identifiable at 10:00 is tradeable.
 Ordered. Steps 1-3 are prerequisites for trusting anything after them.
 
 ### 1. Merge and land what exists
-Merge **#50**, **#55**, **#56**, then on the worker host:
+Merge **#57** and **#58** (#50, #55 and #56 are already merged), then
+on the worker host:
 
 ```bash
 cd ~/StackSlash && git pull && ./research/setup_worker_host.sh
