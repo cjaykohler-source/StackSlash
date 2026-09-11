@@ -744,6 +744,23 @@ they do, run `./run-intraday-backfill.sh` (band-only, 5 years, ~3.3 GB,
 chunked monthly) and build Phase B — *when* in the session the move
 happened and whether it was detectable early.
 
+**Result (2026-09-11): Phase A ran, and the answer is no — skip the
+minute backfill.** 249,042 band sessions (2021-09-15 → 2026-09-11) after
+the `scan_config` liquidity floor and split-break exclusion; train before
+2025-06-01, test after, cutoffs fitted on train only. Several features
+*do* hold their lift out of sample — top-decile 20-day volatility is
+4.56x the +20% base rate on test (2.43% precision) — but the same deciles
+light up for **≤ −10%** sessions just as strongly (3.63x). They detect
+*that* a name will move, not *which way*. On the test period, every
+lit-up bucket has gross PF 0.997-1.085, a negative median, a negative
+mean once the top 1% of sessions is removed, and PF 0.69-0.79 net of a
+1% round trip. Combining the two strongest (top-decile volatility and
+gap) gives 5.3% of sessions at ≥ +20% but 14.0% at ≤ −10%, PF 0.997.
+
+Phase B asked a different question daily bars can't settle — whether a
+move already under way at 10:00 continues — but nothing knowable at the
+open points in a direction, which was the premise for expecting it would.
+
 ### 6. Optional: move the job runner off Netlify
 The project is already ~70% off it — `eod-scan`, the worker, every
 backfill and sim run on the worker host. The 16 cron jobs would move to
