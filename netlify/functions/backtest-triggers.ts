@@ -81,9 +81,23 @@ export default async (req: Request) => {
       if (resetErr) throw resetErr;
     }
 
-    const { data: symbols, error: symErr } = await db.from("symbols").select("id, ticker").eq("active", true);
-    if (symErr) throw symErr;
-    if (!symbols?.length) return { rowsProcessed: 0, result: null };
+    // Paginated — a plain select caps at PostgREST's ~1000-row limit, so
+    // this was silently backtesting only the first ~1,000 of the ~5,000-
+    // symbol universe (the S&P-seeded rows), skewing every stat toward
+    // large caps. Same cap bug fixed in eod-scan / backfill-history.
+    const symbols: { id: number; ticker: string }[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await db
+        .from("symbols")
+        .select("id, ticker")
+        .eq("active", true)
+        .range(from, from + 999);
+      if (error) throw error;
+      if (!data?.length) break;
+      symbols.push(...(data as { id: number; ticker: string }[]));
+      if (data.length < 1000) break;
+    }
+    if (!symbols.length) return { rowsProcessed: 0, result: null };
 
     const spySymbol = symbols.find((s) => s.ticker === "SPY");
     if (!spySymbol) throw new Error("SPY not found in symbols — needed as the regime/calendar reference.");
@@ -112,16 +126,27 @@ export default async (req: Request) => {
       const PAGE_SIZE = 1000;
       let from = 0;
       for (;;) {
-        let q = db
-          .from("bars_daily")
-          .select("date, close, volume")
-          .eq("symbol_id", symbolId)
-          .order("date", { ascending: true })
-          .range(from, from + PAGE_SIZE - 1);
-        if (fetchFrom) q = q.gte("date", fetchFrom);
-        if (fetchTo) q = q.lte("date", fetchTo);
-        const { data, error } = await q;
-        if (error) throw error;
+        const page = () => {
+          let q = db
+            .from("bars_daily")
+            .select("date, close, volume")
+            .eq("symbol_id", symbolId)
+            .order("date", { ascending: true })
+            .range(from, from + PAGE_SIZE - 1);
+          if (fetchFrom) q = q.gte("date", fetchFrom);
+          if (fetchTo) q = q.lte("date", fetchTo);
+          return q;
+        };
+        let data: { date: string; close: number; volume: number }[] | null = null;
+        for (let attempt = 0; ; attempt++) {
+          const res = await page();
+          if (!res.error) {
+            data = res.data as { date: string; close: number; volume: number }[] | null;
+            break;
+          }
+          if (attempt >= 5) throw res.error; // GOAWAY / transient session drop on a long run
+          await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+        }
         if (!data?.length) break;
         rows.push(...data.map((b) => ({ date: b.date, close: Number(b.close), volume: Number(b.volume) })));
         if (data.length < PAGE_SIZE) break;

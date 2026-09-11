@@ -38,6 +38,8 @@ export default async (req: Request) => {
     startDate?: string;
     endDate?: string;
     runId?: string;
+    // restrict to in-band symbols (for non-cross-sectional triggers)
+    bandOnly?: boolean;
     // which triggers to replay — explicit list, else all speed='fast'
     triggerNames?: string[];
     // optional rule overrides for parameter sweeps (default: scan_config)
@@ -69,9 +71,50 @@ export default async (req: Request) => {
       time_stop_days: body.timeStopDays ?? Number(cfg?.flip_time_stop_days ?? 4),
     };
 
-    const { data: symbols, error: symErr } = await db.from("symbols").select("id, ticker").eq("active", true);
-    if (symErr) throw symErr;
-    const spy = symbols?.find((s) => s.ticker === "SPY");
+    // Symbol set. `bandOnly` restricts to the in-band tradeable names
+    // (+ SPY) — a plain select also caps at 1000, and at 5-year depth
+    // loading all ~5,000 exhausts the HTTP/2 session (GOAWAY). Only the
+    // cross-sectional rank fields need the full universe; bb_rsi / macd
+    // don't, so a band-scoped run is both correct for them and ~15x lighter.
+    let symbols: { id: number; ticker: string }[] = [];
+    if (body.bandOnly) {
+      const { data: asOfRow } = await db
+        .from("factor_state")
+        .select("as_of")
+        .order("as_of", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const asOf = (asOfRow as { as_of: string } | null)?.as_of;
+      if (asOf) {
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await db
+            .from("factor_state")
+            .select("symbol_id, symbols(ticker)")
+            .eq("as_of", asOf)
+            .not("last_close", "is", null)
+            .lte("last_close", priceMax)
+            .range(from, from + 999);
+          if (error) throw error;
+          for (const r of (data as unknown as { symbol_id: number; symbols: { ticker: string } | null }[] | null) ?? [])
+            if (r.symbols?.ticker) symbols.push({ id: r.symbol_id, ticker: r.symbols.ticker });
+          if (!data || data.length < 1000) break;
+        }
+      }
+      const { data: spyRow } = await db.from("symbols").select("id, ticker").eq("ticker", "SPY").maybeSingle();
+      if (spyRow) symbols.push(spyRow as { id: number; ticker: string });
+    } else {
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await db
+          .from("symbols")
+          .select("id, ticker")
+          .eq("active", true)
+          .range(from, from + 999);
+        if (error) throw error;
+        symbols.push(...((data as { id: number; ticker: string }[] | null) ?? []));
+        if (!data || data.length < 1000) break;
+      }
+    }
+    const spy = symbols.find((s) => s.ticker === "SPY");
     if (!spy) throw new Error("SPY not in symbols");
 
     const months = body.months ?? 18;
@@ -85,16 +128,28 @@ export default async (req: Request) => {
       const PAGE = 1000;
       let from = 0;
       for (;;) {
-        let q = db
-          .from("bars_daily")
-          .select("date, open, high, low, close, volume")
-          .eq("symbol_id", symbolId)
-          .gte("date", fetchFrom)
-          .order("date", { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (fetchTo) q = q.lte("date", fetchTo);
-        const { data, error } = await q;
-        if (error) throw error;
+        const runPage = () => {
+          let q = db
+            .from("bars_daily")
+            .select("date, open, high, low, close, volume")
+            .eq("symbol_id", symbolId)
+            .gte("date", fetchFrom)
+            .order("date", { ascending: true })
+            .range(from, from + PAGE - 1);
+          if (fetchTo) q = q.lte("date", fetchTo);
+          return q;
+        };
+        let data: Record<string, number | string>[] | null = null;
+        for (let attempt = 0; ; attempt++) {
+          const res = await runPage();
+          if (!res.error) {
+            data = res.data as Record<string, number | string>[] | null;
+            break;
+          }
+          // GOAWAY / transient session drops on a long-lived connection
+          if (attempt >= 5) throw res.error;
+          await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+        }
         if (!data?.length) break;
         for (const b of data as Record<string, number | string>[]) {
           rows.push({
@@ -114,8 +169,8 @@ export default async (req: Request) => {
 
     const barsBySymbol = new Map<number, Ohlc[]>();
     const CONC = 25;
-    for (let i = 0; i < symbols!.length; i += CONC) {
-      const batch = symbols!.slice(i, i + CONC);
+    for (let i = 0; i < symbols.length; i += CONC) {
+      const batch = symbols.slice(i, i + CONC);
       const res = await Promise.all(batch.map((s) => loadBars(s.id)));
       batch.forEach((s, j) => barsBySymbol.set(s.id, res[j]));
     }
