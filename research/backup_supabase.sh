@@ -49,7 +49,10 @@ else
   # is a single restorable artifact.
   {
     supabase db dump --project-ref "$PROJECT_REF" --schema public
-    supabase db dump --project-ref "$PROJECT_REF" --schema public --data-only
+    # --use-copy: the CLI's default is one INSERT per row, which pg_dump
+    # reads through a 100-row cursor — ~5 MB/min on this database, and just
+    # as slow to restore. COPY is the same data at bulk speed.
+    supabase db dump --project-ref "$PROJECT_REF" --schema public --data-only --use-copy
   } | gzip > "$OUT"
 fi
 

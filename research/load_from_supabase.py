@@ -39,6 +39,10 @@ Usage:
     research/.venv/bin/python research/load_from_supabase.py --table bars_daily
 """
 
+# The worker host's python3 is Apple's 3.9, which can't evaluate
+# `dict | None` annotations at definition time. This defers them.
+from __future__ import annotations
+
 import argparse
 import sys
 import time
