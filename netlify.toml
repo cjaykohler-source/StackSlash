@@ -142,9 +142,8 @@
 [functions."data-integrity-check"]
   schedule = "45 23 * * *"
 
-# refresh-spread-estimates: Sundays 07:00 UTC — recomputes the
-# Corwin-Schultz per-symbol spread estimates every cost-adjusted backtest
-# divides by. Weekly because the estimate averages ~250 sessions and
-# doesn't move day to day.
-[functions."refresh-spread-estimates"]
-  schedule = "0 7 * * 0"
+# refresh-spread-estimates is NOT scheduled here: it runs inside Postgres
+# as a pg_cron job (Sundays 07:00 UTC, public.run_refresh_spread_estimates_job(),
+# which records itself in job_runs). estimate_symbol_spreads() outlasts
+# Supabase's ~125s API gateway, so calling it over HTTP from a function
+# logged an error every run while the query actually finished.

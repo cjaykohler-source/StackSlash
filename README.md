@@ -685,17 +685,23 @@ figure previously quoted was measured on the wrong machine**), builds the
 Python env, and loads `bars_daily` + `symbols` into DuckDB (~4 min).
 
 ### 2. Verify what was never executed
-Three service-role RPCs were written and their SQL validated inline, but
-the RPC wrappers themselves have **never been invoked**:
+**Done 2026-09-11.** `estimate_symbol_spreads()` populated
+`symbol_spread_estimates` (4,830 symbols). `finalize_backtest_stats()`
+runs after every `backtest-triggers` chunk, and now also stamps
+`computed_at`, so a row it didn't refresh is visibly stale.
+`check_data_integrity()` was already verified end-to-end.
 
-```bash
-set -a && . ./.env && set +a && npx tsx -e "import {getSupabaseAdmin} from './netlify/functions/lib/supabaseAdmin.ts'; (async () => { const d=getSupabaseAdmin(); for (const f of ['finalize_backtest_stats','estimate_symbol_spreads']) { const r = await d.rpc(f); console.log(f+':', r.error ? JSON.stringify(r.error) : r.data); } })()"
+The spread estimator **cannot be called over HTTP**: it outlasts
+Supabase's ~125s API gateway, which returns `upstream request timeout`
+while the query keeps running and commits anyway. It therefore runs
+inside Postgres as a **`pg_cron` job** (`refresh-spread-estimates`,
+Sundays 07:00 UTC) through `public.run_refresh_spread_estimates_job()`,
+which records itself in `job_runs` like every other job. To refresh by
+hand, run this in the Supabase SQL editor rather than via `.rpc()`:
+
+```sql
+select public.run_refresh_spread_estimates_job();
 ```
-
-`check_data_integrity()` is already verified end-to-end.
-`symbol_spread_estimates` is **empty** until `estimate_symbol_spreads()`
-runs — until then every cost-adjusted sim silently falls back to the tick
-floor alone.
 
 Then regenerate `trigger_stats` on post-#54 logic:
 `./run-backtest-full.sh` (50 monthly chunks, resets on chunk 1). Watch
