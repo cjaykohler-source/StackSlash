@@ -96,7 +96,12 @@ for i in "${!CHUNKS[@]}"; do
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ startDate: '$START', endDate: '$END', reset: $RESET })
-      })).then(r => r.text()).then(console.log);
+      })).then(r => r.text()).then(console.log).catch((e) => {
+        // A PostgrestError is a plain object, not an Error, so without this
+        // Node reports only an unhandled rejection of '#<Object>'.
+        console.error('backtest-triggers failed:', JSON.stringify(e));
+        process.exit(1);
+      });
     "; then
       break
     fi
@@ -104,7 +109,7 @@ for i in "${!CHUNKS[@]}"; do
       echo "=== chunk $CHUNK_NUM failed after 3 attempts — resume later with START_CHUNK=$CHUNK_NUM ./run-backtest-full.sh ==="
       exit 1
     fi
-    echo "=== chunk $CHUNK_NUM attempt $attempt failed (likely GOAWAY) — retrying in a fresh process in 10s ==="
+    echo "=== chunk $CHUNK_NUM attempt $attempt failed (error above; GOAWAY and statement timeouts both land here) — retrying in a fresh process in 10s ==="
     sleep 10
   done
 done

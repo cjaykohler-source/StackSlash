@@ -97,6 +97,45 @@ function hasSplitArtifact(bars: Bar[], fromIdx: number, toIdx: number): boolean 
   return false;
 }
 
+// A full run leaves ~3M rows in backtest_returns_raw. One unbounded DELETE
+// of that runs past PostgREST's statement timeout (57014) and rolls back,
+// so {"reset": true} could never succeed at full scale — it failed exactly
+// that way at 19:40 and 22:42 UTC on 2026-09-11. Delete in primary-key
+// ranges small enough to finish well inside the timeout, then verify the
+// table is actually empty rather than assuming it.
+const RESET_BATCH_IDS = 25_000;
+
+async function resetRawReturns(db: ReturnType<typeof getSupabaseAdmin>): Promise<void> {
+  const edgeId = async (ascending: boolean) => {
+    const { data, error } = await db
+      .from("backtest_returns_raw")
+      .select("id")
+      .order("id", { ascending })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as { id: number } | null)?.id ?? null;
+  };
+  const minId = await edgeId(true);
+  const maxId = await edgeId(false);
+  if (minId == null || maxId == null) return;
+
+  for (let lo = minId; lo <= maxId; lo += RESET_BATCH_IDS) {
+    const { error } = await db
+      .from("backtest_returns_raw")
+      .delete()
+      .gte("id", lo)
+      .lt("id", lo + RESET_BATCH_IDS);
+    if (error) throw error;
+  }
+
+  const { count, error } = await db
+    .from("backtest_returns_raw")
+    .select("id", { count: "exact", head: true });
+  if (error) throw error;
+  if (count) throw new Error(`reset left ${count} rows in backtest_returns_raw`);
+}
+
 export default async (req: Request) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -122,10 +161,7 @@ export default async (req: Request) => {
   }
 
   const result = await withJobRun(db, "backtest-triggers", async () => {
-    if (body.reset) {
-      const { error: resetErr } = await db.from("backtest_returns_raw").delete().gte("id", 0);
-      if (resetErr) throw resetErr;
-    }
+    if (body.reset) await resetRawReturns(db);
 
     // Paginated — a plain select caps at PostgREST's ~1000-row limit, so
     // this was silently backtesting only the first ~1,000 of the ~5,000-
