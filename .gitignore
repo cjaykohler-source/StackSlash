@@ -6,3 +6,9 @@ dist/
 *.local
 *.tsbuildinfo
 .DS_Store
+
+# Local research warehouse — DuckDB store, Parquet extracts and venv.
+# All of it is derived and re-fetchable (from Supabase or Alpaca), so it
+# is deliberately not version-controlled and not backed up.
+research/.venv/
+research/data/
