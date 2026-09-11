@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Pull bars_daily + symbols out of Supabase into the local DuckDB research
+Pull operational tables out of Supabase into the local DuckDB research
 warehouse.
 
 Why a second store at all: Supabase stays the operational source of truth
@@ -11,12 +11,28 @@ gitignored and deliberately not backed up.
 
 Why DuckDB rather than more Postgres: the work here is full scans and
 window functions over millions of rows. Every timeout hit while building
-the integrity checks and the duration sweep was PostgREST's statement
-limit on exactly that shape of query. Columnar + local socket makes those
-sub-second, and the same data compresses to a fraction of the 131
-bytes/row it costs in Postgres.
+the integrity checks, the spread estimator and the duration sweep was
+PostgREST's statement limit on exactly that query shape. Columnar and
+local, those run in seconds.
 
-Reads the service-role key from the repo's .env (never committed).
+TWO PAGINATION HAZARDS, both hit for real while writing this:
+
+1. PostgREST enforces a server-side max-rows that a Range header cannot
+   lift. Asking for 50,000 returns 1,000, with a 200 and no warning — the
+   same silent truncation that has now bitten this project six times. So
+   page at exactly the cap, and verify the total received against the
+   server's own exact count.
+
+2. Deep OFFSET pagination is quadratic. `offset 5000000 limit 1000` makes
+   Postgres walk five million rows to throw them away, so pages get
+   steadily slower and a 5.3M-row table never finishes. bars_daily is
+   therefore paged *per symbol*, which the (symbol_id, date) primary key
+   turns into a cheap indexed range scan.
+
+If you add a DATABASE_URL (Supabase dashboard -> Project Settings ->
+Database) this whole file becomes unnecessary — DuckDB's postgres
+extension can ATTACH and bulk-copy with no REST layer, no row cap and no
+offset problem.
 
 Usage:
     research/.venv/bin/python research/load_from_supabase.py
@@ -24,24 +40,20 @@ Usage:
 """
 
 import argparse
-import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import duckdb
+import pyarrow as pa
 import requests
 
 REPO = Path(__file__).resolve().parent.parent
 DB_PATH = REPO / "research" / "data" / "stackslash.duckdb"
 
-# PostgREST enforces a server-side max-rows that a Range header cannot
-# lift — asking for 50,000 returns 1,000 with a 200 and no warning, which
-# is the same silent truncation that has now bitten this project six
-# times. Page at exactly the cap so a short page is a real end-of-data
-# signal rather than the server quietly disagreeing with you.
-PAGE = 1000
-FETCH_WORKERS = 8
+PAGE = 1000  # PostgREST's max-rows; asking for more silently returns this
+WORKERS = 12
 
 
 def load_env() -> dict:
@@ -58,94 +70,106 @@ def load_env() -> dict:
     return env
 
 
-def exact_count(base_url: str, key: str, table: str) -> int:
-    """Authoritative row count, so paging is driven by the server's own
-    number rather than by inferring the end from a short page."""
-    r = requests.get(
-        f"{base_url}/rest/v1/{table}",
-        headers={
-            "apikey": key,
-            "Authorization": f"Bearer {key}",
-            "Prefer": "count=exact",
-            "Range": "0-0",
-        },
-        params={"select": "*"},
-        timeout=120,
-    )
-    r.raise_for_status()
-    # Content-Range comes back as "0-0/5283102"
-    return int(r.headers["Content-Range"].split("/")[-1])
+class Rest:
+    def __init__(self, base: str, key: str):
+        self.base = base.rstrip("/")
+        self.key = key
+        self.session = requests.Session()
+        self.session.headers.update({"apikey": key, "Authorization": f"Bearer {key}"})
 
-
-def fetch_page(base_url: str, key: str, table: str, columns: str, order: str, offset: int):
-    r = requests.get(
-        f"{base_url}/rest/v1/{table}",
-        headers={"apikey": key, "Authorization": f"Bearer {key}", "Range": f"{offset}-{offset + PAGE - 1}"},
-        params={"select": columns, "order": order},
-        timeout=180,
-    )
-    r.raise_for_status()
-    return r.json()
-
-
-def fetch_all(base_url: str, key: str, table: str, columns: str, order: str):
-    """
-    Paged REST pull, parallelised. Offsets are derived from the server's
-    exact count, and the total actually received is verified against it —
-    a silent short read fails loudly instead of producing a plausible
-    partial dataset.
-    """
-    from concurrent.futures import ThreadPoolExecutor
-
-    total_expected = exact_count(base_url, key, table)
-    offsets = list(range(0, total_expected, PAGE))
-    print(f"  {table}: {total_expected:,} rows expected, {len(offsets):,} pages")
-
-    received = 0
-    with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
-        futures = [pool.submit(fetch_page, base_url, key, table, columns, order, o) for o in offsets]
-        for fut in futures:
-            rows = fut.result()
-            if rows:
-                received += len(rows)
-                yield rows
-                print(f"  {table}: {received:,}/{total_expected:,}", end="\r", flush=True)
-
-    print(f"  {table}: {received:,}/{total_expected:,} rows received")
-    if received < total_expected:
-        raise RuntimeError(
-            f"{table}: short read — got {received:,} of {total_expected:,}. "
-            "Refusing to continue with a truncated table."
+    def count(self, table: str, params: dict | None = None) -> int:
+        r = self.session.get(
+            f"{self.base}/rest/v1/{table}",
+            headers={"Prefer": "count=exact", "Range": "0-0"},
+            params={"select": "*", **(params or {})},
+            timeout=120,
         )
+        r.raise_for_status()
+        return int(r.headers["Content-Range"].split("/")[-1])
+
+    def page(self, table: str, columns: str, offset: int, params: dict | None = None):
+        r = self.session.get(
+            f"{self.base}/rest/v1/{table}",
+            headers={"Range": f"{offset}-{offset + PAGE - 1}"},
+            params={"select": columns, **(params or {})},
+            timeout=180,
+        )
+        r.raise_for_status()
+        return r.json()
 
 
-def load_table(con, base_url, key, table, columns, order):
-    t0 = time.time()
-    print(f"Loading {table}...")
-    con.execute(f"drop table if exists {table}")
-    created = False
-    for rows in fetch_all(base_url, key, table, columns, order):
-        # Register the Arrow table on *this* connection — duckdb.from_arrow()
-        # binds to the default connection and can't be used from another.
-        con.register("_batch", _to_arrow(rows))
-        if not created:
-            con.execute(f"create table {table} as select * from _batch")
-            created = True
-        else:
-            con.execute(f"insert into {table} select * from _batch")
-        con.unregister("_batch")
-    if not created:
-        print(f"  {table}: no rows returned")
-        return
-    n = con.execute(f"select count(*) from {table}").fetchone()[0]
-    print(f"  {table}: {n:,} rows in {time.time() - t0:.1f}s")
-
-
-def _to_arrow(rows):
-    import pyarrow as pa
-
+def to_arrow(rows: list[dict]) -> pa.Table:
     cols = {k: [r.get(k) for r in rows] for k in rows[0].keys()}
     return pa.table(cols)
+
+
+def write(con, table: str, rows: list[dict], first: bool):
+    con.register("_batch", to_arrow(rows))
+    if first:
+        con.execute(f"create or replace table {table} as select * from _batch")
+    else:
+        con.execute(f"insert into {table} select * from _batch")
+    con.unregister("_batch")
+
+
+def load_simple(con, rest: Rest, table: str, columns: str, order: str):
+    """Offset paging — fine for small tables where the offset never gets deep."""
+    total = rest.count(table)
+    print(f"Loading {table}: {total:,} rows expected")
+    received, first = 0, True
+    for offset in range(0, total, PAGE):
+        rows = rest.page(table, columns, offset, {"order": order})
+        if not rows:
+            break
+        write(con, table, rows, first)
+        first, received = False, received + len(rows)
+    verify(table, received, total)
+
+
+def load_bars_by_symbol(con, rest: Rest, symbol_ids: list[int]):
+    """
+    bars_daily, paged per symbol. ~1,255 rows/symbol means 2 indexed
+    requests each, instead of one ever-slower walk down a 5.3M-row offset.
+    """
+    table, columns = "bars_daily", "symbol_id,date,open,high,low,close,volume"
+    total = rest.count(table)
+    print(f"Loading {table}: {total:,} rows expected across {len(symbol_ids):,} symbols")
+
+    def fetch_symbol(sid: int) -> list[dict]:
+        out, offset = [], 0
+        while True:
+            rows = rest.page(table, columns, offset, {"symbol_id": f"eq.{sid}", "order": "date"})
+            if not rows:
+                break
+            out.extend(rows)
+            if len(rows) < PAGE:
+                break
+            offset += PAGE
+        return out
+
+    received, first, done = 0, True, 0
+    t0 = time.time()
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        for rows in pool.map(fetch_symbol, symbol_ids):
+            done += 1
+            if rows:
+                write(con, table, rows, first)
+                first = False
+                received += len(rows)
+            if done % 250 == 0:
+                rate = done / max(time.time() - t0, 1e-9)
+                eta = (len(symbol_ids) - done) / max(rate, 1e-9)
+                print(f"  {done:,}/{len(symbol_ids):,} symbols, {received:,} rows, ETA {eta/60:.1f}m", flush=True)
+    verify(table, received, total)
+
+
+def verify(table: str, received: int, expected: int):
+    print(f"  {table}: {received:,}/{expected:,} rows")
+    if received < expected:
+        raise RuntimeError(
+            f"{table}: short read — {received:,} of {expected:,}. "
+            "Refusing to continue with a truncated table."
+        )
 
 
 def main():
@@ -158,22 +182,26 @@ def main():
     base = env.get("VITE_SUPABASE_URL") or env.get("SUPABASE_URL")
     if not key or not base:
         sys.exit("Need SUPABASE_SERVICE_ROLE_KEY and VITE_SUPABASE_URL/SUPABASE_URL in .env")
-    base = base.rstrip("/")
 
+    rest = Rest(base, key)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
 
-    targets = [
-        ("symbols", "id,ticker,exchange,active,name", "id"),
-        ("bars_daily", "symbol_id,date,open,high,low,close,volume", "symbol_id,date"),
-    ]
-    for table, columns, order in targets:
-        if args.table and table != args.table:
-            continue
-        load_table(con, base, key, table, columns, order)
+    if not args.table or args.table == "symbols":
+        load_simple(con, rest, "symbols", "id,ticker,exchange,active,name", "id")
 
+    if not args.table or args.table == "bars_daily":
+        ids = [r[0] for r in con.execute("select id from symbols order by id").fetchall()]
+        if not ids:
+            sys.exit("symbols table empty — load it before bars_daily.")
+        load_bars_by_symbol(con, rest, ids)
+
+    con.execute("checkpoint")
     print(f"\nWarehouse: {DB_PATH}")
     print(f"Size on disk: {DB_PATH.stat().st_size / 1e9:.2f} GB")
+    for t, in con.execute("select table_name from information_schema.tables where table_schema='main'").fetchall():
+        n = con.execute(f"select count(*) from {t}").fetchone()[0]
+        print(f"  {t}: {n:,} rows")
     con.close()
 
 
