@@ -48,11 +48,34 @@ hold-duration sweep" below for the full table — and note it had to be
 run on repaired data, because it surfaced a sixth instance of a
 silent-corruption bug family (see "The forward-return misalignment bug").
 
+Then a **transaction cost model** was built (there had never been one —
+every backtest in this project's history assumed free fills at the
+close) and it settles the question. Charging a modelled round-trip
+spread of ~1.02% turns **every** hold duration negative: net profit
+factor 0.657 at 1 day through 0.938 at 18 days, **none above 1.0**. The
+cost is larger than the entire measured edge, so there is nothing left
+to optimise. See "The cost model" below.
+
+Two further results worth knowing before anyone re-opens this:
+
+- **Nothing predicts the winners.** Scanning entry-time features across
+  the top 1% of outcomes — RVOL, volatility, momentum, distance from
+  highs, price, dollar volume — the winners are only weakly separable
+  from the middle. There is no "incoming large gain" detector to build.
+- **Something does predict the disasters.** Fires at **>=25x normal
+  volume** returned mean −10.0% / median −16.2% over 18 sessions (PF
+  0.489), against roughly break-even for every lower volume bucket. It's
+  0.75% of fires so it rescues nothing, but it is a real, mechanically
+  sensible risk signal and is now a dossier flag. It also independently
+  explains why `rvol_breakout` backtested at 0.72 — that trigger was
+  aimed at precisely the wrong tail.
+
 **What this means practically:** the system is a solid, real-time
 screening and monitoring tool (Isolator, live feed, dossiers, news,
 risk flags, quote tags) built on genuinely correct plumbing. It is *not*
-a proven money-making signal generator. Treat alerts as things to look
-at, not blindly trade. See "The 2026-09-10/11 logic-revamp session"
+a proven money-making signal generator, and after the cost model that is
+no longer an open question on this universe. Treat alerts as things to
+look at, not blindly trade. See "The 2026-09-10/11 logic-revamp session"
 below for the full derivation, every number, and every bug found along
 the way — worth reading before changing any trigger or exit logic,
 so the next attempt doesn't re-discover the same dead ends.
@@ -67,16 +90,32 @@ so the next attempt doesn't re-discover the same dead ends.
 | Market data | Alpaca, **paper** keys (IEX feed) | No funded account needed for data-only use |
 | Alerts | Discord webhook, channel `#heating_up` (bot "HeatBot") | Working |
 | Auth | Single Supabase Auth user, `cjaykohler@gmail.com` | Working |
-| Mac mini (`stackslash-worker-host`, serial `QLPQFQPRXP`) | Always-on, `launchd` | Runs `worker/` (realtime outlier websocket), `eod-scan` (17:45 ET), weekly fundamentals refresh |
+| Mac mini (`stackslash-worker-host`, user `ckohler`, repo `~/StackSlash`) | Always-on, `launchd`, **dedicated to this project** | Runs `worker/` (realtime outlier websocket), `eod-scan` (17:45 ET), weekly fundamentals refresh, all backfills/sims/backtests, and the local DuckDB research warehouse |
+
+**Everything runs on the worker host.** This is the operative rule: no
+job, backfill, sim or research script runs anywhere else. A second Mac
+(`Chris-Ks-Mac-Mini`, user `chriskohler`) exists and has been used as a
+development surface, but nothing there is authoritative — it has its own
+clone at `Desktop/StackSlash` and different specs, and sizing figures
+measured there do not describe the worker host. Verify with `hostname`
+before trusting any capacity number in this file.
 
 Everything else (intraday scans, the flip-position manager, news
 polling, prunes) runs as Netlify Scheduled Functions — see
-`netlify.toml` for the full cron list.
+`netlify.toml` for the full cron list. Note that Netlify's ~3-4 min
+timeout is why `eod-scan` had to move to launchd in the first place, and
+that constraint has shaped more of the design than it should have; see
+"The plan forward" for the proposal to move the job runner off it.
 
-Current DB snapshot: **~5,000 active symbols**, `bars_daily` now holds
-**5 years** for ~4,500 of them (see backfill note below), `bars_intraday`
-holds a rolling **90 days** for the ~380-symbol tradeable band, DB size
-~1.4 GB / 8 GB.
+Current DB snapshot: **~5,000 active symbols**, `bars_daily` holds
+**5 years** (2021-09-10 → 2026-09-10, 5,373,902 rows, 4,997 symbols),
+`bars_intraday` holds a rolling **90 days** for the band, DB size
+**1,710 MB / 8 GB**.
+
+Largest tables, which is what the free-tier plan below turns on:
+`bars_daily` 668 MB, `bars_intraday` 413 MB, `backtest_returns_raw`
+269 MB, `trigger_evaluations` 225 MB, `intraday_volume_profile` 50 MB,
+`factor_window_stats` 47 MB, everything else ~30 MB combined.
 
 ## The research this was built on
 
@@ -373,6 +412,206 @@ for paid Alpaca SIP data: the failure is a negative median and a
 cost structure, not a data-resolution problem, so a better feed does
 not address it.
 
+### The cost model (2026-09-11) — the decisive result
+
+Until this point **there was no transaction cost model anywhere in the
+codebase** (`grep -rn "slippage|spread|commission"` returned one
+unrelated volume field). Every backtest, every sim, every number in this
+README above this section was gross of costs, filled at the close for
+free. Against a best-measured edge of +0.52%, that omission was not a
+rounding error — it was the whole answer.
+
+`lib/tradingCosts.ts` takes the wider of two independent estimates:
+
+- **Reg NMS Rule 612 tick floor** — $0.01 minimum increment at/above $1,
+  $0.0001 below. A stock cannot trade tighter than one tick, so this is a
+  hard lower bound requiring no data at all. At the band's median $2.72
+  entry it alone is 0.37% round trip.
+- **Corwin-Schultz (2012) high-low estimator** — backs an effective
+  spread out of two-day high/low ranges (the high is nearly always a buy
+  at the ask, the low a sell at the bid). Needs only daily OHLC, which
+  this project has for 5 years, so spreads are estimated *per symbol*
+  rather than assumed flat. Computed by `estimate_symbol_spreads()` into
+  `symbol_spread_estimates`.
+
+Applied to the cleaned `sw5_purehold` entry set:
+
+| hold | mean gross | cost | **mean net** | **net PF** |
+|---|---|---|---|---|
+| 1 d | +0.183% | 1.019% | **−0.836%** | **0.657** |
+| 5 d | +0.315% | 1.018% | **−0.703%** | **0.852** |
+| 18 d | +0.521% | 1.018% | **−0.497%** | **0.938** |
+| 30 d | −0.401% | 1.017% | **−1.418%** | **0.866** |
+
+Gross and net are both persisted on `flip_sim` (`pnl_pct_gross`,
+`cost_pct`) so a modelled assumption can never silently replace the raw
+number.
+
+**Honest limitation, and it is documented on the refresh function too:**
+Corwin-Schultz returns ~1.0% almost uniformly across every price bucket
+here (sub-$1 through $20+), which is not credible as a spread — %
+spread should widen sharply as price and liquidity fall. It is picking
+up intraday volatility in a universe that gaps constantly. It is sound
+for order of magnitude ("~1%, not ~0.05%"), which is all the decision
+needs, but do not treat per-symbol values as precise. Calibrating
+against sampled live quotes is outstanding work.
+
+**A price-tier result that inverts an earlier recommendation.** Net PF
+by entry price at an 18-day hold runs *backwards* from intuition:
+<$1 1.126, $1-2 1.149, $2-3 0.970, $3-4 0.888, $4-5 0.639. The cheapest
+names look best, not the most liquid. This contradicts the "move
+up-market" suggestion made earlier the same day, so treat that idea as
+unsupported until tested properly. It does **not** mean $1-2 works: that
+cell was then run through the full discipline and failed all three
+checks — mean +1.139% collapses to **−0.096% excluding its top 1%**,
+median is −1.543%, and per-year PF runs 1.258 / 2.585 / 1.136 / **0.783
+(2026 YTD)**. One exceptional year carrying a lottery.
+
+### The winner-detector test, and what it found instead
+
+The sharpest remaining question was: if the mean is carried by the top
+1%, are those identifiable *at entry*? Compared entry-time features
+across outcome groups over the cleaned entry set:
+
+| group | n | mean fwd ret | avg RVOL | 20d vol | % of 60d high | avg price |
+|---|---|---|---|---|---|---|
+| top 1% | 176 | +119.2% | 7.2 | 0.081 | 0.587 | $2.26 |
+| top 2-5% | 704 | +49.4% | 9.8 | 0.068 | 0.607 | $2.42 |
+| middle | 15,575 | −0.4% | 8.4 | 0.050 | 0.674 | $2.80 |
+| **bottom 5%** | 1,050 | **−38.0%** | **86.2** | 0.083 | 0.611 | $2.78 |
+
+Winners sit at RVOL 7.2 — *below* the 8.4 middle — and are only weakly
+separable on volatility, distance-from-high and price. **No winner
+detector exists in this data.** The strongest feature by far points at
+the losers, which is the actionable half: see the 25x volume flag in the
+verdict at the top. Per-bucket net PF at 18 days: <2x 0.937, 2-5x 1.001,
+5-10x 0.955, 10-25x 1.106, **25x+ 0.489**.
+
+### The measurement rebuild (2026-09-11)
+
+Given the trigger search came back negative six times over, the
+conclusion drawn was that *measurement*, not trigger logic, was the weak
+part of this project — six silent-corruption bugs, four of which changed
+a headline number, two of which were reported as findings before being
+caught. `docs/measurement-rebuild-plan.md` scopes five workstreams;
+three are built:
+
+1. **Tail-concentration reporting (built).** `finalize_backtest_stats()`
+   now also computes `mean_excl_top1pct`, `mean_excl_top5pct` and the
+   top 1%/5% share of gross profit, nulled below 100 samples where
+   `ntile(100)` stops meaning anything. Reports flags any trigger whose
+   `avg_return` and `mean_excl_top1pct` disagree in sign as tail-driven.
+   On current data **every enabled long trigger trips it**.
+2. **Cost model (built).** Above.
+3. **Standing data-integrity checks (built).** `check_data_integrity()`
+   does one materialised pass over `bars_daily` — gaps, split scale
+   breaks, implausible prices, partial OHLC, stale symbols — and
+   `data-integrity-check.ts` (nightly 23:45 UTC) records to
+   `data_quality_issues` and alerts **only on regressions**, since ~736
+   legitimately gappy symbols is not news but 900 tomorrow is.
+   `fetchAllPaginated()` retires the hand-rolled `.range()` loop.
+4. **Forward measurement (partial).** `fire_outcomes` extended to
+   `ret_20d` + `cost_pct`; all 511 existing rows reopened to backfill.
+   `triggers.min_live_sample` (default 30) gates presenting a trigger as
+   proven. The Reports panel comparing live outcomes to backtest stats is
+   **not built**.
+5. **Universe as a config knob (not built).** Note `confluenceGate.ts`'s
+   hardcoded fallbacks have drifted from `scan_config` — `price_max: 3` /
+   `min_dollar_vol_20d: 150000` in code vs `5.00` / `50000` in the table.
+   That is a live inconsistency, not cleanup.
+
+First integrity run, verified end-to-end against prod:
+
+| issue | rows | symbols |
+|---|---|---|
+| `bar_gap_over_7d` | 3,841 | 736 |
+| `bar_gap_over_30d` | 323 | 193 |
+| `split_scale_break` | 525 | 195 |
+| `implausible_price` | **45,172** | **131** |
+| `partial_ohlc` | 0 | 0 |
+| `stale_active_symbol` | 5 | 5 |
+
+`implausible_price` is far bigger than expected: SMX carries a
+back-adjusted close of **$384bn/share** against a $17.41 last price
+across 826 bars — most of those symbols' history, not stray rows. They
+are serial reverse-splitters and their current prices ($0.73-$2.61) put
+them squarely in the trading band. No legitimate high-priced stock is
+caught at the $10k threshold (NVR ~$7.5k, SEB ~$2.4k). `partial_ohlc` at
+zero confirms the close-only `eod-scan` bug is genuinely fixed.
+
+Two self-corrections worth recording: a `duplicate_bars` check was
+written and then removed because `bars_daily_pkey` is UNIQUE on
+`(symbol_id, date)` — it was spending a full GROUP BY to re-confirm a
+constraint, and its "0" was a tautology rather than evidence. And the
+first version blew PostgREST's statement timeout by scanning
+`bars_daily` five times; it is now one materialised pass with a
+function-local 600s timeout.
+
+### The local research warehouse (2026-09-11)
+
+**Architecture change.** The worker host is dedicated to this project, so
+heavy analytical work moved off Supabase into a local DuckDB store
+(`research/`, gitignored, deliberately not backed up because everything
+in it rebuilds from Supabase or re-fetches from Alpaca).
+
+Rationale: every timeout hit while building the integrity checks, the
+spread estimator and the duration sweep was PostgREST's statement limit
+on full scans with window functions — precisely the workload columnar
+engines exist for. Measured on the daily bars: **80 MB local vs 668 MB in
+Postgres** (8.4x compression), and the windowed integrity scan that
+*timed out entirely* over PostgREST runs locally in **0.08 seconds**.
+
+Verified against Supabase on identical data — gaps (3,841 / 736) and
+implausible prices (45,172) match exactly. Scale breaks came back 523 vs
+525; traced rather than waved off: `MSS` (5.645 → 0.5645) and `BQ`
+(3.079 → 0.3079) are exact 1:10 reverse splits that Postgres `numeric`
+evaluates as precisely 0.1 while DuckDB `DOUBLE` lands a hair above, so
+the `<= 0.1` boundary excludes them. Benign — and a reminder that
+equality boundaries on computed ratios are representation-sensitive.
+
+**Two pagination hazards were hit for real building the loader**, both
+now documented in it:
+1. PostgREST's server-side `max-rows` cannot be lifted by a Range header
+   — asking for 50,000 returns 1,000 with a 200 and no warning. This is
+   the **sixth** instance of that bug in this project, and it happened
+   directly beneath a comment describing it as the most expensive
+   recurring bug here. The loader now pages at exactly the cap and
+   verifies the total received against the server's own exact count.
+2. Deep `OFFSET` pagination is quadratic — `offset 5000000` walks five
+   million rows to discard them, so a 5.3M-row table never finishes.
+   `bars_daily` is paged *per symbol*, which the `(symbol_id, date)`
+   primary key turns into a cheap indexed range scan. Full load: **4
+   minutes, 5,373,902 rows**.
+
+`research/session_cohorts.py` is the **session cohort analyzer** — it
+inverts the question this project usually asks. `backtest-triggers` asks
+"our trigger fired, what happened next", which can only evaluate logic
+already written. This asks "a big move happened, what preceded it",
+across all ~930k band sessions with no trigger bias:
+
+| cohort (band sessions, cleaned) | n |
+|---|---|
+| total sessions | 930,065 |
+| open→close ≥ +10% | 21,159 |
+| ≥ +20% | 4,234 |
+| ≥ +50% | 451 |
+| ≤ −10% | 12,864 |
+
+Two disciplines are built in rather than left to whoever runs it: strict
+no-lookahead (every feature from strictly prior sessions, with the
+overnight gap the one deliberate exception since it is genuinely known at
+09:30), and lift/precision against base rate on a **time split**. The
++20% cohort is 0.46% of sessions, so tripling the hit rate still leaves
+you wrong 98.6% of the time — "cohort differs from average" is not a
+finding when scanning a dozen features over 930k rows.
+
+**Phase A (daily precursors) is built but has not been run.** Phase B
+(intraday path — *when* in the session the move happened, and whether it
+was detectable early) needs the band-only 5-year minute backfill
+(`run-intraday-backfill.sh`, ~3.3 GB) and is the part that actually
+matters: a +20% open-to-close move identifiable only at 16:00 is
+worthless; one identifiable at 10:00 is tradeable.
+
 ### Other fixes from this session
 - **`jobRun.ts`**: `describeError()` replaces `String(err)`, which
   turned a thrown `PostgrestError` (not an `Error` instance) into the
@@ -405,57 +644,115 @@ not address it.
   GOAWAY wall (9m52s-9m58s across repeated fresh-process retries — a
   hard local session limit, not flakiness); monthly chunks clear it.
   50 chunks, ~2021-09-10 → 2026-09-10.
-- **#54** — the forward-return gap / split-artifact guards described
-  above. **Open.** Merge this, then regenerate `trigger_stats`, because
-  every number in it predates the fix.
-- **#50** — this README rewrite. Open.
+- **#54** — the forward-return gap / split-artifact guards.
+  **Merged 2026-09-11.** Every `trigger_stats` number predating it is
+  optimistically wrong and needs regenerating.
+- **#55** — `docs/measurement-rebuild-plan.md`, the five-workstream
+  scope. **Open.**
+- **#56** — items 1 + 2 + 3 of that plan: tail-concentration columns,
+  the cost model, the integrity checks, `fetchAllPaginated()`, the 25x
+  volume risk flag, `fire_outcomes` to 20d, `min_live_sample`, and the
+  local DuckDB warehouse + session cohort analyzer. **Open.**
+- **#50** — this README. Open.
 - **#32** — an older, now-superseded README handoff PR. Closed.
 
-### If you pick this up next — recommended next steps, in order
-1. Merge **#54**, pull on the mini, and re-run `./run-backtest-full.sh`
-   (it resets on chunk 1 and re-accumulates). Every `trigger_stats`
-   number currently in the DB was produced without the gap/split
-   guards and is optimistically wrong. Watch the new
-   `skippedGapMisaligned` / `skippedSplitArtifact` counters on each
-   chunk's response — if those are large, that is the bug's real
-   footprint.
-2. **Decide the strategic direction. This is the actual decision, and
-   the evidence for it is now as complete as this data can make it.**
-   Across ~35 trigger/exit variants, a 5-year multi-regime backtest,
-   and a full 1-day-to-6-month hold-duration sweep, nothing on this
-   universe has an edge that survives its own transaction costs. The
-   honest options:
-   - **Run it as a discretionary screening tool** — the plumbing is
-     genuinely good and the Isolator/dossier/news surface is useful for
-     deciding what to look at. Stop expecting the triggers to be
-     signals. This is the recommendation the data supports.
-   - **Watch `catalyst_momentum` live** for ~6 weeks via `fire_outcomes`
-     before trusting it. Note its PF 1.32 comes from n=49 in a single
-     regime, and was produced by `sim-intraday-flips`, which has *not*
-     yet been audited for the #54 bug family.
-   - **Reconsider the universe.** The factor research this was built on
-     targets liquid small/mid-caps. The sub-$5 band's spread alone
-     (0.4-1.8% round trip) exceeds every edge measured here. This is
-     the single change most likely to make any of the existing logic
-     work.
-   - **Paid Alpaca SIP data ($99/mo)** would fix IEX's volume
-     undercounting and could plausibly rescue the RVOL/VWAP intraday
-     triggers — but note the hold-duration sweep's finding that the
-     failure is a negative median and a cost structure, not a
-     data-resolution problem. Scope it to one month and re-run
-     `sim-intraday-flips` before committing to more.
-3. If continuing the trigger search anyway: Phase 5 (confluence
-   redefined by speed class), Phase 6 (stop hard-gating
-   mean-reversion/intraday triggers on `risk_on`), Phase 7 (repoint the
-   realtime worker at in-band movers instead of top-dollar-volume
-   names), Phase 8 (a Reports panel comparing live `fire_outcomes` to
-   backtest `trigger_stats`) are sketched in `docs/logic-revamp-plan.md`
-   but not built — low priority given everything above.
-4. **Audit `sim-intraday-flips` for the #54 bug family** before
-   trusting `catalyst_momentum`'s PF 1.32. It walks `bars_intraday`
-   rather than `bars_daily`, so it has a different but analogous
-   exposure, and it is currently the only signal the project is leaning
-   on.
+## The plan forward
+
+Ordered. Steps 1-3 are prerequisites for trusting anything after them.
+
+### 1. Merge and land what exists
+Merge **#50**, **#55**, **#56**, then on the worker host:
+
+```bash
+cd ~/StackSlash && git pull && ./research/setup_worker_host.sh
+```
+
+This prints the machine's real disk/RAM/CPU (**needed — every capacity
+figure previously quoted was measured on the wrong machine**), builds the
+Python env, and loads `bars_daily` + `symbols` into DuckDB (~4 min).
+
+### 2. Verify what was never executed
+Three service-role RPCs were written and their SQL validated inline, but
+the RPC wrappers themselves have **never been invoked**:
+
+```bash
+set -a && . ./.env && set +a && npx tsx -e "import {getSupabaseAdmin} from './netlify/functions/lib/supabaseAdmin.ts'; (async () => { const d=getSupabaseAdmin(); for (const f of ['finalize_backtest_stats','estimate_symbol_spreads']) { const r = await d.rpc(f); console.log(f+':', r.error ? JSON.stringify(r.error) : r.data); } })()"
+```
+
+`check_data_integrity()` is already verified end-to-end.
+`symbol_spread_estimates` is **empty** until `estimate_symbol_spreads()`
+runs — until then every cost-adjusted sim silently falls back to the tick
+floor alone.
+
+Then regenerate `trigger_stats` on post-#54 logic:
+`./run-backtest-full.sh` (50 monthly chunks, resets on chunk 1). Watch
+`skippedGapMisaligned` / `skippedSplitArtifact` — that is the bug's real
+footprint.
+
+### 3. Back up before deleting anything
+`supabase link --project-ref wnzxvdfskmivbyqadtll` (prompts for the DB
+password), then `research/backup_supabase.sh`. **Free tier takes no
+backups**, and most of that database cannot be re-fetched:
+`fire_outcomes`, `trigger_events`, `dossiers`, `alerts` and
+`shadow_positions` are accumulated history. Only bars rebuild from
+Alpaca.
+
+### 4. Downgrade Supabase to free tier (~$25/mo saved)
+Projected **~416 MB** against the 500 MB cap:
+
+| action | saves |
+|---|---|
+| `backtest_returns_raw` + `flip_sim` → local only | 274 MB |
+| `bars_daily` 5yr → 18mo (full history lives locally) | ~468 MB |
+| `bars_intraday` 90d → 14d | ~349 MB |
+| `trigger_evaluations` pruned harder | ~200 MB |
+
+**Deleting rows does not shrink the disk** — Postgres marks space
+reusable, not free, and Supabase measures actual disk. `VACUUM FULL` (or
+a dump/restore) is required to genuinely reclaim it. This is the step
+people skip and then conclude the cleanup failed.
+
+Pleasing symmetry: the free-tier cap is exactly what forced `bars_daily`
+to 18 months before and caused the swing research to be re-run on a
+truncated universe. It is now harmless, because full history lives
+locally and research no longer touches Supabase.
+
+### 5. Run the cohort analysis (the actual open research question)
+Phase A is built and **has never been run**:
+
+```bash
+research/.venv/bin/python research/session_cohorts.py --build
+research/.venv/bin/python research/session_cohorts.py --threshold 0.20
+```
+
+If daily precursors show nothing above base rate on the time split, Phase
+B is unlikely to rescue it and the minute backfill should be skipped. If
+they do, run `./run-intraday-backfill.sh` (band-only, 5 years, ~3.3 GB,
+chunked monthly) and build Phase B — *when* in the session the move
+happened and whether it was detectable early.
+
+### 6. Optional: move the job runner off Netlify
+The project is already ~70% off it — `eod-scan`, the worker, every
+backfill and sim run on the worker host. The 16 cron jobs would move to
+launchd and *gain* by it (no 3-4 min timeout). The one real dependency is
+the `deep_dive_webhook` Postgres trigger, which `pg_net` cannot fire at
+`localhost`; the clean fix is to have `confluenceGate.stageAndPromote()`
+call `deep-dive` directly in-process, removing `pg_net`, the webhook and
+the 403 non-Netlify-caller guard together. Keeping Netlify for frontend
+hosting costs nothing and preserves external access.
+
+### Standing cautions
+- **`sim-intraday-flips` has never been audited for the #54 bug family.**
+  It produced `catalyst_momentum`'s PF 1.32 (n=49, one regime) — the only
+  signal this project leans on. It walks `bars_intraday`, so its exposure
+  is different but analogous. Do this before trusting that number.
+- **`confluenceGate.ts`'s fallbacks have drifted from `scan_config`**
+  (`price_max: 3` / `150000` vs `5.00` / `50000`). Live inconsistency.
+- **The Reports live-vs-backtest panel** (item 4, Phase 8) is unbuilt.
+- **Do not add a 36th trigger variant.** The search returned negative
+  across ~35 variants, a 5-year multi-regime backtest, a full duration
+  sweep, and now a cost model. Adding signal to a rig that has been wrong
+  six times is not the constraint.
 
 ## Universe & storage
 
