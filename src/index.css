@@ -526,6 +526,178 @@ body {
   font-weight: 600;
 }
 
+/* Session (candles) view: date picker row + SVG candlestick/volume chart. */
+.session-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 12px;
+}
+.session-picker button,
+.session-picker input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color-scheme: dark;
+}
+.session-picker button {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+.session-picker button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.session-picker button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.session-picker button.active {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.session-picker-note {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  margin-left: 6px;
+}
+.candle-chart {
+  position: relative;
+  background: linear-gradient(180deg, rgba(19, 23, 34, 0.6), rgba(19, 23, 34, 0.15));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 8px 6px;
+  overflow: hidden;
+}
+.candle-chart svg {
+  display: block;
+  max-width: 100%;
+}
+.candle-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 0 6px 8px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.candle-stats b {
+  color: var(--text);
+  font-weight: 600;
+}
+.candle-stats em {
+  font-style: normal;
+  opacity: 0.8;
+}
+.cc-ext {
+  fill: rgba(139, 147, 167, 0.07);
+}
+.cc-grid {
+  stroke: var(--border);
+  stroke-opacity: 0.5;
+}
+.cc-divider {
+  stroke: var(--border);
+  stroke-opacity: 0.9;
+}
+.cc-label {
+  fill: var(--text-dim);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.cc-prev {
+  stroke: var(--text-dim);
+  stroke-dasharray: 4 4;
+  stroke-opacity: 0.7;
+}
+.cc-prev-label {
+  font-size: 9.5px;
+}
+.cc-up line,
+.cc-up rect {
+  stroke: var(--green);
+  fill: var(--green);
+}
+.cc-down line,
+.cc-down rect {
+  stroke: var(--red);
+  fill: var(--red);
+}
+.cc-up rect,
+.cc-down rect {
+  stroke-width: 0;
+}
+.cc-vol-up {
+  fill: var(--green);
+  fill-opacity: 0.35;
+}
+.cc-vol-down {
+  fill: var(--red);
+  fill-opacity: 0.35;
+}
+.cc-vwap {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-opacity: 0.9;
+}
+.cc-cross line {
+  stroke: var(--text-dim);
+  stroke-dasharray: 3 3;
+}
+.cc-cross-label {
+  fill: var(--text);
+  font-weight: 600;
+}
+.candle-legend {
+  display: flex;
+  gap: 16px;
+  padding: 6px 6px 0;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+.cc-key::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px solid var(--accent);
+}
+.cc-key-prev::before {
+  border-top: 2px dashed var(--text-dim);
+}
+.cc-key-ext::before {
+  height: 8px;
+  border: none;
+  background: rgba(139, 147, 167, 0.25);
+}
+.candle-tip {
+  position: absolute;
+  top: 44px;
+  width: 180px;
+  pointer-events: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.candle-tip-when {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  margin-bottom: 2px;
+}
+
 /* Dashboard "today" feed: one open frame, header inside, sized to line
    up with the .top-movers-section frame in the next column. */
 .trigger-feed-panel {
