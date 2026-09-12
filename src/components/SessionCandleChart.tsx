@@ -31,6 +31,29 @@ const fmtVol = (v: number) =>
   v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : `${v}`;
 const fmtPct = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(2)}%`;
 
+/** Candle intervals offered, in minutes. All divide the 390-minute session evenly. */
+const INTERVALS = [1, 2, 5, 10, 15] as const;
+type Interval = (typeof INTERVALS)[number];
+const SESSION_MINUTES = 390;
+// Auto default: the finest interval where at least this share of slots saw
+// a trade (so candles read as a price path, not scattered dots)...
+const AUTO_MIN_COVERAGE = 0.75;
+// ...and that fits this many candles across the session (1-min bars on a
+// liquid name are 390 hair-thin candles; 2-min is the readable floor).
+const AUTO_MAX_CANDLES = 200;
+
+/** Pick the default interval from the regular-session minutes that traded. */
+function autoInterval(tradedMinutes: number[]): { k: Interval; coverage: number } {
+  const coverageAt = (k: Interval) =>
+    new Set(tradedMinutes.map((m) => Math.floor(m / k))).size / Math.ceil(SESSION_MINUTES / k);
+  for (const k of INTERVALS) {
+    const coverage = coverageAt(k);
+    if (coverage >= AUTO_MIN_COVERAGE && SESSION_MINUTES / k <= AUTO_MAX_CANDLES) return { k, coverage };
+  }
+  // Nothing clears the bar (a very thin name): use the coarsest interval.
+  return { k: 15, coverage: coverageAt(15) };
+}
+
 function niceStep(span: number, target: number): number {
   const raw = span / target;
   const mag = 10 ** Math.floor(Math.log10(raw));
@@ -53,6 +76,13 @@ export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<number | null>(null);
+  const [choice, setChoice] = useState<"auto" | Interval>("auto");
+
+  // A new session starts back on the automatic interval.
+  useEffect(() => {
+    setChoice("auto");
+    setHover(null);
+  }, [bars]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -71,7 +101,50 @@ export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
     };
     // Regular session only (9:30a-4:00p): the session-candles function also
     // returns pre-market and after-hours bars, which this view leaves out.
-    const pts = all.filter((p) => isRegular(p.ms));
+    const raw = all.filter((p) => isRegular(p.ms));
+    // Minutes since 9:30 for each 1-min bar (regular-session axis units are hours).
+    const mods = raw.map((p) => Math.round((axis.toX(p.ms) - axis.open) * 60));
+    const auto = autoInterval(mods);
+    const k: Interval = choice === "auto" ? auto.k : choice;
+
+    // Merge 1-min bars into k-min candles: first open, max high, min low,
+    // last close, summed volume/trades, volume-weighted VWAP (a vendor-garbage
+    // bar vwap far outside its range falls back to the close).
+    const openMs = raw.length ? raw[0].ms - mods[0] * 60_000 : 0;
+    const groups = new Map<number, typeof raw>();
+    raw.forEach((p, i) => {
+      const b = Math.floor(mods[i] / k);
+      (groups.get(b) ?? groups.set(b, []).get(b)!).push(p);
+    });
+    const pts = [...groups.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([b, arr]) => {
+        let v = 0;
+        let pv = 0;
+        let n = 0;
+        let hasN = false;
+        for (const p of arr) {
+          const bw = p.vw != null && p.vw >= p.l * 0.5 && p.vw <= p.h * 2 ? p.vw : p.c;
+          v += p.v;
+          pv += bw * p.v;
+          if (p.n != null) {
+            n += p.n;
+            hasN = true;
+          }
+        }
+        const last = arr[arr.length - 1];
+        return {
+          t: arr[0].t,
+          ms: openMs + b * k * 60_000,
+          o: arr[0].o,
+          h: Math.max(...arr.map((p) => p.h)),
+          l: Math.min(...arr.map((p) => p.l)),
+          c: last.c,
+          v,
+          vw: v > 0 ? pv / v : last.c,
+          n: hasN ? n : null,
+        };
+      });
     const d0 = axis.open;
     const d1 = axis.close;
     const plotW = width - LEFT - RIGHT;
@@ -84,7 +157,7 @@ export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
     // minute width (regular minutes are 3x wider than extended ones).
     const geo = pts.map((p) => {
       const x0 = sx(axis.toX(p.ms));
-      const x1 = sx(axis.toX(p.ms + 60_000));
+      const x1 = sx(axis.toX(p.ms + k * 60_000));
       return { cx: (x0 + x1) / 2, w: Math.max(1, (x1 - x0) * 0.7) };
     });
 
@@ -128,14 +201,14 @@ export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
       close: pts.length ? pts[pts.length - 1].c : null,
       volume: pts.reduce((s, p) => s + p.v, 0),
       trades: pts.reduce((s, p) => s + (p.n ?? 0), 0),
-      minutesTraded: pts.length,
+      minutesTraded: raw.length,
     };
 
-    return { pts, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi };
-  }, [bars, prevClose, width, height]);
+    return { pts, k, auto, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi };
+  }, [bars, prevClose, width, height, choice]);
 
   if (!bars.length) return null;
-  const { pts, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats } = m;
+  const { pts, k, auto, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats } = m;
   if (!pts.length) {
     return <p className="empty-state chart-empty-state">No regular-session trades this day (extended hours only).</p>;
   }
@@ -170,6 +243,23 @@ export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
   return (
     <div className="candle-chart" ref={wrapRef}>
       <div className="candle-stats">
+        <select
+          className="candle-interval"
+          value={choice}
+          onChange={(e) => {
+            setHover(null);
+            setChoice(e.target.value === "auto" ? "auto" : (Number(e.target.value) as Interval));
+          }}
+          title={`Auto picks the finest interval where at least ${AUTO_MIN_COVERAGE * 100}% of slots traded and the session fits in ${AUTO_MAX_CANDLES} candles or fewer. Here: ${Math.round(auto.coverage * 100)}% of ${auto.k}-min slots traded.`}
+          aria-label="Candle interval"
+        >
+          <option value="auto">Auto ({auto.k}m)</option>
+          {INTERVALS.map((iv) => (
+            <option key={iv} value={iv}>
+              {iv}m
+            </option>
+          ))}
+        </select>
         <span>Open <b>{stats.open != null ? fmtPrice(stats.open) : "—"}</b></span>
         <span>High <b>{stats.high != null ? fmtPrice(stats.high) : "—"}</b></span>
         <span>Low <b>{stats.low != null ? fmtPrice(stats.low) : "—"}</b></span>
@@ -239,7 +329,7 @@ export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
       </div>
       {hp && hover != null && (
         <div className="candle-tip" style={{ left: Math.min(Math.max(geo[hover].cx + 12, 0), width - 190) }}>
-          <div className="candle-tip-when">{etTimeLabel(hp.ms)}</div>
+          <div className="candle-tip-when">{etTimeLabel(hp.ms)}{k > 1 ? ` · ${k}-min` : ""}</div>
           <div>O {fmtPrice(hp.o)} · H {fmtPrice(hp.h)}</div>
           <div>L {fmtPrice(hp.l)} · C {fmtPrice(hp.c)}</div>
           <div>vs prev close {change(hp.c)}</div>
