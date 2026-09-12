@@ -5,15 +5,13 @@ import { TrackingPanel } from "../components/TrackingPanel";
 import { TriggerFeed } from "../components/TriggerFeed";
 import { TopMovers } from "../components/TopMovers";
 import { SymbolSearch } from "../components/SymbolSearch";
-import logo from "../assets/SS_SingleLine_Logo.png";
+import { BrandHomeLink } from "../components/BrandHomeLink";
 
 export function Dashboard() {
   return (
     <div className="page">
       <header className="page-header">
-        <Link to="/" className="brand-logo-link" aria-label="Home">
-          <img src={logo} alt="StackSlash" className="brand-logo" />
-        </Link>
+        <BrandHomeLink />
         <SymbolSearch />
         <div className="header-actions">
           <Link to="/isolator" className="link-button">
