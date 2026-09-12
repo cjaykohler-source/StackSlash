@@ -514,7 +514,8 @@ three are built:
 3. **Standing data-integrity checks (built).** `check_data_integrity()`
    does one materialised pass over `bars_daily` — gaps, split scale
    breaks, implausible prices, partial OHLC, stale symbols — and
-   `data-integrity-check.ts` (nightly 23:45 UTC) records to
+   `data-integrity-check.ts` (nightly, 19:45 America/New_York, via launchd
+   on the worker host — see `scripts/launchd/`) records to
    `data_quality_issues` and alerts **only on regressions**, since ~736
    legitimately gappy symbols is not news but 900 tomorrow is.
    `fetchAllPaginated()` retires the hand-rolled `.range()` loop.

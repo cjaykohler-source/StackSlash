@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.data-integrity-check</string>
+
+    <!-- Runs data-integrity-check on this always-on host. Each run takes
+         ~40s, past Netlify's scheduled-function limit, and Netlify
+         re-invoked it three times on its first night. Edit the paths if
+         the repo isn't at /Users/ckohler/StackSlash on this machine. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/scripts/run-data-integrity-check.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+
+    <!-- 19:45 every day. The host is on America/New_York and
+         StartCalendarInterval uses LOCAL time: 23:45 UTC in daylight time,
+         00:45 UTC in standard time. Either way it runs after the last
+         nightly writer (refresh-intraday-volume-profile, 23:35 UTC), so it
+         audits the day's final state. -->
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>45</integer></dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-data-integrity-check/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-data-integrity-check/launchd.err.log</string>
+</dict>
+</plist>

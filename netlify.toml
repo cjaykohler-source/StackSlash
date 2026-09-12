@@ -135,12 +135,11 @@
 [functions."record-fire-outcomes"]
   schedule = "10 23 * * 1-5"
 
-# data-integrity-check: 23:45 UTC daily — last job of the night, after
-# every writer (eod-scan, prunes, fire-outcomes) has finished, so it
-# audits the day's final state. Alerts only on regressions against the
-# previous run; see the function's own header.
-[functions."data-integrity-check"]
-  schedule = "45 23 * * *"
+# data-integrity-check is NOT scheduled here: it runs on the worker host
+# via launchd (scripts/launchd/com.stackslash.data-integrity-check.plist,
+# 19:45 America/New_York nightly). A run takes ~40s, past Netlify's
+# scheduled-function limit, and Netlify re-invoked it three times on its
+# first night (2026-09-11).
 
 # refresh-spread-estimates is NOT scheduled here: it runs inside Postgres
 # as a pg_cron job (Sundays 07:00 UTC, public.run_refresh_spread_estimates_job(),
