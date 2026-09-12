@@ -265,51 +265,57 @@ export function SymbolDetail() {
           {ticker && <SymbolQuote quote={quotes.get(ticker)} />}
           <CompanyDescription name={symbolName} />
         </div>
-        <Link to="/" className="link-button">← Back to feed</Link>
-      </header>
-
-      <section>
-        <div className="range-toggle">
-          {RANGE_OPTIONS.map((opt) => (
-            <button
-              key={opt.key}
-              className={opt.key === range ? "active" : ""}
-              onClick={() => setRange(opt.key)}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        {range === "session" && (
-          <div className="session-picker">
-            <button
-              onClick={() => candles?.session_date && setSessionDate(stepWeekday(candles.session_date, -1))}
-              disabled={!candles?.session_date}
-              aria-label="Previous session"
-            >
-              ◀
-            </button>
-            <input
-              type="date"
-              value={candles?.session_date ?? sessionDate ?? ""}
-              max={new Date().toISOString().slice(0, 10)}
-              onChange={(e) => e.target.value && setSessionDate(e.target.value)}
-            />
-            <button
-              onClick={() => candles?.session_date && setSessionDate(stepWeekday(candles.session_date, 1))}
-              disabled={!candles?.session_date}
-              aria-label="Next session"
-            >
-              ▶
-            </button>
-            <button onClick={() => setSessionDate(null)} className={sessionDate === null ? "active" : ""}>
-              Latest
-            </button>
+        {/* Chart controls live top-right, beside the name/price/description,
+            so the chart itself starts right under the header. */}
+        <div className="symbol-header-controls">
+          <Link to="/" className="link-button">← Back to feed</Link>
+          <div className="range-toggle">
+            {RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                className={opt.key === range ? "active" : ""}
+                onClick={() => setRange(opt.key)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {range === "session" && (
+            <div className="session-picker">
+              <button
+                onClick={() => candles?.session_date && setSessionDate(stepWeekday(candles.session_date, -1))}
+                disabled={!candles?.session_date}
+                aria-label="Previous session"
+              >
+                ◀
+              </button>
+              <input
+                type="date"
+                value={candles?.session_date ?? sessionDate ?? ""}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => e.target.value && setSessionDate(e.target.value)}
+              />
+              <button
+                onClick={() => candles?.session_date && setSessionDate(stepWeekday(candles.session_date, 1))}
+                disabled={!candles?.session_date}
+                aria-label="Next session"
+              >
+                ▶
+              </button>
+              <button onClick={() => setSessionDate(null)} className={sessionDate === null ? "active" : ""}>
+                Latest
+              </button>
+            </div>
+          )}
+          {range === "session" && (
             <span className="session-picker-note">
               SIP consolidated tape, 1-min bars{candles?.delayed ? " · in progress, 15-min delayed" : ""}
             </span>
-          </div>
-        )}
+          )}
+        </div>
+      </header>
+
+      <section>
         {loading ? (
           <p className="empty-state chart-empty-state">Loading…</p>
         ) : range === "session" ? (
