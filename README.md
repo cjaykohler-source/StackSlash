@@ -155,8 +155,11 @@ Keep this list current: add anything left outstanding, strike it when done.
   dropdown 1/2/5/10/15m; **Auto** picks the finest interval where ≥75% of
   slots traded and the session fits in ≤200 candles (liquid names → 2m,
   thin names → 15m). Verified in the browser on SOFI and AENT.
-- [ ] Symbol page header wraps on long company names and pushes the range
-  tabs down a row (cosmetic).
+- [x] Symbol page header no longer pushes the range tabs down on long
+  company names (#70): chart controls moved to the header's top-right
+  column, and the candle pane grew 15% (455px) with volume unchanged.
+  Small leftover: below 760px the range tabs stay right-aligned while the
+  date row is left-aligned.
 - [ ] The symbol page only opens tickers in the `symbols` table; the
   `session-candles` function works for any Alpaca ticker, including
   delisted research-universe names, if the page should browse those.
