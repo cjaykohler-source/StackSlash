@@ -88,6 +88,65 @@ below for the full derivation, every number, and every bug found along
 the way — worth reading before changing any trigger or exit logic,
 so the next attempt doesn't re-discover the same dead ends.
 
+## Open items (to-do)
+
+Keep this list current: add anything left outstanding, strike it when done.
+
+**Needs a decision or hands-on action**
+- [ ] **Run the stale `trigger_stats` cleanup** once the 50-chunk post-#54
+  backtest finishes. The check-then-delete SQL is in the #59 comments (rows
+  with `computed_at` before `2026-09-11 22:50:44+00`). DELETEs are run by
+  hand.
+- [ ] **Local branch `readme-session-handoff`**, an older branch predating
+  this session: merge, PR, or delete.
+- [ ] **`catalyst_momentum` is disabled, definition kept** (net PF 0.779 on
+  the cost model). Re-enable only on new evidence.
+- [ ] **Free-tier downgrade** ("The plan forward" step 4) not started.
+- [ ] **Check `#heating_up`** for how many Discord alerts the 2026-09-11
+  triple integrity run sent (inferred one; alerts aren't logged).
+
+**Verify on first scheduled run**
+- [ ] `pg_cron` `refresh-spread-estimates`, Sunday 07:00 UTC: expect a
+  `job_runs` row with status `ok`.
+- [ ] `launchd` `com.stackslash.data-integrity-check`, 19:45 ET nightly:
+  expect one `job_runs` row per night, not three.
+
+**Measurement / data**
+- [ ] **Production bars are IEX-only** (`feed: "iex"` in `lib/alpaca.ts`).
+  Quantify against the SIP research tables, then decide on moving
+  `bars_daily` to SIP. Every volume, RVOL, dollar-volume floor and the 25x
+  flag is computed from IEX's slice of the tape.
+- [ ] **Survivorship**: the production universe is today's listings only;
+  the SIP research tables include delisted names. Backtests should move to
+  that universe.
+- [ ] **Ticker reuse** (e.g. BBBY) splices two companies into one SIP
+  series; needs detection before research relies on per-symbol history.
+- [ ] **Spread model**: Corwin-Schultz is near-flat across price; calibrate
+  against real quotes.
+- [ ] **`sim-intraday-flips`**: five audited defects, none fixed (see
+  "Standing cautions").
+- [ ] `load_from_supabase.py` stores `bars_daily.date` as VARCHAR; store a
+  real DATE.
+- [ ] `confluenceGate.ts` fallbacks have drifted from `scan_config`.
+- [ ] Reports live-vs-backtest panel is unbuilt.
+
+**Research pipeline (in progress)**
+- [ ] Full SIP minute-bar pull (`research/load_minute_bars.py`), band
+  names first, ~4-6 days; then `--reconcile` for 100% minute-vs-daily
+  coverage.
+- [ ] **Schema tester**: define a pattern over minute bars up to minute t
+  and backtest it on seeded random samples of symbol-sessions, in tiers of
+  **2,500 / 50,000 / 250,000 / 1,000,000 / full year / entire DB**. Each
+  tier draws sessions the previous tiers didn't; promotion on the
+  confidence interval's lower bound beating the base rate net of costs;
+  every run retained and resumable. Iterate on 2016-2021 only; 2022+ is a
+  sealed holdout, and "entire DB" is an explicit one-shot tier.
+- [ ] **Session snapshot charts** (once the tester works): candlestick bars
+  with a bottom-aligned volume histogram for each symbol-session, a full
+  picture of the day for brainstorming patterns.
+- [ ] Remove the `~/StackSlash-reset` worktree and `batch-backtest-reset`
+  branch once the backtest finishes.
+
 ## Infrastructure, as deployed right now
 
 | Piece | Where | Status |

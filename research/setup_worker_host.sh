@@ -38,7 +38,7 @@ else
   echo "research/.venv already exists"
 fi
 research/.venv/bin/pip install -q --upgrade pip
-research/.venv/bin/pip install -q duckdb pyarrow requests
+research/.venv/bin/pip install -q duckdb pyarrow requests numpy
 research/.venv/bin/python -c "import duckdb, pyarrow; print(f'duckdb {duckdb.__version__} | pyarrow {pyarrow.__version__}')"
 
 if [ ! -f .env ]; then
