@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { TRIGGER_INFO, triggerLabel, triggerCategoryLabel } from "../lib/triggerInfo";
+import { BrandHomeLink } from "../components/BrandHomeLink";
 
 interface TriggerRow {
   name: string;
@@ -49,9 +49,9 @@ export function About() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>About the Triggers</h1>
-        <Link to="/">← back to feed</Link>
+        <BrandHomeLink />
       </header>
+      <h2>About the Triggers</h2>
 
       <p className="about-intro">
         Every alert on this dashboard comes from one of the triggers below. Each one fires under different

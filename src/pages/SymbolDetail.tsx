@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { DossierCard } from "../components/DossierCard";
 import { SymbolProfile } from "../components/SymbolProfile";
@@ -9,6 +9,7 @@ import { PriceChart, type PricePoint } from "../components/PriceChart";
 import { SymbolNews } from "../components/SymbolNews";
 import { sessionAxis, type SessionAxis } from "../lib/marketTime";
 import { SessionCandleChart, type Candle } from "../components/SessionCandleChart";
+import { BrandHomeLink } from "../components/BrandHomeLink";
 
 type Range = "day" | "session" | "week" | "month" | "year" | "max";
 
@@ -258,6 +259,7 @@ export function SymbolDetail() {
     <div className="page">
       <header className="page-header">
         <div className="symbol-header-title">
+          <BrandHomeLink />
           <h1>
             {ticker}
             {symbolName && <span className="symbol-company-name"> ({symbolName})</span>}
@@ -268,7 +270,6 @@ export function SymbolDetail() {
         {/* Chart controls live top-right, beside the name/price/description,
             so the chart itself starts right under the header. */}
         <div className="symbol-header-controls">
-          <Link to="/" className="link-button">← Back to feed</Link>
           <div className="range-toggle">
             {RANGE_OPTIONS.map((opt) => (
               <button

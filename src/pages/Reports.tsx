@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { triggerLabel } from "../lib/triggerInfo";
 import { TriggerFeed } from "../components/TriggerFeed";
+import { BrandHomeLink } from "../components/BrandHomeLink";
 
 interface RawEvent {
   symbol_id: number;
@@ -366,9 +366,9 @@ export function Reports() {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>Reports</h1>
-        <Link to="/">← back to feed</Link>
+        <BrandHomeLink />
       </header>
+      <h2>Reports</h2>
 
       <div className="report-controls">
         <input

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import logo from "../assets/SS_SingleLine_Logo.png";
+import { BrandHomeLink } from "../components/BrandHomeLink";
 
 interface ScanConfig {
   price_min: number;
@@ -115,14 +114,7 @@ export function Settings() {
   return (
     <div className="page">
       <header className="page-header">
-        <Link to="/" className="brand-logo-link" aria-label="Home">
-          <img src={logo} alt="StackSlash" className="brand-logo" />
-        </Link>
-        <div className="header-actions">
-          <Link to="/" className="link-button">
-            ← Dashboard
-          </Link>
-        </div>
+        <BrandHomeLink />
       </header>
 
       <h2>Targeting band</h2>
