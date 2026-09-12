@@ -55,6 +55,7 @@ DATA = REPO / "research" / "data"
 WAREHOUSE = DATA / "stackslash.duckdb"
 LOG_DB = DATA / "minute_log.duckdb"
 MINUTE_DIR = DATA / "minute"
+PLAN_PARQUET = DATA / "minute_units.parquet"
 
 BARS = "https://data.alpaca.markets/v2/stocks/bars"
 PAGE_LIMIT = 10000
@@ -341,6 +342,12 @@ def main():
         plan(log)
         if args.plan:
             return
+    # Other processes can't open minute_log.duckdb while this one holds its
+    # write lock (DuckDB refuses even read-only). Export the fixed plan so
+    # readers can tell which units are loaded from the files on disk alone:
+    # a unit's Parquet exists only after write-then-rename completes.
+    if not PLAN_PARQUET.exists():
+        log.execute(f"copy minute_units to '{PLAN_PARQUET}' (format parquet)")
     env = load_env()
     run_units(log, Alpaca(env["ALPACA_API_KEY_ID"], env["ALPACA_API_SECRET_KEY"]), args.max_units)
     log.close()
