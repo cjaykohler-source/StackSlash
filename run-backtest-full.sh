@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-off: full 5-year / ~5,000-symbol backtest-triggers run, chunked by
-# quarter to stay under any single-call timeout. Run from the mini
+# month to stay under any single-call timeout. Run from the mini
 # (stackslash-worker-host), inside its repo clone, on main, after
 # `git pull`. NOT meant to be run from a laptop (see README's
 # HTTP/2 session-timeout note).
@@ -22,19 +22,30 @@ set -a && . ./.env && set +a
 
 START_CHUNK="${START_CHUNK:-1}"
 
-# Chunks 1-5 (quarterly, through 2022-12-10) already ran clean and are
-# kept as-is so resuming with a saved START_CHUNK still lines up. From
-# chunk 6 on, every quarterly attempt consistently hit an HTTP/2 GOAWAY
-# at ~10 minutes wall time (9m52s-9m58s across 3 retries) — a hard local
-# session/idle limit, not transient flakiness. Switched to monthly
-# chunks from here so each run finishes well under that wall (chunk 5,
-# a quarter, finished in 8m50s — a month should land around ~3min).
+# Every chunk is one month. Quarterly chunks hit an HTTP/2 GOAWAY at ~10
+# minutes wall time (9m52s-9m58s across retries) — a hard local session
+# limit, not flakiness. The first five were left quarterly for a while
+# because they had once finished (the last in 8m50s), but that margin was
+# too thin: on 2026-09-12 quarterly chunk 5 (2022-09-10 -> 2022-12-10, the
+# first with real evaluations after the 260-bar warm-up) failed 3/3 on
+# GOAWAY. Monthly chunks land around ~3-5 min. Chunk numbers changed with
+# this edit, so a START_CHUNK saved from an older run no longer lines up.
 CHUNKS=(
-  "2021-09-10:2021-12-10"
-  "2021-12-10:2022-03-10"
-  "2022-03-10:2022-06-10"
-  "2022-06-10:2022-09-10"
-  "2022-09-10:2022-12-10"
+  "2021-09-10:2021-10-10"
+  "2021-10-10:2021-11-10"
+  "2021-11-10:2021-12-10"
+  "2021-12-10:2022-01-10"
+  "2022-01-10:2022-02-10"
+  "2022-02-10:2022-03-10"
+  "2022-03-10:2022-04-10"
+  "2022-04-10:2022-05-10"
+  "2022-05-10:2022-06-10"
+  "2022-06-10:2022-07-10"
+  "2022-07-10:2022-08-10"
+  "2022-08-10:2022-09-10"
+  "2022-09-10:2022-10-10"
+  "2022-10-10:2022-11-10"
+  "2022-11-10:2022-12-10"
   "2022-12-10:2023-01-10"
   "2023-01-10:2023-02-10"
   "2023-02-10:2023-03-10"
