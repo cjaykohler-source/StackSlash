@@ -67,6 +67,11 @@ ADJUSTMENTS = ("raw", "split")
 # Uppercase letter first, then letters/digits and the class/unit
 # separators Alpaca uses (BRK.B, and / or - on some units and warrants).
 TICKER_RE = "[A-Z][A-Z0-9./-]*"
+BAR_SCHEMA = pa.schema([
+    ("symbol", pa.string()), ("date", pa.date32()),
+    ("open", pa.float64()), ("high", pa.float64()), ("low", pa.float64()), ("close", pa.float64()),
+    ("volume", pa.int64()), ("trade_count", pa.int64()), ("vwap", pa.float64()),
+])
 
 
 def load_env() -> dict:
@@ -293,7 +298,10 @@ def load_bars(con, api: Alpaca, symbols: list[str], adjustment: str, end: str):
             if rejected:
                 print(f"  batch {i}: API rejected {len(rejected)} symbol(s): {', '.join(rejected[:10])}", flush=True)
             if rows:
-                arrow = pa.table({k: [r[k] for r in rows] for k in rows[0]})
+                # Explicit schema, never inferred: Alpaca has returned a
+                # volume/trade_count of ~2.65e18 (vendor garbage), which fits
+                # int64 but crashed inference once the column went double.
+                arrow = pa.Table.from_pylist(rows, schema=BAR_SCHEMA)
                 con.register("_bars", arrow)
                 # Delete-then-insert keeps a batch idempotent if a previous
                 # run died after writing bars but before logging the batch.

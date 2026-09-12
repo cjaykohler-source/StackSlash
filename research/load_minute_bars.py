@@ -155,7 +155,7 @@ def plan(log):
                sum(least(coalesce(d.trade_count, {MAX_BARS_PER_SESSION}), {MAX_BARS_PER_SESSION})) as est_bars
         from sip_bars_daily_raw d left join band b on b.symbol = d.symbol
         group by 1, 2, 3
-        order by priority desc, month, symbol"""
+        order by 3 desc, 1, 2"""
     ).fetchall()
     wh.close()
 
