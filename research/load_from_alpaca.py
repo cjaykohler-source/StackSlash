@@ -244,13 +244,17 @@ def fetch_batch(api: Alpaca, symbols: list[str], adjustment: str, end: str) -> t
                         # expressed in UTC (04:00/05:00Z), so the UTC date
                         # is the session date.
                         "date": date.fromisoformat(b["t"][:10]),
-                        "open": b["o"],
-                        "high": b["h"],
-                        "low": b["l"],
-                        "close": b["c"],
+                        # Coerce every value explicitly. Alpaca has returned a
+                        # JSON integer of ~2.65e18 in a float field; letting
+                        # pyarrow convert it trips its exact-double check.
+                        # The garbage value is kept, to be flagged downstream.
+                        "open": float(b["o"]),
+                        "high": float(b["h"]),
+                        "low": float(b["l"]),
+                        "close": float(b["c"]),
                         "volume": int(b["v"]),
-                        "trade_count": b.get("n"),
-                        "vwap": b.get("vw"),
+                        "trade_count": int(b["n"]) if b.get("n") is not None else None,
+                        "vwap": float(b["vw"]) if b.get("vw") is not None else None,
                     }
                 )
         token = body.get("next_page_token")

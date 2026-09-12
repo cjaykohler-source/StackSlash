@@ -206,8 +206,12 @@ def fetch_unit(api: Alpaca, symbols: list[str], month) -> tuple[list[dict], int,
                         out.append({
                             "symbol": sym,
                             "ts": datetime.fromisoformat(b["t"].replace("Z", "+00:00")),
-                            "open": b["o"], "high": b["h"], "low": b["l"], "close": b["c"],
-                            "volume": int(b["v"]), "trade_count": b.get("n"), "vwap": b.get("vw"),
+                            # Explicit coercion: Alpaca can put a ~2.65e18 JSON
+                            # integer in a float field (seen in daily bars).
+                            "open": float(b["o"]), "high": float(b["h"]), "low": float(b["l"]), "close": float(b["c"]),
+                            "volume": int(b["v"]),
+                            "trade_count": int(b["n"]) if b.get("n") is not None else None,
+                            "vwap": float(b["vw"]) if b.get("vw") is not None else None,
                         })
                 token = body.get("next_page_token")
                 if not token:

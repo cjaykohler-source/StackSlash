@@ -1,0 +1,23 @@
+{
+  "name": "example_gap_vwap",
+  "notes": "Illustrative only: a band name that gapped up, is holding above VWAP, and just printed a volume spike. Enter at the next bar's open.",
+  "universe": {
+    "price_min": 0.10,
+    "price_max": 5.00,
+    "min_dollar_vol_20d": 50000,
+    "exchanges": ["NYSE", "NASDAQ", "AMEX", "ARCA", "BATS"],
+    "include_delisted": true
+  },
+  "window": {"start": "09:35", "end": "15:00"},
+  "entry": {
+    "all": [
+      {"field": "gap_pct", "op": ">=", "value": 0.05},
+      {"field": "dist_vwap", "op": ">", "value": 0},
+      {"field": "bar_vol_spike", "op": ">=", "value": 3},
+      {"field": "close", "op": ">", "field2": "open"}
+    ]
+  },
+  "first_match_only": true,
+  "exit": {"horizons_min": [5, 15, 30, 60], "stop_pct": 0.05, "target_pct": 0.10},
+  "cost": {"flat_pct": 0.01}
+}
