@@ -147,11 +147,21 @@ Keep this list current: add anything left outstanding, strike it when done.
   2016-2021 is for iteration; the 2022+ holdout needs `--holdout` and is
   one-shot per schema version. Until the minute pull finishes, tiers draw
   only from sessions whose minute data is on disk.
-- [ ] **Session snapshot charts** (once the tester works): candlestick bars
-  with a bottom-aligned volume histogram for each symbol-session, a full
-  picture of the day for brainstorming patterns.
-- [ ] Remove the `~/StackSlash-reset` worktree and `batch-backtest-reset`
-  branch once the backtest finishes.
+- [x] **Session snapshot charts built** (#65-#67): symbol page → **Session
+  (candles)**. SIP 1-minute bars for any date since 2016 via the
+  on-demand `session-candles` function, drawn as regular-session candles
+  (9:30a-4:00p) with bottom-aligned volume, VWAP and the prior close, a
+  crosshair tooltip, prev/next session and a date picker. Interval
+  dropdown 1/2/5/10/15m; **Auto** picks the finest interval where ≥75% of
+  slots traded and the session fits in ≤200 candles (liquid names → 2m,
+  thin names → 15m). Verified in the browser on SOFI and AENT.
+- [ ] Symbol page header wraps on long company names and pushes the range
+  tabs down a row (cosmetic).
+- [ ] The symbol page only opens tickers in the `symbols` table; the
+  `session-candles` function works for any Alpaca ticker, including
+  delisted research-universe names, if the page should browse those.
+- [x] Removed the `~/StackSlash-reset` worktree and `batch-backtest-reset`
+  branch.
 
 ## Infrastructure, as deployed right now
 
