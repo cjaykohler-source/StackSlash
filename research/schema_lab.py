@@ -235,12 +235,22 @@ def sample_sessions(con, schema: dict, period: str, tier: str, seed: int, offset
 
 
 def loaded_minute_months(con) -> None:
-    """Temp table of (symbol, month) whose minute bars are on disk."""
+    """
+    Temp table of (symbol, month) whose minute bars are on disk. Reads the
+    exported plan plus the Parquet files present, not minute_log.duckdb,
+    which the running loader holds locked. A unit's file only appears after
+    its write-then-rename completes, so presence means loaded.
+    """
+    if not PLAN_PARQUET.exists():
+        sys.exit(f"No {PLAN_PARQUET} — start load_minute_bars.py once to export its plan.")
+    loaded = [p.stem for p in MINUTE_DIR.glob("year=*/month=*/*.parquet")]
+    con.execute("create or replace temp table loaded_units (unit_id varchar)")
+    if loaded:
+        con.executemany("insert into loaded_units values (?)", [(u,) for u in loaded])
     con.execute(
-        """create or replace temp table minute_loaded as
-           select distinct unnest(string_split(u.symbols, ',')) as symbol, u.month
-           from ml.minute_units u join ml.minute_load_log l using (unit_id)
-           where l.bars > 0"""
+        f"""create or replace temp table minute_loaded as
+            select distinct unnest(string_split(u.symbols, ',')) as symbol, u.month
+            from read_parquet('{PLAN_PARQUET}') u join loaded_units using (unit_id)"""
     )
 
 
