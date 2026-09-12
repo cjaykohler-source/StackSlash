@@ -134,13 +134,19 @@ Keep this list current: add anything left outstanding, strike it when done.
 - [ ] Full SIP minute-bar pull (`research/load_minute_bars.py`), band
   names first, ~4-6 days; then `--reconcile` for 100% minute-vs-daily
   coverage.
-- [ ] **Schema tester**: define a pattern over minute bars up to minute t
-  and backtest it on seeded random samples of symbol-sessions, in tiers of
-  **2,500 / 50,000 / 250,000 / 1,000,000 / full year / entire DB**. Each
-  tier draws sessions the previous tiers didn't; promotion on the
-  confidence interval's lower bound beating the base rate net of costs;
-  every run retained and resumable. Iterate on 2016-2021 only; 2022+ is a
-  sealed holdout, and "entire DB" is an explicit one-shot tier.
+- [x] **Schema tester built: `research/schema_lab.py`.** A pattern is a
+  JSON file of conditions over 59 point-in-time fields
+  (`--list-fields`); see `research/schemas/example_gap_vwap.json`. Run it
+  on seeded samples in tiers of **2,500 / 50,000 / 250,000 / 1,000,000 /
+  `year:YYYY` / `all`**:
+  `research/.venv/bin/python research/schema_lab.py run SCHEMA --tier 2500 --seed 7`.
+  Tiers are disjoint by exclusion (a lineage never re-scores a session),
+  entries fill at the next bar's open, every run is scored against a
+  random-minute control net of costs with 90% bootstrap intervals, and
+  runs are retained and resumable (`runs`, `report RUN_ID`, `--resume`).
+  2016-2021 is for iteration; the 2022+ holdout needs `--holdout` and is
+  one-shot per schema version. Until the minute pull finishes, tiers draw
+  only from sessions whose minute data is on disk.
 - [ ] **Session snapshot charts** (once the tester works): candlestick bars
   with a bottom-aligned volume histogram for each symbol-session, a full
   picture of the day for brainstorming patterns.

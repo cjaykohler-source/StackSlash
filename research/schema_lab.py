@@ -54,8 +54,8 @@ import numpy as np
 REPO = Path(__file__).resolve().parent.parent
 DATA = REPO / "research" / "data"
 WAREHOUSE = DATA / "stackslash.duckdb"
-MINUTE_LOG = DATA / "minute_log.duckdb"
 MINUTE_DIR = DATA / "minute"
+PLAN_PARQUET = DATA / "minute_units.parquet"  # exported by load_minute_bars.py
 RUNS_DB = DATA / "schema_runs.duckdb"
 RUNS_DIR = DATA / "schema_runs"
 
@@ -207,31 +207,49 @@ def pool_sql(u: dict, period: str) -> str:
     """
 
 
-def sample_sessions(con, schema: dict, period: str, tier: str, seed: int, offset: int) -> tuple[int, int]:
-    """Materialise temp table `sampled(symbol, date, sample_rank)`; return (requested, pool_size)."""
+def sample_sessions(con, rc, schema: dict, period: str, tier: str, seed: int, lineage: str) -> tuple[int, int, int]:
+    """
+    Materialise temp table `sampled(symbol, date, sample_rank)` and return
+    (sampled, pool_size, pool_with_minute_data).
+
+    Disjointness is by EXCLUSION, not position: a sized tier takes the next
+    N sessions in md5(symbol|date|seed) order that (a) have minute data on
+    disk and (b) this lineage has never scored. So "2,500" means 2,500
+    sessions actually scored, sessions sampled before their minute data
+    arrived are not burned, and no tier ever re-scores a session an earlier
+    tier of the lineage saw. year:/all tiers take every ready session in
+    scope and are not part of the exclusion chain.
+    """
     con.execute(f"create or replace temp table pool as {pool_sql(schema.get('universe', {}), period)}")
     pool_n = con.execute("select count(*) from pool").fetchone()[0]
+    loaded_minute_months(con)
+    con.execute(
+        """create or replace temp table pool_ready as
+           select p.* from pool p join minute_loaded m
+             on m.symbol = p.symbol and m.month = date_trunc('month', p.date)::date"""
+    )
+    ready_n = con.execute("select count(*) from pool_ready").fetchone()[0]
     order = f"md5(symbol || '|' || date::varchar || '|{seed}')"
-    if tier.startswith("year:"):
-        year = int(tier.split(":")[1])
+    if tier.startswith("year:") or tier == "all":
+        scope = f"where year(date) = {int(tier.split(':')[1])}" if tier.startswith("year:") else ""
         con.execute(
             f"""create or replace temp table sampled as
                 select symbol, date, row_number() over (order by {order}) - 1 as sample_rank
-                from pool where year(date) = {year}"""
-        )
-    elif tier == "all":
-        con.execute(
-            f"create or replace temp table sampled as select symbol, date, row_number() over (order by {order}) - 1 as sample_rank from pool"
+                from pool_ready {scope}"""
         )
     else:
         n = TIERS.get(tier) or int(tier)
+        seen = rc.execute("select symbol, date from scored_sessions where lineage = ?", [lineage]).arrow()
+        con.register("seen_arrow", seen)
+        con.execute("create or replace temp table seen as select symbol, date from seen_arrow")
+        con.unregister("seen_arrow")
         con.execute(
             f"""create or replace temp table sampled as
-                select symbol, date, sample_rank from (
-                  select symbol, date, row_number() over (order by {order}) - 1 as sample_rank from pool
-                ) where sample_rank >= {offset} and sample_rank < {offset + n}"""
+                select symbol, date, row_number() over (order by {order}) - 1 as sample_rank
+                from (select * from pool_ready anti join seen using (symbol, date))
+                order by {order} limit {n}"""
         )
-    return con.execute("select count(*) from sampled").fetchone()[0], pool_n
+    return con.execute("select count(*) from sampled").fetchone()[0], pool_n, ready_n
 
 
 def loaded_minute_months(con) -> None:
@@ -573,6 +591,11 @@ def runs_con():
              pool_size bigint, sessions_with_bars bigint, events bigint, chunks_done integer, chunks_total integer,
              status varchar, summary_json varchar, created_at timestamptz, finished_at timestamptz)"""
     )
+    # Every session a sized tier has scored, per lineage (schema|seed|period):
+    # later tiers exclude these, which is what keeps tiers disjoint.
+    con.execute(
+        "create table if not exists scored_sessions (lineage varchar, symbol varchar, date date, run_id varchar)"
+    )
     return con
 
 
@@ -591,46 +614,36 @@ def cmd_run(args):
         if prior and not args.force:
             sys.exit(f"Schema v{shash} already has a holdout run ({prior[0]}). The holdout is one-shot; --force to override.")
 
-    # Disjoint tiers: continue after every sized tier this lineage already consumed.
-    offset = 0
-    if not args.tier.startswith("year:") and args.tier != "all":
-        offset = rc.execute(
-            "select coalesce(sum(sessions_sampled), 0) from runs where schema_name = ? and seed = ? and period = ? and tier not like 'year:%' and tier <> 'all'",
-            [name, args.seed, period],
-        ).fetchone()[0]
-
+    lineage = f"{name}|{args.seed}|{period}"
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     run_id = args.resume or f"{name}-{shash}-t{args.tier.replace(':', '')}-s{args.seed}-{stamp}"
     run_dir = RUNS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    sample_file = run_dir / "sampled.parquet"
 
     con = duckdb.connect()
     con.execute(f"attach '{WAREHOUSE}' as wh (read_only)")
-    con.execute(f"attach '{MINUTE_LOG}' as ml (read_only)")
     con.execute("set preserve_insertion_order = false")
+
     if args.resume:
-        row = rc.execute("select sample_offset from runs where run_id = ?", [run_id]).fetchone()
-        if not row:
-            sys.exit(f"No run {run_id} to resume")
-        offset = row[0]
-
-    sampled, pool_n = sample_sessions(con, schema, period, args.tier, args.seed, offset)
-    loaded_minute_months(con)
-    con.execute(
-        """create or replace temp table sampled_ready as
-           select s.* from sampled s join minute_loaded m
-             on m.symbol = s.symbol and m.month = date_trunc('month', s.date)::date"""
-    )
-    ready = con.execute("select count(*) from sampled_ready").fetchone()[0]
-    chunks_total = -(-ready // CHUNK) if ready else 0
-    print(f"Pool {pool_n:,} sessions ({period}); tier {args.tier} from offset {offset:,}: {sampled:,} sampled, "
-          f"{ready:,} have minute data loaded ({sampled - ready:,} not yet pulled — skipped, not substituted)")
-
-    if not args.resume:
+        # The sample is frozen at creation; recomputing it would now exclude
+        # this run's own already-scored chunks.
+        if not sample_file.exists():
+            sys.exit(f"No saved sample for {run_id} to resume")
+        con.execute(f"create or replace temp table sampled as select * from read_parquet('{sample_file}')")
+        sampled = con.execute("select count(*) from sampled").fetchone()[0]
+    else:
+        sampled, pool_n, ready_n = sample_sessions(con, rc, schema, period, args.tier, args.seed, lineage)
+        con.execute(f"copy sampled to '{sample_file}' (format parquet)")
+        print(f"Pool {pool_n:,} sessions ({period}); {ready_n:,} have minute data so far; "
+              f"tier {args.tier}: sampled {sampled:,} not previously scored by lineage '{lineage}'")
+        if TIERS.get(args.tier) and sampled < TIERS[args.tier]:
+            print(f"  only {sampled:,} ready sessions available for a {TIERS[args.tier]:,} tier — the minute pull hasn't reached more yet")
         rc.execute(
-            "insert into runs values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, 'running', null, now(), null)",
-            [run_id, name, shash, json.dumps(schema), args.seed, args.tier, period, offset, sampled, pool_n, chunks_total],
+            "insert into runs values (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0, 0, ?, 'running', null, now(), null)",
+            [run_id, name, shash, json.dumps(schema), args.seed, args.tier, period, sampled, pool_n, -(-sampled // CHUNK)],
         )
+    chunks_total = -(-sampled // CHUNK) if sampled else 0
 
     with_bars_total = events_total = 0
     for k in range(chunks_total):
@@ -638,7 +651,7 @@ def cmd_run(args):
         if part.exists() and (run_dir / f"control_{k:05d}.parquet").exists():
             continue  # resume: chunk already scored
         con.execute(
-            f"create or replace temp table chunk as select symbol, date from sampled_ready order by sample_rank limit {CHUNK} offset {k * CHUNK}"
+            f"create or replace temp table chunk as select symbol, date from sampled order by sample_rank limit {CHUNK} offset {k * CHUNK}"
         )
         months = con.execute("select distinct year(date), month(date) from chunk").fetchall()
         files = [str(MINUTE_DIR / f"year={y}" / f"month={m:02d}" / "*.parquet") for y, m in months]
@@ -650,6 +663,11 @@ def cmd_run(args):
         con.execute(f"copy ctl to '{run_dir / f'control_{k:05d}.parquet'}' (format parquet)")
         with_bars_total += wb
         events_total += ne
+        if not args.tier.startswith("year:") and args.tier != "all":
+            scored = con.execute("select symbol, date from chunk").arrow()
+            rc.register("scored_arrow", scored)
+            rc.execute("insert into scored_sessions select ?, symbol, date, ? from scored_arrow", [lineage, run_id])
+            rc.unregister("scored_arrow")
         rc.execute("update runs set chunks_done = ?, sessions_with_bars = sessions_with_bars + ?, events = events + ? where run_id = ?",
                    [k + 1, wb, ne, run_id])
         print(f"  chunk {k + 1}/{chunks_total}: {wb:,} sessions with bars, {ne:,} matches", flush=True)
