@@ -93,10 +93,10 @@ so the next attempt doesn't re-discover the same dead ends.
 Keep this list current: add anything left outstanding, strike it when done.
 
 **Needs a decision or hands-on action**
-- [ ] **Run the stale `trigger_stats` cleanup** once the 50-chunk post-#54
-  backtest finishes. The check-then-delete SQL is in the #59 comments (rows
-  with `computed_at` before `2026-09-11 22:50:44+00`). DELETEs are run by
-  hand.
+- [x] **Stale `trigger_stats` cleanup** done 2026-09-12: 21 rows older than
+  the full regeneration's start (`2026-09-12 02:30:05+00`) deleted, all
+  from the four disabled triggers plus the 0-sample
+  `earnings_surprise_drift`.
 - [ ] **Local branch `readme-session-handoff`**, an older branch predating
   this session: merge, PR, or delete.
 - [ ] **`catalyst_momentum` is disabled, definition kept** (net PF 0.779 on
