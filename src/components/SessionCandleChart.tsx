@@ -49,7 +49,7 @@ function niceStep(span: number, target: number): number {
  * Plain SVG rather than recharts: recharts has no candlestick, and a
  * session is at most ~960 bars, so direct drawing stays light.
  */
-export function SessionCandleChart({ bars, prevClose, height = 480 }: Props) {
+export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<number | null>(null);
@@ -63,15 +63,22 @@ export function SessionCandleChart({ bars, prevClose, height = 480 }: Props) {
   }, []);
 
   const m = useMemo(() => {
-    const pts = bars.map((b) => ({ ...b, ms: Date.parse(b.t) })).sort((a, b) => a.ms - b.ms);
-    const axis = sessionAxis(pts[0]?.ms ?? Date.now());
-    const [d0, d1] = axis.domain;
-    const plotW = width - LEFT - RIGHT;
-    const sx = (u: number) => LEFT + ((u - d0) / (d1 - d0)) * plotW;
+    const all = bars.map((b) => ({ ...b, ms: Date.parse(b.t) })).sort((a, b) => a.ms - b.ms);
+    const axis = sessionAxis(all[0]?.ms ?? Date.now());
     const isRegular = (ms: number) => {
       const u = axis.toX(ms);
       return u >= axis.open && u < axis.close;
     };
+    // Regular session only (9:30a-4:00p): the session-candles function also
+    // returns pre-market and after-hours bars, which this view leaves out.
+    const pts = all.filter((p) => isRegular(p.ms));
+    const d0 = axis.open;
+    const d1 = axis.close;
+    const plotW = width - LEFT - RIGHT;
+    const sx = (u: number) => LEFT + ((u - d0) / (d1 - d0)) * plotW;
+    // Hourly ticks inside the session, plus the 9:30 open.
+    const ticks = [d0, ...axis.ticks.filter((u) => u > d0 && u <= d1)];
+    const tickLabels: Record<number, string> = { ...axis.tickLabels, [d0]: "9:30a" };
 
     // Each bar covers [t, t+60s); centre it there and size it to the local
     // minute width (regular minutes are 3x wider than extended ones).
@@ -114,25 +121,24 @@ export function SessionCandleChart({ bars, prevClose, height = 480 }: Props) {
     const yTicks: number[] = [];
     for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) yTicks.push(v);
 
-    const reg = pts.filter((p) => isRegular(p.ms));
     const stats = {
-      open: reg[0]?.o ?? null,
-      high: reg.length ? Math.max(...reg.map((p) => p.h)) : null,
-      low: reg.length ? Math.min(...reg.map((p) => p.l)) : null,
-      close: reg.length ? reg[reg.length - 1].c : null,
-      last: pts.length ? pts[pts.length - 1].c : null,
+      open: pts[0]?.o ?? null,
+      high: pts.length ? Math.max(...pts.map((p) => p.h)) : null,
+      low: pts.length ? Math.min(...pts.map((p) => p.l)) : null,
+      close: pts.length ? pts[pts.length - 1].c : null,
       volume: pts.reduce((s, p) => s + p.v, 0),
-      regVolume: reg.reduce((s, p) => s + p.v, 0),
-      preVolume: pts.filter((p) => axis.toX(p.ms) < axis.open).reduce((s, p) => s + p.v, 0),
       trades: pts.reduce((s, p) => s + (p.n ?? 0), 0),
-      minutesTraded: reg.length,
+      minutesTraded: pts.length,
     };
 
-    return { pts, axis, sx, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi };
+    return { pts, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi };
   }, [bars, prevClose, width, height]);
 
   if (!bars.length) return null;
-  const { pts, axis, sx, geo, volH, volBase, py, maxV, vwap, yTicks, stats } = m;
+  const { pts, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats } = m;
+  if (!pts.length) {
+    return <p className="empty-state chart-empty-state">No regular-session trades this day (extended hours only).</p>;
+  }
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
@@ -169,25 +175,17 @@ export function SessionCandleChart({ bars, prevClose, height = 480 }: Props) {
         <span>Low <b>{stats.low != null ? fmtPrice(stats.low) : "—"}</b></span>
         <span>Close <b>{stats.close != null ? fmtPrice(stats.close) : "—"}</b> <em>{change(stats.close)}</em></span>
         <span>Gap <b>{change(stats.open)}</b></span>
-        <span>Volume <b>{fmtVol(stats.volume)}</b> <em>pre {fmtVol(stats.preVolume)}</em></span>
+        <span>Volume <b>{fmtVol(stats.volume)}</b></span>
         <span>Trades <b>{stats.trades.toLocaleString()}</b></span>
         <span>Minutes traded <b>{stats.minutesTraded}/390</b></span>
       </div>
       <svg width={width} height={height} onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img"
            aria-label="Session candlestick chart with volume">
-        {/* extended-hours shading */}
-        <rect x={sx(axis.domain[0])} y={TOP} width={sx(axis.open) - sx(axis.domain[0])} height={volBase - TOP} className="cc-ext" />
-        <rect x={sx(axis.close)} y={TOP} width={sx(axis.domain[1]) - sx(axis.close)} height={volBase - TOP} className="cc-ext" />
-
         {yTicks.map((v) => (
           <g key={v}>
             <line x1={LEFT} x2={width - RIGHT} y1={py(v)} y2={py(v)} className="cc-grid" />
             <text x={width - RIGHT + 6} y={py(v) + 4} className="cc-label">{fmtPrice(v)}</text>
           </g>
-        ))}
-
-        {[axis.open, axis.close].map((u) => (
-          <line key={u} x1={sx(u)} x2={sx(u)} y1={TOP} y2={volBase} className="cc-divider" />
         ))}
 
         {prevClose != null && (
@@ -221,8 +219,8 @@ export function SessionCandleChart({ bars, prevClose, height = 480 }: Props) {
 
         {vwapPath && <path d={vwapPath} className="cc-vwap" />}
 
-        {axis.ticks.map((u) => (
-          <text key={u} x={sx(u)} y={height - 6} textAnchor="middle" className="cc-label">{axis.tickLabels[u]}</text>
+        {ticks.map((u, i) => (
+          <text key={u} x={m.sx(u)} y={height - 6} textAnchor={i === 0 ? "start" : "middle"} className="cc-label">{tickLabels[u]}</text>
         ))}
         <text x={width - RIGHT + 6} y={volBase - volH + 10} className="cc-label">{fmtVol(maxV)}</text>
 
@@ -237,7 +235,7 @@ export function SessionCandleChart({ bars, prevClose, height = 480 }: Props) {
       <div className="candle-legend">
         <span className="cc-key cc-key-vwap">VWAP (regular session)</span>
         <span className="cc-key cc-key-prev">prior close</span>
-        <span className="cc-key cc-key-ext">extended hours (compressed)</span>
+        <span className="cc-legend-note">regular session 9:30a–4:00p ET</span>
       </div>
       {hp && hover != null && (
         <div className="candle-tip" style={{ left: Math.min(Math.max(geo[hover].cx + 12, 0), width - 190) }}>
