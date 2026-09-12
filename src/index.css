@@ -48,6 +48,41 @@ body {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  flex: 1 1 320px;
+}
+/* Symbol page: chart controls sit top-right beside the name/price block.
+   The title column shrinks (long company names wrap within it) rather
+   than pushing the controls onto their own row. */
+.page-header:has(.symbol-header-controls) {
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
+.symbol-header-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex: 0 1 auto;
+}
+.symbol-header-controls .range-toggle {
+  margin-bottom: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.symbol-header-controls .session-picker {
+  margin: 0;
+  justify-content: flex-end;
+}
+.symbol-header-controls .session-picker-note {
+  margin-left: 0;
+}
+@media (max-width: 760px) {
+  .page-header:has(.symbol-header-controls) {
+    flex-wrap: wrap;
+  }
+  .symbol-header-controls {
+    align-items: flex-start;
+  }
 }
 .symbol-company-name {
   color: var(--text-dim);

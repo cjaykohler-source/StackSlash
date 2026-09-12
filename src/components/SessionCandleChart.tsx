@@ -16,7 +16,6 @@ export interface Candle {
 interface Props {
   bars: Candle[];
   prevClose: number | null;
-  height?: number;
 }
 
 const LEFT = 8;
@@ -24,7 +23,11 @@ const RIGHT = 68; // price labels
 const TOP = 10;
 const AXIS_H = 22;
 const PANE_GAP = 10;
-const PRICE_SHARE = 0.74; // of the plot height; the rest is volume
+// Fixed pane heights, so resizing one never resizes the other. The candle
+// pane was grown 15% (395 -> 455px) with volume held at its size.
+const PRICE_H = 455;
+const VOL_H = 139;
+const HEIGHT = TOP + PRICE_H + PANE_GAP + VOL_H + AXIS_H;
 
 const fmtPrice = (p: number) => (p < 1 ? p.toFixed(4) : p.toFixed(2));
 const fmtVol = (v: number) =>
@@ -72,7 +75,8 @@ function niceStep(span: number, target: number): number {
  * Plain SVG rather than recharts: recharts has no candlestick, and a
  * session is at most ~960 bars, so direct drawing stays light.
  */
-export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
+export function SessionCandleChart({ bars, prevClose }: Props) {
+  const height = HEIGHT;
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<number | null>(null);
@@ -161,9 +165,8 @@ export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
       return { cx: (x0 + x1) / 2, w: Math.max(1, (x1 - x0) * 0.7) };
     });
 
-    const plotH = height - TOP - AXIS_H - PANE_GAP;
-    const priceH = plotH * PRICE_SHARE;
-    const volH = plotH - priceH;
+    const priceH = PRICE_H;
+    const volH = VOL_H;
     const volBase = TOP + priceH + PANE_GAP + volH;
 
     let lo = Math.min(...pts.map((p) => p.l));
@@ -205,7 +208,7 @@ export function SessionCandleChart({ bars, prevClose, height = 576 }: Props) {
     };
 
     return { pts, k, auto, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi };
-  }, [bars, prevClose, width, height, choice]);
+  }, [bars, prevClose, width, choice]);
 
   if (!bars.length) return null;
   const { pts, k, auto, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats } = m;
