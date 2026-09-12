@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.minute-pull</string>
+
+    <!-- Multi-day SIP minute-bar pull for the research warehouse. Kept
+         alive by launchd so it survives the session that started it,
+         crashes and reboots; the loader resumes from its own log. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/scripts/run-minute-pull.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart after a crash (non-zero exit), but not after the loader
+         finishes cleanly (exit 0 = every unit loaded). -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- At most one restart every 2 minutes, so a persistent failure
+         (e.g. Alpaca down) doesn't spin. -->
+    <key>ThrottleInterval</key>
+    <integer>120</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-minute-pull/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-minute-pull/launchd.err.log</string>
+</dict>
+</plist>
