@@ -139,9 +139,14 @@ Keep this list current: add anything left outstanding, strike it when done.
 - [x] **Corporate actions** (`research/load_corporate_actions.py`):
   Alpaca splits/reverse splits, name changes, mergers, spin-offs,
   worthless removals and dividends since 2016, one Parquet per quarter in
-  `research/data/corporate_actions/`. Caveat: name changes look sparse
-  before 2020 (4 found in 2016-2019), so old -> new CUSIP pairs may be the
-  better ticker-reuse signal.
+  `research/data/corporate_actions/`: 379,635 actions, 2016Q1-2026Q3.
+  Coverage varies by type: reverse splits are present every year
+  (162-221/yr in 2016-2019, 800+/yr by 2025-2026); name changes are
+  near-absent before 2019 (4 in 2016-2018, 53 in 2019, hundreds a year
+  after), so old -> new CUSIP pairs are the better ticker-reuse signal
+  for earlier years; worthless removals only start in 2023. One record
+  is dated year 3026 (vendor typo), so date-filtered research should
+  drop it.
 - [x] **SEC EDGAR** (`research/load_edgar.py`, from sec.gov's
   `companyfacts.zip` and `submissions.zip`): `edgar_companies` (21,296),
   `edgar_tickers` (10,272), `edgar_filings` (13.6M) and `edgar_facts`
