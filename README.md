@@ -118,7 +118,8 @@ Keep this list current: add anything left outstanding, strike it when done.
   flag is computed from IEX's slice of the tape.
 - [ ] **Survivorship**: the production universe is today's listings only;
   the SIP research tables include delisted names. Backtests should move to
-  that universe.
+  that universe. **When they do, refresh the "Trigger disposition" table
+  again** (it holds the 2026-09-12 IEX/production-universe regeneration).
 - [ ] **Ticker reuse** (e.g. BBBY) splices two companies into one SIP
   series; needs detection before research relies on per-symbol history.
 - [ ] **Spread model**: Corwin-Schultz is near-flat across price; calibrate
@@ -927,12 +928,26 @@ history for a wider symbol set) if a next phase needs it.
 
 ## Trigger disposition (current, as of this commit)
 
-**Every PF in this table predates #54's gap/split guards and is
-optimistically biased** — the guards were measured to be worth roughly
-+2.0pp of mean return on `bb_rsi_confluence_long` and to flip
-`macd_bullish_cross` and `volatility_squeeze_breakout_long` from
-positive to negative at the 3-day horizon. Regenerate before relying on
-any of them. Two further notes from the 2026-09-11 sweep:
+**Numbers for the four backtested triggers are from the full post-#54
+regeneration (2026-09-12)**: 60 monthly chunks, 3,012,128 fires. They are
+gross (no spread/cost), on production's IEX-only `bars_daily` over the
+survivor-only production universe, so they are still optimistic. Re-run
+on the SIP survivorship-free universe before acting on them (to-do).
+
+| trigger | n (3d) | gross PF 1d / 3d / 5d / 20d | mean 3d | median 3d | **mean excl. top 1%, 3d** | top 1% share of profit | exact-0 returns, 1d |
+|---|---|---|---|---|---|---|---|
+| `bb_rsi_confluence_long` | 222,883 | 1.40 / 1.34 / 1.30 / 1.23 | +0.82% | 0.00% | **−0.05%** | 27% | 9.4% |
+| `macd_bullish_cross` | 270,912 | 1.04 / 1.04 / 1.06 / 1.07 | +0.10% | 0.00% | **−0.52%** | 25% | 11.5% |
+| `volatility_squeeze_breakout_long` | 3,951 | 1.03 / 1.02 / 1.12 / 1.07 | +0.05% | −0.16% | **−0.73%** | 26% | 14.6% |
+| `volatility_squeeze_breakout_short` | 4,402 | 0.95 / 0.90 / 0.88 / 0.84 | −0.25% | 0.00% | **−0.60%** | 15% | 22.5% |
+
+Mean excluding the top 1% is negative at **every** horizon (1–20d) for
+all four, so every positive mean is carried by a few outsized winners.
+None survives the cost model's ~1% round trip at any horizon. The
+exact-0 returns are probably stale IEX closes, which would bias win rate
+and medians toward zero; that is unverified until the SIP re-run.
+Disabled triggers were not re-run and keep their older (pre-#54) notes
+below. Two further notes from the 2026-09-11 sweep:
 `bb_rsi_confluence_short` and `macd_bearish_cross` fired **zero times**
 in 5 years across the whole ~5,000-symbol universe — they are not
 "negative expectancy" so much as unreachable, like
@@ -940,10 +955,10 @@ in 5 years across the whole ~5,000-symbol universe — they are not
 
 | trigger | category | speed | direction | enabled | why |
 |---|---|---|---|---|---|
-| `bb_rsi_confluence_long` | technical | slow | long | ✅ | PF 1.16 / 5yr band — weak but least-bad |
-| `macd_bullish_cross` | breakout | slow | long | ✅ | PF 0.95 / 5yr band — net loser but cheap to leave on for visibility |
-| `volatility_squeeze_breakout_long` | breakout | slow | long | ✅ | PF 1.27, tiny sample (n=133) |
-| `volatility_squeeze_breakout_short` | breakout | slow | short | ✅ | left on per earlier explicit call |
+| `bb_rsi_confluence_long` | technical | slow | long | ✅ | gross PF 1.34 (3d), but mean excl. top 1% −0.05%; tail-driven, net loser after costs |
+| `macd_bullish_cross` | breakout | slow | long | ✅ | gross PF 1.04 (3d), mean excl. top 1% −0.52%; net loser, left on for visibility |
+| `volatility_squeeze_breakout_long` | breakout | slow | long | ✅ | gross PF 1.02 (3d), n=3,951; coin flip gross, loser net |
+| `volatility_squeeze_breakout_short` | breakout | slow | short | ✅ | gross PF 0.90 (3d), negative at every horizon; left on per earlier explicit call |
 | `earnings_surprise_drift` | earnings | slow | long | ✅ (inert) | needs a paid estimates feed FMP's free tier doesn't have |
 | `realtime_outlier_zscore` | outlier | slow | long | ✅ | tick-level, no backtest possible; live-confirmation-scored only |
 | `momentum_exit` | exit | slow | long | ✅ | the swing exit path (rank-drop/weekly-reversal/180d for momentum entries; time+disaster stop for others) |
