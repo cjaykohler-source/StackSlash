@@ -586,6 +586,19 @@ body {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+.candle-interval {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 0.78rem;
+  color-scheme: dark;
+  cursor: pointer;
+}
+.candle-interval:hover {
+  border-color: var(--accent);
+}
 .candle-stats b {
   color: var(--text);
   font-weight: 600;
