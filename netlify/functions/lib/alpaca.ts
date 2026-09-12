@@ -169,6 +169,53 @@ export async function fetchIntradayBarsRange(
   return fetchBars(symbols, "1Min", start, end, pageToken);
 }
 
+export interface SipBar extends DailyBar {
+  vw?: number; // bar VWAP
+  n?: number; // trade count
+}
+
+/**
+ * Consolidated-tape (SIP) bars for ONE symbol, all pages, with VWAP and
+ * trade count. For display (the symbol page's Session candles), not the
+ * scanners — fetchBars() above stays pinned to IEX so nothing already
+ * measured changes underneath it. The free data plan serves SIP only for
+ * requests ending more than 15 minutes ago; callers must cap `endIso`.
+ */
+export async function fetchSipBars(
+  symbol: string,
+  timeframe: "1Min" | "1Day",
+  startIso: string,
+  endIso: string,
+  adjustment: "raw" | "split" = "raw",
+): Promise<SipBar[]> {
+  const out: SipBar[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      symbols: symbol,
+      timeframe,
+      start: startIso,
+      end: endIso,
+      adjustment,
+      feed: "sip",
+      limit: "10000",
+    });
+    if (pageToken) params.set("page_token", pageToken);
+    const url = `${dataBaseUrl()}/v2/stocks/bars?${params.toString()}`;
+    let body: { bars?: Record<string, SipBar[]>; next_page_token?: string | null } | null = null;
+    for (let attempt = 0; attempt < 6 && !body; attempt++) {
+      const res = await fetch(url, { headers: authHeaders() });
+      if (res.ok) body = await res.json();
+      else if (res.status === 429) await sleep(Math.min(2 ** attempt * 1000, 10_000));
+      else throw new Error(`Alpaca SIP bars request failed: ${res.status} ${await res.text()}`);
+    }
+    if (!body) throw new Error("Alpaca SIP bars request failed: 429 (exhausted retries)");
+    out.push(...(body.bars?.[symbol] ?? []));
+    pageToken = body.next_page_token ?? undefined;
+  } while (pageToken);
+  return out;
+}
+
 /** Latest trade/quote snapshot for a batch of symbols — used by intraday-scan. */
 export async function fetchSnapshots(
   symbols: string[],

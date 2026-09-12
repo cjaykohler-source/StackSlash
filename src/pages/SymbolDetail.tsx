@@ -8,11 +8,13 @@ import { useQuotes, type Quote } from "../components/QuoteTag";
 import { PriceChart, type PricePoint } from "../components/PriceChart";
 import { SymbolNews } from "../components/SymbolNews";
 import { sessionAxis, type SessionAxis } from "../lib/marketTime";
+import { SessionCandleChart, type Candle } from "../components/SessionCandleChart";
 
-type Range = "day" | "week" | "month" | "year" | "max";
+type Range = "day" | "session" | "week" | "month" | "year" | "max";
 
 const RANGE_OPTIONS: { key: Range; label: string }[] = [
   { key: "day", label: "Day" },
+  { key: "session", label: "Session (candles)" },
   { key: "week", label: "Week" },
   { key: "month", label: "Month" },
   { key: "year", label: "Year" },
@@ -60,6 +62,23 @@ function formatDateLabel(dateStr: string, range: Range): string {
   );
 }
 
+/** Step a YYYY-MM-DD date by `dir` weekdays (skips Sat/Sun; holidays just come back empty). */
+function stepWeekday(dateStr: string, dir: 1 | -1): string {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  do {
+    d.setUTCDate(d.getUTCDate() + dir);
+  } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+}
+
+interface SessionCandles {
+  session_date: string | null;
+  prev_close: number | null;
+  delayed?: boolean;
+  bars: Candle[];
+  error?: string;
+}
+
 /**
  * Symbol drill-down: price chart (range-toggleable) + dossiers (the
  * "why it fired" explanations from the deep-dive worker) for that symbol.
@@ -78,6 +97,9 @@ export function SymbolDetail() {
   const [range, setRange] = useState<Range>("day");
   const [points, setPoints] = useState<PricePoint[]>([]);
   const [session, setSession] = useState<SessionAxis | null>(null);
+  // Session (candles) view: null = most recent session.
+  const [sessionDate, setSessionDate] = useState<string | null>(null);
+  const [candles, setCandles] = useState<SessionCandles | null>(null);
   const [dossiers, setDossiers] = useState<DossierRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
@@ -95,8 +117,21 @@ export function SymbolDetail() {
     setDossiers((data as DossierRow[]) ?? []);
   }, []);
 
-  const loadChart = useCallback(async (symbolId: number, tkr: string, r: Range) => {
+  const loadChart = useCallback(async (symbolId: number, tkr: string, r: Range, date: string | null = null) => {
     setLoading(true);
+    if (r === "session") {
+      // SIP 1-minute candles for one session, fetched on demand (nothing
+      // stored — bars_intraday only keeps IEX close + volume).
+      try {
+        const q = `symbol=${encodeURIComponent(tkr)}${date ? `&date=${date}` : ""}`;
+        const res = await fetch(`/.netlify/functions/session-candles?${q}`);
+        setCandles((await res.json()) as SessionCandles);
+      } catch {
+        setCandles({ session_date: date, prev_close: null, bars: [], error: "Couldn't load session candles." });
+      }
+      setLoading(false);
+      return;
+    }
     if (r === "day") {
       // "Day" = the most recent session with data, not literally today.
       // The axis is the fixed 4:00a–8:00p ET window (extended hours
@@ -210,14 +245,14 @@ export function SymbolDetail() {
         .eq("ticker", ticker)
         .maybeSingle();
       if (!symbol || cancelled) return;
-      await loadChart(symbol.id, ticker!, range);
+      await loadChart(symbol.id, ticker!, range, sessionDate);
     }
     refetchChart();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range]);
+  }, [range, sessionDate]);
 
   return (
     <div className="page">
@@ -245,8 +280,48 @@ export function SymbolDetail() {
             </button>
           ))}
         </div>
+        {range === "session" && (
+          <div className="session-picker">
+            <button
+              onClick={() => candles?.session_date && setSessionDate(stepWeekday(candles.session_date, -1))}
+              disabled={!candles?.session_date}
+              aria-label="Previous session"
+            >
+              ◀
+            </button>
+            <input
+              type="date"
+              value={candles?.session_date ?? sessionDate ?? ""}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => e.target.value && setSessionDate(e.target.value)}
+            />
+            <button
+              onClick={() => candles?.session_date && setSessionDate(stepWeekday(candles.session_date, 1))}
+              disabled={!candles?.session_date}
+              aria-label="Next session"
+            >
+              ▶
+            </button>
+            <button onClick={() => setSessionDate(null)} className={sessionDate === null ? "active" : ""}>
+              Latest
+            </button>
+            <span className="session-picker-note">
+              SIP consolidated tape, 1-min bars{candles?.delayed ? " · in progress, 15-min delayed" : ""}
+            </span>
+          </div>
+        )}
         {loading ? (
           <p className="empty-state chart-empty-state">Loading…</p>
+        ) : range === "session" ? (
+          candles?.error ? (
+            <p className="empty-state chart-empty-state">{candles.error}</p>
+          ) : !candles || candles.bars.length === 0 ? (
+            <p className="empty-state chart-empty-state">
+              No trading {candles?.session_date ? `on ${candles.session_date}` : "found in the last 10 days"}.
+            </p>
+          ) : (
+            <SessionCandleChart bars={candles.bars} prevClose={candles.prev_close} />
+          )
         ) : points.length === 0 ? (
           <p className="empty-state chart-empty-state">
             No {range === "day" ? "intraday" : "daily"} bars yet for this symbol
