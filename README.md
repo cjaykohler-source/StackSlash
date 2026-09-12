@@ -133,7 +133,24 @@ Keep this list current: add anything left outstanding, strike it when done.
 **Research pipeline (in progress)**
 - [ ] Full SIP minute-bar pull (`research/load_minute_bars.py`), band
   names first, ~4-6 days; then `--reconcile` for 100% minute-vs-daily
-  coverage.
+  coverage. Runs as launchd agent `com.stackslash.minute-pull` (restarts
+  on crash, survives reboots; log in
+  `~/Library/Logs/stackslash-minute-pull/`).
+- [x] **Corporate actions** (`research/load_corporate_actions.py`):
+  Alpaca splits/reverse splits, name changes, mergers, spin-offs,
+  worthless removals and dividends since 2016, one Parquet per quarter in
+  `research/data/corporate_actions/`. Caveat: name changes look sparse
+  before 2020 (4 found in 2016-2019), so old -> new CUSIP pairs may be the
+  better ticker-reuse signal.
+- [x] **SEC EDGAR** (`research/load_edgar.py`, from sec.gov's
+  `companyfacts.zip` and `submissions.zip`): `edgar_companies` (21,296),
+  `edgar_tickers` (10,272), `edgar_filings` (13.6M) and `edgar_facts`
+  (7.7M: shares outstanding, public float, cash, net income, revenue,
+  equity, operating cash flow) in `research/data/edgar/`. Join facts on
+  `filed`, never period `end`, to stay point-in-time. For dilution use
+  S-1/S-3/424B4/424B5; 424B2 is mostly bank structured notes. To do:
+  link the 13,294 no-ticker (delisted/renamed) companies to delisted SIP
+  symbols via CUSIP or former names.
 - [x] **Schema tester built: `research/schema_lab.py`.** A pattern is a
   JSON file of conditions over 59 point-in-time fields
   (`--list-fields`); see `research/schemas/example_gap_vwap.json`. Run it
