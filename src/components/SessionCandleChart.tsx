@@ -282,11 +282,9 @@ export function SessionCandleChart({ bars, prevClose }: Props) {
           </g>
         ))}
 
+        {/* Value is in the legend below, not on the line. */}
         {prevClose != null && (
-          <g>
-            <line x1={LEFT} x2={width - RIGHT} y1={py(prevClose)} y2={py(prevClose)} className="cc-prev" />
-            <text x={LEFT + 4} y={py(prevClose) - 4} className="cc-label cc-prev-label">prev close {fmtPrice(prevClose)}</text>
-          </g>
+          <line x1={LEFT} x2={width - RIGHT} y1={py(prevClose)} y2={py(prevClose)} className="cc-prev" />
         )}
 
         {/* volume, bottom-aligned */}
@@ -328,7 +326,7 @@ export function SessionCandleChart({ bars, prevClose }: Props) {
       </svg>
       <div className="candle-legend">
         <span className="cc-key cc-key-vwap">VWAP (regular session)</span>
-        <span className="cc-key cc-key-prev">prior close</span>
+        {prevClose != null && <span className="cc-key cc-key-prev">prior close {fmtPrice(prevClose)}</span>}
         <span className="cc-legend-note">regular session 9:30a–4:00p ET</span>
       </div>
       {hp && hover != null && (
