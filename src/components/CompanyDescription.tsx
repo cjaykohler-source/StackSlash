@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Company blurb for the SymbolDetail header, sourced from Wikipedia's
@@ -10,14 +10,30 @@ import { useEffect, useState } from "react";
  * "Ciena Corporation" than a bare ticker), and not persisted anywhere:
  * always fresh, at the cost of one extra request per symbol page view.
  *
- * Visually clamped to 3 lines via CSS rather than a hard character cut,
- * so it degrades gracefully across viewport widths instead of cutting
- * off mid-word at a fixed length that's right for a while and wrong
- * everywhere else.
+ * Full page width, visually clamped to 4 lines via CSS rather than a hard
+ * character cut, so it degrades gracefully across viewport widths. When
+ * the text runs past 4 lines (measured, so it tracks resizes) a "See
+ * more" toggle expands it in place.
  */
 export function CompanyDescription({ name }: { name: string | null }) {
   const [extract, setExtract] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "unavailable">("loading");
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => setExpanded(false), [name]);
+
+  // Measure while clamped: does the text run past 4 lines at this width?
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || expanded) return;
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [extract, status, expanded]);
 
   useEffect(() => {
     if (!name) {
@@ -56,5 +72,16 @@ export function CompanyDescription({ name }: { name: string | null }) {
   if (status === "unavailable") {
     return <p className="company-description company-description-unavailable">No description available.</p>;
   }
-  return <p className="company-description">{extract}</p>;
+  return (
+    <div>
+      <p ref={ref} className={`company-description${expanded ? " expanded" : ""}`}>
+        {extract}
+      </p>
+      {(overflows || expanded) && (
+        <button className="company-description-toggle" onClick={() => setExpanded((x) => !x)}>
+          {expanded ? "See less ▴" : "See more ▾"}
+        </button>
+      )}
+    </div>
+  );
 }

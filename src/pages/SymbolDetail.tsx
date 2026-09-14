@@ -14,8 +14,8 @@ import { BrandHomeLink } from "../components/BrandHomeLink";
 type Range = "day" | "session" | "week" | "month" | "year" | "max";
 
 const RANGE_OPTIONS: { key: Range; label: string }[] = [
-  { key: "day", label: "Day" },
   { key: "session", label: "Session (candles)" },
+  { key: "day", label: "Day" },
   { key: "week", label: "Week" },
   { key: "month", label: "Month" },
   { key: "year", label: "Year" },
@@ -260,11 +260,14 @@ export function SymbolDetail() {
       <header className="page-header">
         <div className="symbol-header-title">
           <BrandHomeLink />
-          <h1>
-            {ticker}
-            {symbolName && <span className="symbol-company-name"> ({symbolName})</span>}
-          </h1>
-          {ticker && <SymbolQuote quote={quotes.get(ticker)} />}
+          {/* Price trails the ticker + name on the same line, wherever it ends. */}
+          <div className="symbol-title-line">
+            <h1>
+              {ticker}
+              {symbolName && <span className="symbol-company-name"> ({symbolName})</span>}
+            </h1>
+            {ticker && <SymbolQuote quote={quotes.get(ticker)} />}
+          </div>
           <CompanyDescription name={symbolName} />
         </div>
       </header>
