@@ -278,63 +278,169 @@ body {
 .about-intro {
   color: var(--text-dim);
   font-size: 0.9rem;
-  max-width: 640px;
-  margin: 0 0 20px;
+  max-width: 760px;
+  line-height: 1.5;
+  margin: 0 0 18px;
 }
-
-.trigger-info-list {
+.about-basics {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 10px;
-  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
 }
-
-.trigger-category-header {
-  grid-column: 1 / -1;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-dim);
-  margin: 20px 0 4px;
-}
-.trigger-category-header:first-child {
-  margin-top: 0;
-}
-
-.trigger-info-item {
-  display: contents;
-}
-
-.trigger-info-card {
+.about-basic {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 14px 16px;
+  padding: 12px 14px;
 }
-
-.trigger-info-header {
+.about-basic h3 {
+  margin: 0 0 6px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.about-basic p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.about-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 26px 0 10px;
+  font-size: 1.05rem;
+}
+.about-section-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.about-section-note {
+  margin: -4px 0 10px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+.trigger-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.trigger-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.trigger-card-off {
+  opacity: 0.8;
+}
+.trigger-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
 }
-
-.trigger-info-label {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.trigger-info-detail {
+.trigger-card-head h4 {
   margin: 0;
-  font-size: 0.88rem;
-  line-height: 1.5;
-  color: var(--text);
+  font-size: 1rem;
 }
-
-.trigger-info-cooldown {
-  margin: 8px 0 0;
-  font-size: 0.78rem;
+.trigger-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.trigger-chip {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.trigger-chip-buy {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+}
+.trigger-chip-sell {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+}
+.trigger-summary {
+  margin: 2px 0 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.trigger-block-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.trigger-conditions {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.trigger-detail {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.trigger-off-reason {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+}
+.trigger-record dl {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 4px 0 0;
+}
+.trigger-record dt {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+.trigger-record dd {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.trigger-record .up {
+  color: var(--green);
+}
+.trigger-record .down {
+  color: var(--red);
+}
+.trigger-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
   color: var(--text-dim);
 }
 
