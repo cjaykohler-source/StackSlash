@@ -1,5 +1,5 @@
 import { triggerLabel, humanize, TRIGGER_INFO } from "../lib/triggerInfo";
-import { pct, FIELD_META, HIDDEN_FIELDS } from "../lib/factorFormat";
+import { pct, FIELD_META, HIDDEN_FIELDS, formatField } from "../lib/factorFormat";
 import { InfoTooltip } from "./InfoTooltip";
 
 // Deliberately a narrow structural type rather than importing the full
@@ -179,7 +179,7 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
           {fields.map(([key, value]) => {
             const meta = FIELD_META[key];
             const label = meta?.label ?? humanize(key);
-            const formatted = value === null || value === undefined ? "—" : (meta?.format(value) ?? String(value));
+            const formatted = value === null || value === undefined ? "—" : formatField(key, value);
             return (
               <div className="dossier-metric" key={key}>
                 <span className="dossier-metric-label">

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { triggerLabel, triggerCategoryLabel, triggerSide } from "../lib/triggerInfo";
+import { triggerLabel, triggerSide } from "../lib/triggerInfo";
 import { InfoTooltip } from "./InfoTooltip";
 import { FlagIcon, flagIconName } from "./FlagIcon";
 import { useQuotes } from "./QuoteTag";
@@ -319,7 +319,6 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         <td className={`col-num ${pctDir}`}>
           {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
         </td>
-        <td className="col-category">{row.triggerName ? triggerCategoryLabel(row.triggerName) : "—"}</td>
         <td>
           {STATUS_INFO[row.status] ? (
             <InfoTooltip underline={false} text={STATUS_INFO[row.status]}>
@@ -343,7 +342,6 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
             <th className="col-flags">Flags</th>
             <th className="col-num">Price</th>
             <th className="col-num">Change</th>
-            <th className="col-category">Category</th>
             <th>Status</th>
           </tr>
         </thead>
