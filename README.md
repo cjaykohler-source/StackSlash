@@ -178,14 +178,23 @@ Keep this list current: add anything left outstanding, strike it when done.
   dropdown 1/2/5/10/15m; **Auto** picks the finest interval where ≥75% of
   slots traded and the session fits in ≤200 candles (liquid names → 2m,
   thin names → 15m). Verified in the browser on SOFI and AENT.
-- [x] Symbol page header no longer pushes the range tabs down on long
-  company names (#70): chart controls moved to the header's top-right
-  column, and the candle pane grew 15% (455px) with volume unchanged.
-  Small leftover: below 760px the range tabs stay right-aligned while the
-  date row is left-aligned.
+- [x] Symbol page layout (#70, #78-#80): opens on Session (candles);
+  price trails the ticker/name on one line; full-width description
+  clamped to 4 lines with See more; range buttons + session picker on one
+  row above the chart; candle pane 523px, volume unchanged.
 - [ ] The symbol page only opens tickers in the `symbols` table; the
   `session-candles` function works for any Alpaca ticker, including
   delisted research-universe names, if the page should browse those.
+- [ ] **Evaluate later: buy vs sell volume.** Bars carry only total
+  volume (the chart's green/red volume just follows candle direction).
+  A buy/sell split can be estimated from Alpaca SIP trades (free for
+  data older than 15 min): tick rule from trades alone (~75-80% accurate
+  per trade, better in aggregate), or Lee-Ready using NBBO quotes (more
+  accurate, but quote data is often 5-20x the trade data). Feasible on
+  demand per chart session (BTE ~16.6k trades = 2 requests, SOFI ~100k =
+  ~10): stacked buy/sell volume bars, a buy/sell ratio in the stats row,
+  cached like finished candle sessions. Not feasible in bulk across all
+  history on the free rate limit; only for sessions a schema flags.
 - [x] Removed the `~/StackSlash-reset` worktree and `batch-backtest-reset`
   branch.
 
