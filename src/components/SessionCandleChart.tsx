@@ -16,6 +16,8 @@ export interface Candle {
 interface Props {
   bars: Candle[];
   prevClose: number | null;
+  /** Session still in progress: Auto judges coverage over elapsed minutes only. */
+  live?: boolean;
 }
 
 const LEFT = 8;
@@ -46,10 +48,15 @@ const AUTO_MIN_COVERAGE = 0.75;
 // liquid name are 390 hair-thin candles; 2-min is the readable floor).
 const AUTO_MAX_CANDLES = 200;
 
-/** Pick the default interval from the regular-session minutes that traded. */
-function autoInterval(tradedMinutes: number[]): { k: Interval; coverage: number } {
+/**
+ * Pick the default interval from the regular-session minutes that traded.
+ * `spanMinutes` is how much of the session coverage is judged over: all
+ * 390 minutes for a finished session, only the elapsed part of a live one
+ * (otherwise every live session looks thin and falls back to 15m).
+ */
+function autoInterval(tradedMinutes: number[], spanMinutes = SESSION_MINUTES): { k: Interval; coverage: number } {
   const coverageAt = (k: Interval) =>
-    new Set(tradedMinutes.map((m) => Math.floor(m / k))).size / Math.ceil(SESSION_MINUTES / k);
+    new Set(tradedMinutes.map((m) => Math.floor(m / k))).size / Math.max(1, Math.ceil(spanMinutes / k));
   for (const k of INTERVALS) {
     const coverage = coverageAt(k);
     if (coverage >= AUTO_MIN_COVERAGE && SESSION_MINUTES / k <= AUTO_MAX_CANDLES) return { k, coverage };
@@ -76,18 +83,20 @@ function niceStep(span: number, target: number): number {
  * Plain SVG rather than recharts: recharts has no candlestick, and a
  * session is at most ~960 bars, so direct drawing stays light.
  */
-export function SessionCandleChart({ bars, prevClose }: Props) {
+export function SessionCandleChart({ bars, prevClose, live = false }: Props) {
   const height = HEIGHT;
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<number | null>(null);
   const [choice, setChoice] = useState<"auto" | Interval>("auto");
 
-  // A new session starts back on the automatic interval.
+  // A new session starts back on the automatic interval. Keyed on the
+  // session's first bar, so the live view's minute refresh keeps the choice.
+  const sessionKey = bars[0]?.t.slice(0, 10);
   useEffect(() => {
     setChoice("auto");
     setHover(null);
-  }, [bars]);
+  }, [sessionKey]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -109,7 +118,7 @@ export function SessionCandleChart({ bars, prevClose }: Props) {
     const raw = all.filter((p) => isRegular(p.ms));
     // Minutes since 9:30 for each 1-min bar (regular-session axis units are hours).
     const mods = raw.map((p) => Math.round((axis.toX(p.ms) - axis.open) * 60));
-    const auto = autoInterval(mods);
+    const auto = autoInterval(mods, live && mods.length ? Math.min(SESSION_MINUTES, Math.max(...mods) + 1) : SESSION_MINUTES);
     const k: Interval = choice === "auto" ? auto.k : choice;
 
     // Merge 1-min bars into k-min candles: first open, max high, min low,
@@ -209,7 +218,7 @@ export function SessionCandleChart({ bars, prevClose }: Props) {
     };
 
     return { pts, k, auto, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi };
-  }, [bars, prevClose, width, choice]);
+  }, [bars, prevClose, width, choice, live]);
 
   if (!bars.length) return null;
   const { pts, k, auto, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats } = m;

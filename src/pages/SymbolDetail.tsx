@@ -88,9 +88,10 @@ export function SymbolDetail() {
     setDossiers((data as DossierRow[]) ?? []);
   }, []);
 
-  const loadChart = useCallback(async (tkr: string, r: Range, date: string | null) => {
+  // `quiet` = background refresh: keep the current chart on screen meanwhile.
+  const loadChart = useCallback(async (tkr: string, r: Range, date: string | null, quiet = false) => {
     const req = ++chartReq.current;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     if (r === "session") {
       let body: SessionCandles;
       try {
@@ -141,6 +142,15 @@ export function SymbolDetail() {
   useEffect(() => {
     if (ticker) loadChart(ticker, range, sessionDate);
   }, [ticker, range, sessionDate, loadChart]);
+
+  // The live session (Latest, still in progress; SIP is 15-min delayed on
+  // the free plan) refreshes itself every minute while it's on screen.
+  const liveSession = range === "session" && sessionDate === null && !!candles?.delayed;
+  useEffect(() => {
+    if (!ticker || !liveSession) return;
+    const id = setInterval(() => loadChart(ticker, "session", null, true), 60_000);
+    return () => clearInterval(id);
+  }, [ticker, liveSession, loadChart]);
 
   return (
     <div className="page">
@@ -216,7 +226,7 @@ export function SymbolDetail() {
               No trading {candles?.session_date ? `on ${candles.session_date}` : "found in the last 10 days"}.
             </p>
           ) : (
-            <SessionCandleChart bars={candles.bars} prevClose={candles.prev_close} />
+            <SessionCandleChart bars={candles.bars} prevClose={candles.prev_close} live={!!candles.delayed} />
           )
         ) : rangeCandles?.error ? (
           <p className="empty-state chart-empty-state">{rangeCandles.error}</p>
