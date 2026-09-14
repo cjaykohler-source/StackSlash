@@ -49,6 +49,8 @@ body {
   gap: 6px;
   min-width: 0;
   flex: 1 1 320px;
+  /* Breathing room between the description and the chart controls below. */
+  margin-bottom: 14px;
 }
 /* Symbol page: range buttons, session picker and source note on one row
    at the top of the chart; scrolls sideways rather than wrapping when the
@@ -112,14 +114,40 @@ body {
 }
 .company-description {
   margin: 0;
-  max-width: 640px;
   font-size: 0.85rem;
   color: var(--text-dim);
   line-height: 1.4;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.company-description.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.company-description-toggle {
+  background: none;
+  border: none;
+  padding: 2px 0 0;
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.company-description-toggle:hover {
+  text-decoration: underline;
+}
+/* Ticker + company name, then the price trailing wherever the name ends;
+   wraps the price under the name only when the line runs out of room. */
+.symbol-title-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.symbol-title-line .symbol-quote {
+  margin: 0;
 }
 .company-description-unavailable {
   font-style: italic;
