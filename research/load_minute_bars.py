@@ -18,9 +18,10 @@ Design choices, and why:
   than recomputed so unit ids stay stable across runs.
 - Sub-$5 band names (any raw close in $0.10-$5.00) are planned first.
 - Production shares this Alpaca account's 200 req/min limit, and its
-  intraday scans run during market hours. The limiter drops to
-  MARKET_HOURS_RATE on weekdays 08:00-20:00 America/New_York and runs at
-  OFF_HOURS_RATE otherwise, so this never starves live scans.
+  intraday scans run during market hours. The limiter uses
+  MARKET_HOURS_RATE on weekdays 08:00-20:00 America/New_York and
+  OFF_HOURS_RATE otherwise. MARKET_HOURS_RATE was 60 (leaving production
+  ~140/min); it is currently set to full rate, so the pull wins.
 - The progress log lives in its own DuckDB file (minute_log.duckdb) so
   the main warehouse stays readable while a multi-day load runs.
 
@@ -62,7 +63,10 @@ PAGE_LIMIT = 10000
 TARGET_BARS_PER_UNIT = 20000  # ~2 pages; packs many thin names per request
 MAX_SYMBOLS_PER_UNIT = 200
 MAX_BARS_PER_SESSION = 960  # 04:00-20:00 ET
-MARKET_HOURS_RATE = 60
+# 2026-09-14: raised from 60 to full rate at the user's call. The pull takes
+# priority over the live site; production calls during market hours may 429
+# (fetchSipBars/fetchBars retry on 429). Drop back to 60 to protect the site.
+MARKET_HOURS_RATE = 190
 OFF_HOURS_RATE = 190
 WORKERS = 4
 ET = ZoneInfo("America/New_York")
