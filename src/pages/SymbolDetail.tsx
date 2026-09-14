@@ -96,7 +96,11 @@ export function SymbolDetail() {
       let body: SessionCandles;
       try {
         const q = `symbol=${encodeURIComponent(tkr)}${date ? `&date=${date}` : ""}`;
-        body = (await (await fetch(`/.netlify/functions/session-candles?${q}`)).json()) as SessionCandles;
+        // "Latest" always revalidates: which session it means changes each
+        // morning, and a browser can still hold a day-long cached answer
+        // (pre-#84 responses were cached for 24h) pointing at the prior day.
+        const res = await fetch(`/.netlify/functions/session-candles?${q}`, { cache: date ? "default" : "no-cache" });
+        body = (await res.json()) as SessionCandles;
       } catch {
         body = { session_date: date, prev_close: null, bars: [], error: "Couldn't load session candles." };
       }
