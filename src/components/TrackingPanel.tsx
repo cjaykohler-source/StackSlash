@@ -242,13 +242,28 @@ function TrackedCard({
   const stroke =
     dir === "up" ? "var(--brand-green)" : dir === "down" ? "var(--red)" : "var(--text-dim)";
 
-  // Map to PriceChart's model. Intraday uses the same fixed 4a–8p ET
-  // session frame as the symbol page (line fills in from the left as the
-  // session runs); the daily fallback keeps a plain categorical axis.
-  const daySession = intraday ? sessionAxis(Date.now()) : null;
+  // Map to PriceChart's model. Intraday runs the regular session only
+  // (9:30a–4:00p ET) across the full card width, like the symbol page's
+  // Session chart; the line fills in from the left as the session runs.
+  // Before the open (pre-market prints only) it falls back to the full
+  // 4a–8p frame so the card isn't blank. The daily fallback keeps a plain
+  // categorical axis.
+  const fullSession = intraday ? sessionAxis(Date.now()) : null;
+  const regularPoints = fullSession
+    ? points.filter((p) => {
+        const u = fullSession.toX(p.t);
+        return u >= fullSession.open && u <= fullSession.close;
+      })
+    : [];
+  const useRegular = fullSession !== null && regularPoints.length >= 2;
+  const daySession =
+    fullSession && useRegular
+      ? { ...fullSession, domain: [fullSession.open, fullSession.close] as typeof fullSession.domain }
+      : fullSession;
+  const shown = useRegular ? regularPoints : points;
   const chartData: PricePoint[] = daySession
-    ? points.map((p) => ({ x: daySession.toX(p.t), y: p.price, t: p.t }))
-    : points.map((p) => ({
+    ? shown.map((p) => ({ x: daySession.toX(p.t), y: p.price, t: p.t }))
+    : shown.map((p) => ({
         x: new Date(p.t).toLocaleDateString([], { month: "short", day: "numeric" }),
         y: p.price,
       }));
@@ -272,7 +287,7 @@ function TrackedCard({
         </span>
       </div>
       <div className="tracked-chart">
-        {points.length < 2 ? (
+        {shown.length < 2 ? (
           <span className="tracked-chart-empty">
             {showingToday ? "Waiting for today's prints…" : "No chart data"}
           </span>
