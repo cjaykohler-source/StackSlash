@@ -183,7 +183,7 @@ export interface SipBar extends DailyBar {
  */
 export async function fetchSipBars(
   symbol: string,
-  timeframe: "1Min" | "1Day",
+  timeframe: "1Min" | "30Min" | "1Day" | "1Week" | "1Month",
   startIso: string,
   endIso: string,
   adjustment: "raw" | "split" = "raw",

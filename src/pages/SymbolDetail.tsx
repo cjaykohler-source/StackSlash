@@ -1,25 +1,25 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { DossierCard } from "../components/DossierCard";
 import { SymbolProfile } from "../components/SymbolProfile";
 import { CompanyDescription } from "../components/CompanyDescription";
 import { useQuotes, type Quote } from "../components/QuoteTag";
-import { PriceChart, type PricePoint } from "../components/PriceChart";
 import { SymbolNews } from "../components/SymbolNews";
-import { sessionAxis, type SessionAxis } from "../lib/marketTime";
 import { SessionCandleChart, type Candle } from "../components/SessionCandleChart";
+import { RangeCandleChart, TIMEFRAME_LABEL, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
 import { BrandHomeLink } from "../components/BrandHomeLink";
 
-type Range = "day" | "session" | "week" | "month" | "year" | "max";
+type Range = "session" | "week" | "month" | "year" | "18mo" | "5y" | "since2016";
 
 const RANGE_OPTIONS: { key: Range; label: string }[] = [
-  { key: "session", label: "Session (candles)" },
-  { key: "day", label: "Day" },
+  { key: "session", label: "Session" },
   { key: "week", label: "Week" },
   { key: "month", label: "Month" },
   { key: "year", label: "Year" },
-  { key: "max", label: "Max (18mo)" },
+  { key: "18mo", label: "18 Months" },
+  { key: "5y", label: "5 Years" },
+  { key: "since2016", label: "Since 2016" },
 ];
 
 interface DossierRow {
@@ -27,40 +27,6 @@ interface DossierRow {
   ts: string;
   score: number | null;
   analysis: Record<string, unknown>;
-}
-
-function rangeStartDate(range: Range): Date {
-  const d = new Date();
-  switch (range) {
-    case "week":
-      d.setDate(d.getDate() - 7);
-      break;
-    case "month":
-      d.setDate(d.getDate() - 30);
-      break;
-    case "year":
-      d.setFullYear(d.getFullYear() - 1);
-      break;
-    case "max":
-      d.setFullYear(d.getFullYear() - 3);
-      break;
-    case "day":
-      // handled separately via bars_intraday, not used here
-      break;
-  }
-  return d;
-}
-
-// Per design: only Max shows a year label on the x-axis. Year's own
-// 12-month window can technically straddle a Dec/Jan boundary, so this
-// is a deliberate trade-off (repeating the year on every tick elsewhere
-// is noisier than the rare cross-year ambiguity this introduces there).
-function formatDateLabel(dateStr: string, range: Range): string {
-  const d = new Date(`${dateStr}T00:00:00`);
-  return d.toLocaleDateString(
-    [],
-    range === "max" ? { month: "short", day: "numeric", year: "numeric" } : { month: "short", day: "numeric" },
-  );
 }
 
 /** Step a YYYY-MM-DD date by `dir` weekdays (skips Sat/Sun; holidays just come back empty). */
@@ -80,31 +46,35 @@ interface SessionCandles {
   error?: string;
 }
 
+interface RangeCandles {
+  timeframe: RangeTimeframe;
+  bars: RangeBar[];
+  error?: string;
+}
+
 /**
- * Symbol drill-down: price chart (range-toggleable) + dossiers (the
+ * Symbol drill-down: candlestick chart (range-toggleable) + dossiers (the
  * "why it fired" explanations from the deep-dive worker) for that symbol.
  *
- * Day pulls from bars_intraday. intraday-bars-scan.ts keeps a priority
- * set current every 5 min; for any other symbol (or a stale one) the Day
- * chart fetches the most recent session on demand via the session-bars
- * function, which also stores it.
- * Week/Month/Year/Max all pull from bars_daily. On the free Supabase
- * plan bars_daily is held to a rolling ~18-month window (see
- * prune-bars-daily.ts), so "Max" tops out there; eod-scan's normal
- * ~400-day fetch keeps the recent end current.
+ * Every range is candles from the consolidated tape (SIP), fetched on
+ * demand and not stored: Session is one day's 1-minute bars
+ * (session-candles, raw prices); Week through Since 2016 are 30-min,
+ * daily, weekly or monthly split-adjusted bars (range-candles). Nothing
+ * here reads production bars_daily/bars_intraday, which are IEX-only.
  */
 export function SymbolDetail() {
   const { ticker } = useParams<{ ticker: string }>();
   const [range, setRange] = useState<Range>("session");
-  const [points, setPoints] = useState<PricePoint[]>([]);
-  const [session, setSession] = useState<SessionAxis | null>(null);
-  // Session (candles) view: null = most recent session.
+  // Session view: null = most recent session.
   const [sessionDate, setSessionDate] = useState<string | null>(null);
   const [candles, setCandles] = useState<SessionCandles | null>(null);
+  const [rangeCandles, setRangeCandles] = useState<RangeCandles | null>(null);
   const [dossiers, setDossiers] = useState<DossierRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
   const [symbolName, setSymbolName] = useState<string | null>(null);
+  // Only the latest chart request may set state (fast range clicks).
+  const chartReq = useRef(0);
   // Poll the live quote every 30s (matches the quotes function's edge cache).
   const quotes = useQuotes(ticker ? [ticker] : [], 30_000);
 
@@ -118,94 +88,29 @@ export function SymbolDetail() {
     setDossiers((data as DossierRow[]) ?? []);
   }, []);
 
-  const loadChart = useCallback(async (symbolId: number, tkr: string, r: Range, date: string | null = null) => {
+  const loadChart = useCallback(async (tkr: string, r: Range, date: string | null) => {
+    const req = ++chartReq.current;
     setLoading(true);
     if (r === "session") {
-      // SIP 1-minute candles for one session, fetched on demand (nothing
-      // stored — bars_intraday only keeps IEX close + volume).
+      let body: SessionCandles;
       try {
         const q = `symbol=${encodeURIComponent(tkr)}${date ? `&date=${date}` : ""}`;
-        const res = await fetch(`/.netlify/functions/session-candles?${q}`);
-        setCandles((await res.json()) as SessionCandles);
+        body = (await (await fetch(`/.netlify/functions/session-candles?${q}`)).json()) as SessionCandles;
       } catch {
-        setCandles({ session_date: date, prev_close: null, bars: [], error: "Couldn't load session candles." });
+        body = { session_date: date, prev_close: null, bars: [], error: "Couldn't load session candles." };
       }
-      setLoading(false);
-      return;
-    }
-    if (r === "day") {
-      // "Day" = the most recent session with data, not literally today.
-      // The axis is the fixed 4:00a–8:00p ET window (extended hours
-      // compressed to 1/3 width); each point's x is the layout coordinate
-      // from session.toX, with the real timestamp kept in `t`.
-      const buildDay = (rows: { ts: string; price: number }[]) => {
-        if (!rows.length) {
-          setPoints([]);
-          setSession(null);
-          return;
-        }
-        const s = sessionAxis(new Date(rows[rows.length - 1].ts).getTime());
-        setSession(s);
-        setPoints(
-          rows.map((b) => {
-            const t = new Date(b.ts).getTime();
-            return { x: s.toX(t), y: b.price, t };
-          }),
-        );
-      };
-
-      const { data: latestRow } = await supabase
-        .from("bars_intraday")
-        .select("ts")
-        .eq("symbol_id", symbolId)
-        .order("ts", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const latestTs = (latestRow as { ts: string } | null)?.ts;
-      const staleMs = 2.5 * 24 * 60 * 60 * 1000;
-      const isStale = !latestTs || Date.now() - new Date(latestTs).getTime() > staleMs;
-
-      if (isStale) {
-        // Symbol isn't in intraday-bars-scan's priority set (or has fallen
-        // behind) — pull its most recent session on demand.
-        try {
-          const res = await fetch(
-            `/.netlify/functions/session-bars?symbol=${encodeURIComponent(tkr)}`,
-          );
-          const body = (await res.json()) as { bars?: { ts: string; price: number }[] };
-          buildDay(body.bars ?? []);
-        } catch {
-          setPoints([]);
-          setSession(null);
-        }
-        setLoading(false);
-        return;
-      }
-
-      const dayStart = `${latestTs.slice(0, 10)}T00:00:00Z`;
-      const dayEnd = new Date(new Date(dayStart).getTime() + 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await supabase
-        .from("bars_intraday")
-        .select("ts, price")
-        .eq("symbol_id", symbolId)
-        .gte("ts", dayStart)
-        .lt("ts", dayEnd)
-        .order("ts", { ascending: true })
-        .limit(1000);
-      buildDay((data as { ts: string; price: number }[] | null) ?? []);
+      if (req !== chartReq.current) return;
+      setCandles(body);
     } else {
-      setSession(null);
-      const start = rangeStartDate(r).toISOString().slice(0, 10);
-      const { data } = await supabase
-        .from("bars_daily")
-        .select("date, close")
-        .eq("symbol_id", symbolId)
-        .gte("date", start)
-        .order("date", { ascending: true })
-        .limit(2000);
-      const rows = (data as { date: string; close: number }[] | null) ?? [];
-      setPoints(rows.map((b) => ({ x: formatDateLabel(b.date, r), y: b.close })));
+      let body: RangeCandles;
+      try {
+        const res = await fetch(`/.netlify/functions/range-candles?symbol=${encodeURIComponent(tkr)}&range=${r}`);
+        body = (await res.json()) as RangeCandles;
+      } catch {
+        body = { timeframe: "1Day", bars: [], error: "Couldn't load candles." };
+      }
+      if (req !== chartReq.current) return;
+      setRangeCandles(body);
     }
     setLoading(false);
   }, []);
@@ -223,37 +128,19 @@ export function SymbolDetail() {
       if (!symbol || cancelled) return;
       setSymbolId(symbol.id);
       setSymbolName(symbol.name);
-      await Promise.all([loadChart(symbol.id, ticker!, range), loadDossiers(symbol.id)]);
+      await loadDossiers(symbol.id);
     }
     init();
     return () => {
       cancelled = true;
     };
-    // Only re-run this effect on ticker change; range changes are handled
-    // by the separate effect below so switching ranges doesn't re-fetch
-    // dossiers unnecessarily.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticker]);
+  }, [ticker, loadDossiers]);
 
+  // The chart needs only the ticker (the functions fetch from Alpaca), so it
+  // loads in parallel with the symbol lookup above.
   useEffect(() => {
-    if (!ticker) return;
-    let cancelled = false;
-
-    async function refetchChart() {
-      const { data: symbol } = await supabase
-        .from("symbols")
-        .select("id")
-        .eq("ticker", ticker)
-        .maybeSingle();
-      if (!symbol || cancelled) return;
-      await loadChart(symbol.id, ticker!, range, sessionDate);
-    }
-    refetchChart();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, sessionDate]);
+    if (ticker) loadChart(ticker, range, sessionDate);
+  }, [ticker, range, sessionDate, loadChart]);
 
   return (
     <div className="page">
@@ -313,11 +200,11 @@ export function SymbolDetail() {
               </button>
             </div>
           )}
-          {range === "session" && (
-            <span className="session-picker-note">
-              SIP consolidated tape, 1-min bars{candles?.delayed ? " · in progress, 15-min delayed" : ""}
-            </span>
-          )}
+          <span className="session-picker-note">
+            {range === "session"
+              ? `SIP consolidated tape, 1-min bars${candles?.delayed ? " · in progress, 15-min delayed" : ""}`
+              : `SIP consolidated tape, ${rangeCandles ? TIMEFRAME_LABEL[rangeCandles.timeframe] : ""} bars, split-adjusted`}
+          </span>
         </div>
         {loading ? (
           <p className="empty-state chart-empty-state">Loading…</p>
@@ -331,17 +218,12 @@ export function SymbolDetail() {
           ) : (
             <SessionCandleChart bars={candles.bars} prevClose={candles.prev_close} />
           )
-        ) : points.length === 0 ? (
-          <p className="empty-state chart-empty-state">
-            No {range === "day" ? "intraday" : "daily"} bars yet for this symbol
-            {range === "max" ? " — history is backfilled from 2025-03." : "."}
-          </p>
+        ) : rangeCandles?.error ? (
+          <p className="empty-state chart-empty-state">{rangeCandles.error}</p>
+        ) : !rangeCandles || rangeCandles.bars.length === 0 ? (
+          <p className="empty-state chart-empty-state">No trading in this range.</p>
         ) : (
-          <PriceChart
-            data={points}
-            variant={range === "day" ? "intraday" : "calendar"}
-            session={range === "day" ? session ?? undefined : undefined}
-          />
+          <RangeCandleChart bars={rangeCandles.bars} timeframe={rangeCandles.timeframe} />
         )}
       </section>
 

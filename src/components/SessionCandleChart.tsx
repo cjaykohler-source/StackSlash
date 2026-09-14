@@ -26,8 +26,8 @@ const PANE_GAP = 10;
 // Fixed pane heights, so resizing one never resizes the other. The candle
 // pane has been grown 15% twice (395 -> 455 -> 523px) with volume held at
 // its size.
-const PRICE_H = 523;
-const VOL_H = 139;
+export const PRICE_H = 523;
+export const VOL_H = 139;
 const HEIGHT = TOP + PRICE_H + PANE_GAP + VOL_H + AXIS_H;
 
 const fmtPrice = (p: number) => (p < 1 ? p.toFixed(4) : p.toFixed(2));
