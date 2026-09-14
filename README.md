@@ -182,6 +182,12 @@ Keep this list current: add anything left outstanding, strike it when done.
   price trails the ticker/name on one line; full-width description
   clamped to 4 lines with See more; range buttons + session picker on one
   row above the chart; candle pane 523px, volume unchanged.
+- [x] **Every symbol-page range is candles now, from SIP** (#82): Session
+  (1-min, raw), Week (30-min, regular hours), Month/Year (daily),
+  18 Months/5 Years (weekly), Since 2016 (monthly), all split-adjusted
+  via the on-demand `range-candles` function; Auto price scale goes log
+  when the range spans 8x+. The old Day line chart and the IEX
+  `bars_daily` line charts are gone from the page.
 - [ ] The symbol page only opens tickers in the `symbols` table; the
   `session-candles` function works for any Alpaca ticker, including
   delisted research-universe names, if the page should browse those.

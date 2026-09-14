@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 // On-demand, read-only functions the dev server may run. Deliberately an
 // allowlist: scan/scoring functions must never be reachable by opening a
 // URL locally — a stray local scan once sent 5 real Discord alerts.
-const DEV_FUNCTIONS = new Set(["session-candles", "session-bars", "quotes", "news"]);
+const DEV_FUNCTIONS = new Set(["session-candles", "range-candles", "session-bars", "quotes", "news"]);
 
 /**
  * Dev only: serve GET /.netlify/functions/<name> by loading the function
