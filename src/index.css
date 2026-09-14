@@ -671,9 +671,6 @@ body {
   stroke-dasharray: 4 4;
   stroke-opacity: 0.7;
 }
-.cc-prev-label {
-  font-size: 9.5px;
-}
 .cc-up line,
 .cc-up rect {
   stroke: var(--green);
