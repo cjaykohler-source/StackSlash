@@ -154,7 +154,7 @@ body {
 }
 
 .brand-logo {
-  height: 36px; /* 28px + 30% */
+  height: 52px; /* RIOT mark is taller than the one-line StackSlash wordmark */
   width: auto;
   display: block;
 }
