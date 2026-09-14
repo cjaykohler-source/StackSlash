@@ -6,7 +6,7 @@ import { SymbolProfile } from "../components/SymbolProfile";
 import { CompanyDescription } from "../components/CompanyDescription";
 import { useQuotes, type Quote } from "../components/QuoteTag";
 import { SymbolNews } from "../components/SymbolNews";
-import { SessionCandleChart, type Candle } from "../components/SessionCandleChart";
+import { SessionCandleChart, type Candle, type PrevSession } from "../components/SessionCandleChart";
 import { RangeCandleChart, TIMEFRAME_LABEL, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
 import { BrandHomeLink } from "../components/BrandHomeLink";
 
@@ -41,6 +41,7 @@ function stepWeekday(dateStr: string, dir: 1 | -1): string {
 interface SessionCandles {
   session_date: string | null;
   prev_close: number | null;
+  prev_session?: PrevSession | null;
   delayed?: boolean;
   bars: Candle[];
   error?: string;
@@ -230,7 +231,12 @@ export function SymbolDetail() {
               No trading {candles?.session_date ? `on ${candles.session_date}` : "found in the last 10 days"}.
             </p>
           ) : (
-            <SessionCandleChart bars={candles.bars} prevClose={candles.prev_close} live={!!candles.delayed} />
+            <SessionCandleChart
+              bars={candles.bars}
+              prevClose={candles.prev_close}
+              prevSession={candles.prev_session}
+              live={!!candles.delayed}
+            />
           )
         ) : rangeCandles?.error ? (
           <p className="empty-state chart-empty-state">{rangeCandles.error}</p>

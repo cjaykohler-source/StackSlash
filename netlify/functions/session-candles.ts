@@ -61,12 +61,33 @@ export default async (req: Request) => {
     const prev = prior.filter((b) => b.t.slice(0, 10) < sessionDate!).pop();
     const inProgress = end < sessionEnd;
 
+    // The prior session's regular-hours (9:30a-4:00p) activity, for the
+    // stats row's better/worse colouring. For a session still in progress
+    // it is cut at the same minute of the day, so a partial day is never
+    // compared against a full one.
+    let prevSession: { date: string; through_minute: number; volume: number; trades: number; minutes_traded: number } | null = null;
+    if (prev) {
+      const prevDate = prev.t.slice(0, 10);
+      const prevOpen = etWallClock(prevDate, 9, 30);
+      const cutoff = inProgress ? Math.min(390, Math.max(0, Math.floor((end - etWallClock(sessionDate, 9, 30)) / 60_000))) : 390;
+      const pm = await fetchSipBars(ticker, "1Min", new Date(prevOpen).toISOString(), new Date(etWallClock(prevDate, 16, 0)).toISOString());
+      const within = pm.filter((b) => (Date.parse(b.t) - prevOpen) / 60_000 < cutoff);
+      prevSession = {
+        date: prevDate,
+        through_minute: cutoff,
+        volume: within.reduce((s, b) => s + b.v, 0),
+        trades: within.reduce((s, b) => s + (b.n ?? 0), 0),
+        minutes_traded: within.length,
+      };
+    }
+
     return json(
       {
         symbol: ticker,
         session_date: sessionDate,
         prev_close: prev?.c ?? null,
         prev_date: prev?.t.slice(0, 10) ?? null,
+        prev_session: prevSession,
         delayed: inProgress,
         as_of: new Date(end).toISOString(),
         bars: bars.map((b) => ({ t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, vw: b.vw ?? null, n: b.n ?? null })),
