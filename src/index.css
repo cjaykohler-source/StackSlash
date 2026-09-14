@@ -50,39 +50,26 @@ body {
   min-width: 0;
   flex: 1 1 320px;
 }
-/* Symbol page: chart controls sit top-right beside the name/price block.
-   The title column shrinks (long company names wrap within it) rather
-   than pushing the controls onto their own row. */
-.page-header:has(.symbol-header-controls) {
-  align-items: flex-start;
+/* Symbol page: range buttons, session picker and source note on one row
+   at the top of the chart; scrolls sideways rather than wrapping when the
+   viewport is too narrow. */
+.chart-controls {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-bottom: 10px;
+}
+.chart-controls .range-toggle,
+.chart-controls .session-picker {
+  margin: 0;
   flex-wrap: nowrap;
 }
-.symbol-header-controls {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  flex: 0 1 auto;
-}
-.symbol-header-controls .range-toggle {
-  margin-bottom: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.symbol-header-controls .session-picker {
-  margin: 0;
-  justify-content: flex-end;
-}
-.symbol-header-controls .session-picker-note {
-  margin-left: 0;
-}
-@media (max-width: 760px) {
-  .page-header:has(.symbol-header-controls) {
-    flex-wrap: wrap;
-  }
-  .symbol-header-controls {
-    align-items: flex-start;
-  }
+.chart-controls .session-picker-note {
+  margin-left: auto;
 }
 .symbol-company-name {
   color: var(--text-dim);
@@ -612,18 +599,11 @@ body {
   display: block;
   max-width: 100%;
 }
-/* One line across the top of the chart; scrolls sideways rather than
-   wrapping when the viewport is too narrow. */
 .candle-stats {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  white-space: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding: 0 6px 6px;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 0 6px 8px;
   font-size: 0.78rem;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;

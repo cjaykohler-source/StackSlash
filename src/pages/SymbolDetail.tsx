@@ -267,9 +267,11 @@ export function SymbolDetail() {
           {ticker && <SymbolQuote quote={quotes.get(ticker)} />}
           <CompanyDescription name={symbolName} />
         </div>
-        {/* Chart controls live top-right, beside the name/price/description,
-            so the chart itself starts right under the header. */}
-        <div className="symbol-header-controls">
+      </header>
+
+      <section>
+        {/* Chart controls: one row riding the top of the chart. */}
+        <div className="chart-controls">
           <div className="range-toggle">
             {RANGE_OPTIONS.map((opt) => (
               <button
@@ -314,9 +316,6 @@ export function SymbolDetail() {
             </span>
           )}
         </div>
-      </header>
-
-      <section>
         {loading ? (
           <p className="empty-state chart-empty-state">Loading…</p>
         ) : range === "session" ? (
