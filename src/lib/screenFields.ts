@@ -121,7 +121,8 @@ export function formatMetric(unit: Unit, v: number | null | undefined): string {
       if (Math.abs(v) >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
       return `$${v.toFixed(0)}`;
     default:
-      return String(v);
+      // Any other unit: at most 3 decimals, never a long float tail.
+      return v.toLocaleString(undefined, { maximumFractionDigits: 3 });
   }
 }
 

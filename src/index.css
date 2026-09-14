@@ -847,11 +847,6 @@ body {
   border-collapse: collapse;
   font-size: 0.9rem;
 }
-@media (max-width: 480px) {
-  .col-category {
-    display: none;
-  }
-}
 .trigger-feed th {
   text-align: left;
   color: var(--text-dim);

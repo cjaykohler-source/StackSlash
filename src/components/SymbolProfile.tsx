@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabaseClient";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "../lib/triggerEval";
 import { computeProximity } from "../lib/triggerProximity";
 import { triggerLabel, triggerCategoryLabel, humanize, TRIGGER_INFO } from "../lib/triggerInfo";
-import { FIELD_META, HIDDEN_FIELDS, pct } from "../lib/factorFormat";
+import { FIELD_META, HIDDEN_FIELDS, formatField, pct } from "../lib/factorFormat";
 import type { FactorState, RegimeState, Trigger } from "../lib/types";
 import { InfoTooltip } from "./InfoTooltip";
 import { ProximityBar } from "./ProximityBar";
@@ -191,7 +191,7 @@ export function SymbolProfile({
         {snapshotFields.map(([key, value]) => {
           const meta = FIELD_META[key];
           const label = meta?.label ?? humanize(key);
-          const formatted = meta?.format(value) ?? String(value);
+          const formatted = formatField(key, value);
           return (
             <div className="dossier-metric" key={key}>
               <span className="dossier-metric-label">

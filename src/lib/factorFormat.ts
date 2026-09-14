@@ -30,6 +30,23 @@ export function usdCompact(v: unknown): string {
   return usd(n);
 }
 
+/**
+ * Fallback for a field with no FIELD_META entry: numbers (and numeric
+ * strings, which is how Postgres numeric arrives) are rounded to at most 3
+ * decimals instead of showing every trailing digit; anything else as-is.
+ */
+export function formatAny(v: unknown): string {
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  if (Number.isNaN(n)) return String(v);
+  return n.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+/** A field's display value: its FIELD_META formatter, else formatAny. */
+export function formatField(key: string, v: unknown): string {
+  return FIELD_META[key]?.format(v) ?? formatAny(v);
+}
+
 export function dateTime(v: unknown): string {
   const d = new Date(String(v));
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString();
@@ -81,6 +98,9 @@ export const FIELD_META: Record<string, FieldMeta> = {
   sue: { label: "Earnings Surprise (SUE)", format: (v) => num(v), description: "Standardized Unexpected Earnings — how far the last reported EPS beat or missed consensus, in standard-deviation terms." },
   surprise_pct: { label: "Earnings Surprise", format: (v) => pct(v, 1), description: "How far the last reported EPS came in above (or below) consensus, as a percentage of the estimate." },
   est_revision_30d: { label: "30-Day Estimate Revision", format: (v) => pct(v), description: "How much analyst estimates for this stock have changed over the last 30 days." },
+  days_since_earnings: { label: "Days Since Earnings", format: (v) => String(v), description: "Trading days since the last earnings report." },
+  sales_growth: { label: "Sales Growth", format: (v) => pct(v, 1), description: "Year-over-year revenue growth." },
+  capex_to_assets: { label: "Capex / Assets", format: (v) => pct(v, 1), description: "Capital expenditure as a share of total assets." },
   book_to_market: { label: "Book-to-Market", format: (v) => num(v), description: "Book value of equity divided by market value — a classic value-factor measure." },
   realized_vol_20d: { label: "20-Day Realized Vol", format: (v) => pct(v, 1), description: "How much this stock's price has actually been swinging, annualized, over the last 20 trading days." },
   vol_percentile_252d: {
