@@ -72,8 +72,11 @@ export default async (req: Request) => {
         bars: bars.map((b) => ({ t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, vw: b.vw ?? null, n: b.n ?? null })),
       },
       200,
-      // A finished session never changes; one in progress refreshes every minute.
-      inProgress ? 60 : DAY_MS / 1000,
+      // A finished session never changes; one in progress refreshes every
+      // minute. A no-date ("latest") request always gets the short cache:
+      // it resolves to a different session once the next one starts, so
+      // caching yesterday's answer for a day would hide today's session.
+      inProgress || !dateParam ? 60 : DAY_MS / 1000,
     );
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : "fetch failed" }, 502, 0);
