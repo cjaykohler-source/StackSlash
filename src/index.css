@@ -612,11 +612,18 @@ body {
   display: block;
   max-width: 100%;
 }
+/* One line across the top of the chart; scrolls sideways rather than
+   wrapping when the viewport is too narrow. */
 .candle-stats {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  padding: 0 6px 8px;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 6px 6px;
   font-size: 0.78rem;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;

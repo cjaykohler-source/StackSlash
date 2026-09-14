@@ -95,7 +95,7 @@ interface SessionCandles {
  */
 export function SymbolDetail() {
   const { ticker } = useParams<{ ticker: string }>();
-  const [range, setRange] = useState<Range>("day");
+  const [range, setRange] = useState<Range>("session");
   const [points, setPoints] = useState<PricePoint[]>([]);
   const [session, setSession] = useState<SessionAxis | null>(null);
   // Session (candles) view: null = most recent session.
