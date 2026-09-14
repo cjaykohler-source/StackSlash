@@ -13,9 +13,19 @@ export interface Candle {
   n: number | null;
 }
 
+/** Prior session's regular-hours totals (cut at the same minute of day when this session is live). */
+export interface PrevSession {
+  date: string;
+  through_minute: number;
+  volume: number;
+  trades: number;
+  minutes_traded: number;
+}
+
 interface Props {
   bars: Candle[];
   prevClose: number | null;
+  prevSession?: PrevSession | null;
   /** Session still in progress: Auto judges coverage over elapsed minutes only. */
   live?: boolean;
 }
@@ -83,7 +93,7 @@ function niceStep(span: number, target: number): number {
  * Plain SVG rather than recharts: recharts has no candlestick, and a
  * session is at most ~960 bars, so direct drawing stays light.
  */
-export function SessionCandleChart({ bars, prevClose, live = false }: Props) {
+export function SessionCandleChart({ bars, prevClose, prevSession = null, live = false }: Props) {
   const height = HEIGHT;
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
@@ -252,6 +262,13 @@ export function SessionCandleChart({ bars, prevClose, live = false }: Props) {
 
   const hp = hover != null ? pts[hover] : null;
   const change = (p: number | null) => (p != null && prevClose ? fmtPct(p / prevClose - 1) : "—");
+  // "up" when this session's value beats the prior one, "down" when worse.
+  const cmp = (a: number | null, b: number | null | undefined) =>
+    a == null || b == null || a === b ? "" : a > b ? "up" : "down";
+  const prevTitle = (v: string | null | false) =>
+    v && prevSession
+      ? `Prior session ${prevSession.date}${prevSession.through_minute < 390 ? ` (through the same time of day)` : ""}: ${v}`
+      : undefined;
 
   return (
     <div className="candle-chart" ref={wrapRef}>
@@ -273,14 +290,26 @@ export function SessionCandleChart({ bars, prevClose, live = false }: Props) {
             </option>
           ))}
         </select>
-        <span>Open <b>{stats.open != null ? fmtPrice(stats.open) : "—"}</b></span>
-        <span>High <b>{stats.high != null ? fmtPrice(stats.high) : "—"}</b></span>
-        <span>Low <b>{stats.low != null ? fmtPrice(stats.low) : "—"}</b></span>
-        <span>Close <b>{stats.close != null ? fmtPrice(stats.close) : "—"}</b> <em>{change(stats.close)}</em></span>
-        <span>Gap <b>{change(stats.open)}</b></span>
-        <span>Volume <b>{fmtVol(stats.volume)}</b></span>
-        <span>Trades <b>{stats.trades.toLocaleString()}</b></span>
-        <span>Minutes traded <b>{stats.minutesTraded}/390</b></span>
+        {/* Green = better than the prior session, red = worse: prices vs the
+            prior close, activity vs the prior session (same time of day
+            while this one is live). */}
+        <span>Open <b className={cmp(stats.open, prevClose)}>{stats.open != null ? fmtPrice(stats.open) : "—"}</b></span>
+        <span>High <b className={cmp(stats.high, prevClose)}>{stats.high != null ? fmtPrice(stats.high) : "—"}</b></span>
+        <span>Low <b className={cmp(stats.low, prevClose)}>{stats.low != null ? fmtPrice(stats.low) : "—"}</b></span>
+        <span>
+          Close <b className={cmp(stats.close, prevClose)}>{stats.close != null ? fmtPrice(stats.close) : "—"}</b>{" "}
+          <em className={cmp(stats.close, prevClose)}>{change(stats.close)}</em>
+        </span>
+        <span>Gap <b className={cmp(stats.open, prevClose)}>{change(stats.open)}</b></span>
+        <span title={prevTitle(prevSession && fmtVol(prevSession.volume))}>
+          Volume <b className={cmp(stats.volume, prevSession?.volume)}>{fmtVol(stats.volume)}</b>
+        </span>
+        <span title={prevTitle(prevSession && prevSession.trades.toLocaleString())}>
+          Trades <b className={cmp(stats.trades, prevSession?.trades)}>{stats.trades.toLocaleString()}</b>
+        </span>
+        <span title={prevTitle(prevSession && `${prevSession.minutes_traded}`)}>
+          Minutes traded <b className={cmp(stats.minutesTraded, prevSession?.minutes_traded)}>{stats.minutesTraded}/390</b>
+        </span>
       </div>
       <svg width={width} height={height} onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img"
            aria-label="Session candlestick chart with volume">

@@ -657,6 +657,12 @@ body {
   font-style: normal;
   opacity: 0.8;
 }
+.candle-stats .up {
+  color: var(--green);
+}
+.candle-stats .down {
+  color: var(--red);
+}
 .cc-grid {
   stroke: var(--border);
   stroke-opacity: 0.5;
