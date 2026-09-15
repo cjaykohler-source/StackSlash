@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { dispatchAlert } from "./lib/notify";
+import { alertColor, symbolUrl, triggerDisplayName } from "./lib/discordEmbed";
 
 /**
  * Manual/test alert dispatch: POST { dossier_id } to re-run delivery for
@@ -45,6 +46,14 @@ export default async (req: Request) => {
     dedupKey: `${event?.trigger_id}:${dossier.symbol_id}`,
     cooldownMinutes,
     message: `*${ticker}* — ${triggerName}\nscore: ${dossier.score ?? "—"}`,
+    embed: {
+      title: `${ticker} · ${triggerDisplayName(triggerName)}`,
+      url: symbolUrl(ticker),
+      color: alertColor(triggerName, false),
+      fields: [{ name: "Score", value: String(dossier.score ?? "—"), inline: true }],
+      footer: { text: "RIOT · research alert, not investment advice" },
+      timestamp: new Date().toISOString(),
+    },
   });
 
   return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });

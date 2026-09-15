@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { dispatchAlert } from "./lib/notify";
+import { alertColor, symbolUrl, triggerDisplayName, type DiscordEmbed } from "./lib/discordEmbed";
 import { fetchSnapshots, fetchNews } from "./lib/alpaca";
 import { riskFlags, tradeSuggestion } from "./lib/riskFlags";
 import { fetchProfile } from "./lib/fmp";
@@ -414,11 +415,49 @@ export default async (req: Request) => {
     fundBits.push(`rev ${Number(fundamentals.revenue_growth_yoy) > 0 ? "+" : ""}${Math.round(Number(fundamentals.revenue_growth_yoy) * 100)}% YoY`);
   const fundLine = fundBits.length ? `\n📊 ${fundBits.join(" · ")}` : "";
 
+  // Discord card: same content as the text message, laid out in sections.
+  const flagIcon = { red: "🟥", amber: "🟨", green: "🟩" } as Record<string, string>;
+  const newsAge =
+    newsAgeHours != null ? ` · ${newsAgeHours < 1 ? "<1h" : `${Math.round(newsAgeHours)}h`} ago` : "";
+  const embedFields: NonNullable<DiscordEmbed["fields"]> = [];
+  if (trade) {
+    embedFields.push(
+      { name: "Size", value: `${trade.shares} sh ≈ $${trade.position_cost.toFixed(2)}`, inline: true },
+      { name: "Stop", value: `$${trade.stop.toFixed(2)} (−${Math.round(trade.stop_pct * 100)}%)`, inline: true },
+      { name: "Max loss", value: `$${trade.max_loss.toFixed(2)}`, inline: true },
+    );
+  }
+  if (fundBits.length) embedFields.push({ name: "Fundamentals", value: fundBits.join(" · "), inline: true });
+  embedFields.push({ name: "Score", value: score.toFixed(2), inline: true });
+  if (news.length) {
+    const h = news[0].headline.slice(0, 200);
+    embedFields.push({ name: "Latest news", value: `${news[0].url ? `[${h}](${news[0].url})` : h}${newsAge}` });
+  }
+  const embed: DiscordEmbed = {
+    title: `${priority === "high" ? "🔴 HIGH PRIORITY · " : ""}${ticker} · ${triggerDisplayName(triggerName)}`,
+    url: symbolUrl(ticker),
+    color: alertColor(triggerName, priority === "high"),
+    description: [
+      currentPrice != null ? `**$${currentPrice.toFixed(2)}**` : null,
+      // A lone trigger is already the title; only list confluence when it's real.
+      confluentNames.length > 1 ? `**${confluentNames.length} signals:** ${confluentNames.map((n) => triggerDisplayName(n ?? "")).join(", ")}` : null,
+      flags.length
+        ? [...redFlags, ...amberFlags, ...greenFlags].map((x) => `${flagIcon[x.level] ?? "▫️"} ${x.label}`).join("\n")
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    fields: embedFields,
+    footer: { text: "RIOT · research alert, not investment advice" },
+    timestamp: new Date().toISOString(),
+  };
+
   const alertResult = await dispatchAlert(db, {
     dossierId: dossier.id,
     dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}${redFlags.length ? ":rf" : ""}`,
     cooldownMinutes,
     message: `${headline}${priceLine}${confluenceLine}${flagLine}${tradeLine}${fundLine}${newsLine}\nscore: ${score.toFixed(2)}`,
+    embed,
   });
 
   if (alertResult.status === "sent") {
