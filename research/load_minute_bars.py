@@ -68,10 +68,10 @@ PAGE_LIMIT = 10000
 TARGET_BARS_PER_UNIT = 20000  # ~2 pages; packs many thin names per request
 MAX_SYMBOLS_PER_UNIT = 200
 MAX_BARS_PER_SESSION = 960  # 04:00-20:00 ET
-# 2026-09-14: raised from 60 to full rate at the user's call. The pull takes
-# priority over the live site; production calls during market hours may 429
-# (fetchSipBars/fetchBars retry on 429). Drop back to 60 to protect the site.
-MARKET_HOURS_RATE = 190
+# Leaves production ~140/min of the account's 200/min during market hours.
+# Raised to 190 for the final day of the 2026-09 bulk pull at the user's
+# call, then restored; the nightly --update runs after 20:00 at OFF_HOURS_RATE.
+MARKET_HOURS_RATE = 60
 OFF_HOURS_RATE = 190
 WORKERS = 4
 ET = ZoneInfo("America/New_York")

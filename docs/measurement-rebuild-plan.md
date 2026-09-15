@@ -1,5 +1,10 @@
 # Measurement rebuild — scoped plan
 
+> **Status (2026-09-15):** superseded as a to-do list by the README's
+> "Current state — handoff" and "Open items". Kept for its reasoning. The
+> local SIP warehouse, cost model, integrity checks and tail-concentration
+> columns it scoped all landed; production bars are still IEX-only.
+
 Written 2026-09-11, after the hold-duration sweep concluded that nothing
 on the sub-$5 universe has an edge surviving its own transaction costs
 (see README, "The hold-duration sweep").
