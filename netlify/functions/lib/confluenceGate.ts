@@ -62,10 +62,12 @@ export interface ScanConfig {
   min_confluence: number;
 }
 
+// Only used if the scan_config row can't be read. Kept equal to the live
+// scan_config values (was price_max 3 / 150k, drifted from 5.00 / 50k).
 const FALLBACK_CONFIG: ScanConfig = {
   price_min: 0.1,
-  price_max: 3,
-  min_dollar_vol_20d: 150000,
+  price_max: 5,
+  min_dollar_vol_20d: 50000,
   max_rsi14: 85,
   min_confluence: DEFAULT_MIN_CONFLUENCE,
 };

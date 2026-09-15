@@ -1,4 +1,7 @@
-# StackSlash Scanner
+# RIOT — Ranked Intraday Outlier Telemetry (repo: StackSlash Scanner)
+
+The site was rebranded RIOT on 2026-09-14 (logo, tab title, favicon); the
+repo, Netlify site name, URL and Discord bot still say StackSlash.
 
 A two-tier market scanner — a wide Tier-1 factor surface over the whole
 tracked universe, and Tier-2 triggers that fire a deep-dive dossier and a
@@ -88,6 +91,45 @@ below for the full derivation, every number, and every bug found along
 the way — worth reading before changing any trigger or exit logic,
 so the next attempt doesn't re-discover the same dead ends.
 
+## Current state — handoff (2026-09-15)
+
+What exists and works, as of the end of the 2026-09-11 → 09-15 session:
+
+- **Research warehouse (local, `research/data/`, ~80 GB):** SIP daily bars
+  (raw + split-adjusted) for 15,809 symbols 2016 → today, delisted
+  included; SIP 1-minute bars (04:00-20:00 ET, raw) for 15,803 symbols,
+  ~3.4B bars, reconciled against daily; Alpaca corporate actions; SEC
+  EDGAR filings + XBRL facts. **Updated every weekday night** by the
+  `research-update` launchd agent (see Open items → Research pipeline).
+  `research/schema_lab.py` tests minute-level patterns on seeded tiers
+  against a random control, net of costs, with a sealed 2022+ holdout.
+- **Site (https://stackslash.netlify.app, single user):** every symbol-page
+  range is SIP candlesticks (Session 1-min with live refresh; Week →
+  Since 2016 split-adjusted), stats row colored vs the prior session,
+  full-width description, RIOT branding, About page documenting all 16
+  triggers with live backtest/fire stats.
+- **Alerts:** Discord embed cards (one colored card per alert, aligned
+  number block, 🔴🟡🟢 flags), retrying on Discord's rate limit.
+- **Jobs:** see the table below; the nightly DB-heavy jobs moved to
+  pg_cron on 2026-09-15 because Netlify cut them off at ~30 s.
+- **Verdict unchanged:** no trigger has an edge after costs (see above and
+  "Trigger disposition"). The open research path is minute-level pattern
+  discovery with `schema_lab.py` on the new data.
+
+| Job | Runs on | When |
+|---|---|---|
+| `eod-scan` | launchd (worker host) | 17:45 ET weekdays |
+| `data-integrity-check` | launchd | 19:45 ET nightly |
+| `research-update` (SIP daily + minute, corporate actions) | launchd | 20:30 ET weekdays |
+| `outlier-worker` (IEX websocket) | launchd | always on |
+| `refresh-window-stats` | Supabase pg_cron | 23:00 UTC weekdays |
+| `weekly-bars-scan` | pg_cron | Mon 06:00 UTC |
+| `refresh-spread-estimates` | pg_cron | Sun 07:00 UTC |
+| intraday scans, prunes, `fundamentals-sync`, `record-fire-outcomes`, news | Netlify scheduled functions | see `netlify.toml` |
+
+Every job writes `job_runs`; check it (status, duplicates, `running` rows
+that never finished) before assuming a job works.
+
 ## Open items (to-do)
 
 Keep this list current: add anything left outstanding, strike it when done.
@@ -97,19 +139,59 @@ Keep this list current: add anything left outstanding, strike it when done.
   the full regeneration's start (`2026-09-12 02:30:05+00`) deleted, all
   from the four disabled triggers plus the 0-sample
   `earnings_surprise_drift`.
-- [ ] **Local branch `readme-session-handoff`**, an older branch predating
-  this session: merge, PR, or delete.
+- [x] **Local branch `readme-session-handoff`** (one 2026-09-09 handoff-doc
+  commit, superseded): archived to `origin/readme-session-handoff` and
+  deleted locally, 2026-09-15.
 - [ ] **`catalyst_momentum` is disabled, definition kept** (net PF 0.779 on
   the cost model). Re-enable only on new evidence.
-- [ ] **Free-tier downgrade** ("The plan forward" step 4) not started.
-- [ ] **Check `#heating_up`** for how many Discord alerts the 2026-09-11
-  triple integrity run sent (inferred one; alerts aren't logged).
+- [ ] **Free-tier downgrade** ("The plan forward" step 4) not started. Still
+  Pro; research no longer depends on Supabase, so it's purely a cost call.
+- [x] ~~Check `#heating_up` for the 2026-09-11 triple integrity run~~ —
+  moot; the integrity check now runs once a night on launchd (verified
+  2026-09-12/13/14: one `job_runs` row each).
+- [ ] **IBKR (user's account)**: IB Gateway on the paper login, read-only
+  API, port 4002, localhost only, verified connecting 2026-09-14 via
+  `@stoqey/ib` (Node; Python here is 3.9, too old for `ib_async`). Real-time
+  quotes and scanners need the paid US Securities Snapshot + US Equity &
+  Options Add-On Streaming bundles (subscribed, then not activated
+  2026-09-14, error 10089; user is holding off on paying). **Works free:**
+  delayed quotes and short availability (shortable shares + borrow
+  difficulty, confirmed on SOFI). Option: a daily short-availability
+  logger for band names. Gateway is currently not running.
+- [ ] **Paid-product caveat**: market data (Alpaca, IBKR) is licensed for
+  personal use. Showing prices/charts to paying users, or charging for the
+  Discord channel with prices in alerts, needs a redistribution license
+  (CTA/UTP) or a vendor that includes one. Get a securities lawyer's view
+  before selling anything (publisher's exclusion, no trading around alerts).
+- [ ] `src/assets/RiotLogo.png` (the first RIOT logo) is untracked, and
+  `SS_SingleLine_Logo.png` is now unused: keep or delete.
 
 **Verify on first scheduled run**
-- [ ] `pg_cron` `refresh-spread-estimates`, Sunday 07:00 UTC: expect a
-  `job_runs` row with status `ok`.
-- [ ] `launchd` `com.stackslash.data-integrity-check`, 19:45 ET nightly:
-  expect one `job_runs` row per night, not three.
+- [ ] `fundamentals-sync` failed every run 2026-09-11 → 09-15 with FMP 401
+  (invalid key). User rotated the key 2026-09-15 (works from `.env`); confirm
+  the 06:00 UTC run is `ok` — if not, the Netlify env var still has the
+  old key.
+- [ ] pg_cron `refresh-window-stats` (first run 2026-09-15 23:00 UTC),
+  `weekly-bars-scan` (Mon 09-21 06:00 UTC), `refresh-spread-estimates`
+  (Sun 09-20 07:00 UTC; the 09-13 run died at a 2-min timeout, so spread
+  estimates are from 2026-09-11). Expect `job_runs` status `ok`.
+- [ ] `prune-bars-daily` via the new `prune_bars_history` RPC (22:25 UTC):
+  expect one `ok` row per night, no 57014.
+- [ ] Discord alerts: next morning/evening burst should show 0 `failed` in
+  `alerts` (retry on 429 added 2026-09-15; 23 had failed 09-14/15).
+- [ ] `research-update` first scheduled run 2026-09-15 20:30 ET: log in
+  `~/Library/Logs/stackslash-research-update/`.
+- [x] `launchd` `com.stackslash.data-integrity-check`: one `job_runs` row
+  per night, verified.
+
+**Jobs / infrastructure**
+- [ ] **Netlify runs long scheduled functions 2-3×.** `intraday-bars-scan`
+  (30-60 s), `intraday-factors-scan` (~30-45 s) and `record-fire-outcomes`
+  (~45 s) exceed Netlify's ~30 s scheduled limit, get cut off and
+  re-invoked; `job_runs` shows 2-3 rows per slot and leftover `running`
+  rows (251 on 2026-09-14, when the minute pull was saturating Alpaca).
+  Fix: split them into smaller batches, or move them to launchd on the
+  worker host ("The plan forward" step 6).
 
 **Measurement / data**
 - [ ] **Production bars are IEX-only** (`feed: "iex"` in `lib/alpaca.ts`).
@@ -126,10 +208,18 @@ Keep this list current: add anything left outstanding, strike it when done.
   against real quotes.
 - [ ] **`sim-intraday-flips`**: five audited defects, none fixed (see
   "Standing cautions").
-- [ ] `load_from_supabase.py` stores `bars_daily.date` as VARCHAR; store a
-  real DATE.
-- [ ] `confluenceGate.ts` fallbacks have drifted from `scan_config`.
+- [x] `load_from_supabase.py` now stores `date` as a real DATE (2026-09-15;
+  takes effect on the next load).
+- [x] `confluenceGate.ts` fallbacks realigned with `scan_config`
+  (0.10-5.00, $50k) 2026-09-15.
 - [ ] Reports live-vs-backtest panel is unbuilt.
+- [ ] **Next free data pulls, if wanted** (all free, small): FINRA daily
+  short-sale volume and bi-monthly short interest, Nasdaq trading halts /
+  LULD history, and parsing Form 4 insider trades + 8-K item 2.02 earnings
+  dates from the EDGAR filings already loaded. Tick-level SIP trades are
+  feasible only for band sessions (~11.5B trades, ~4-6 days, ~140 GB) or on
+  demand; the full tape is ~161B trades, ~2 months at the free rate and
+  ~2 TB (one paid Alpaca month at 10k req/min would cut it to about a week).
 
 **Research pipeline (in progress)**
 - [x] **Full SIP minute-bar pull done 2026-09-14** (`research/load_minute_bars.py`):
@@ -206,8 +296,9 @@ Keep this list current: add anything left outstanding, strike it when done.
   random-minute control net of costs with 90% bootstrap intervals, and
   runs are retained and resumable (`runs`, `report RUN_ID`, `--resume`).
   2016-2021 is for iteration; the 2022+ holdout needs `--holdout` and is
-  one-shot per schema version. Until the minute pull finishes, tiers draw
-  only from sessions whose minute data is on disk.
+  one-shot per schema version. Tiers draw from sessions whose minute data
+  is on disk, which since 2026-09-14 is all of 2016 → today. No schema has
+  been run at scale yet: that is the next research step.
 - [x] **Session snapshot charts built** (#65-#67): symbol page → **Session
   (candles)**. SIP 1-minute bars for any date since 2016 via the
   on-demand `session-candles` function, drawn as regular-session candles
@@ -249,10 +340,12 @@ Keep this list current: add anything left outstanding, strike it when done.
 | Frontend + functions | Netlify, site `stackslash` → https://stackslash.netlify.app | Live, auto-deploys from GitHub `main` |
 | Repo | https://github.com/cjaykohler-source/StackSlash | `main` |
 | Database | Supabase project `wnzxvdfskmivbyqadtll` (org StackSlash) | **Pro plan** (8 GB, upgraded 2026-09-10 — was free/500MB) |
-| Market data | Alpaca, **paper** keys (IEX feed) | No funded account needed for data-only use |
-| Alerts | Discord webhook, channel `#heating_up` (bot "HeatBot") | Working |
+| Market data | Alpaca, **paper** keys, free plan: IEX real-time (production scans, quotes, worker) + SIP history older than 15 min (charts, research); 200 req/min shared | No funded account needed for data-only use |
+| Market data (optional) | IBKR via IB Gateway on the worker host, paper login, read-only API :4002 | Connects; real-time needs paid bundles (not active). Not running |
+| Scheduled DB jobs | Supabase `pg_cron` (`refresh-window-stats`, `weekly-bars-scan`, `refresh-spread-estimates`) | Moved there 2026-09-15 |
+| Alerts | Discord webhook, channel `#heating_up` (bot "HeatBot"), embed cards | Working |
 | Auth | Single Supabase Auth user, `cjaykohler@gmail.com` | Working |
-| Mac mini (`stackslash-worker-host`, user `ckohler`, repo `~/StackSlash`) | Always-on, `launchd`, **dedicated to this project** | Runs `worker/` (realtime outlier websocket), `eod-scan` (17:45 ET), weekly fundamentals refresh, all backfills/sims/backtests, and the local DuckDB research warehouse |
+| Mac mini (`stackslash-worker-host`, user `ckohler`, repo `~/StackSlash`) | Always-on, `launchd`, **dedicated to this project** | Runs `worker/` (realtime outlier websocket), `eod-scan` (17:45 ET), `data-integrity-check` (19:45 ET), `research-update` (20:30 ET), all backfills/sims/backtests, and the local research warehouse (~80 GB, `research/data/`) |
 
 **Everything runs on the worker host.** This is the operative rule: no
 job, backfill, sim or research script runs anywhere else. A second Mac
@@ -269,7 +362,7 @@ timeout is why `eod-scan` had to move to launchd in the first place, and
 that constraint has shaped more of the design than it should have; see
 "The plan forward" for the proposal to move the job runner off it.
 
-Current DB snapshot: **~5,000 active symbols**, `bars_daily` holds
+Supabase snapshot (as of 2026-09-10): **~5,000 active symbols**, `bars_daily` holds
 **5 years** (2021-09-10 → 2026-09-10, 5,373,902 rows, 4,997 symbols),
 `bars_intraday` holds a rolling **90 days** for the band, DB size
 **1,710 MB / 8 GB**.
@@ -796,7 +889,13 @@ worthless; one identifiable at 10:00 is tradeable.
   negative expectancy at every horizon, on top of the pre-existing
   "unreachable percentile threshold at this symbol count" issue.
 
-### PR state as of this commit
+### PR state
+**Everything through #97 is merged (2026-09-15); no PRs are open.** The
+list below is the 2026-09-11 snapshot, kept for its notes; #57 and #58
+have since merged too. #59-#97 (backtest regeneration, SIP/minute/EDGAR
+loaders, schema lab, candle charts, RIOT rebrand, About page, nightly
+research update, Discord cards, job-timeout fixes) are in `git log`.
+
 - **#49** — the three `.select()` pagination fixes (`backfill-history`,
   `backtest-triggers`, `sim-flip-exits`) + `bandOnly` mode + GOAWAY
   retries. **Merged 2026-09-11.**
@@ -828,8 +927,8 @@ worthless; one identifiable at 10:00 is tradeable.
 Ordered. Steps 1-3 are prerequisites for trusting anything after them.
 
 ### 1. Merge and land what exists
-Merge **#57** and **#58** (#50, #55 and #56 are already merged), then
-on the worker host:
+**Done 2026-09-11/12** (#57, #58 merged; worker host set up). Kept for
+reference: on the worker host,
 
 ```bash
 cd ~/StackSlash && git pull && ./research/setup_worker_host.sh
@@ -951,8 +1050,8 @@ hosting costs nothing and preserves external access.
     the window leaves the two series on different scales.
   - **Latent 1000-row cap**: the band query ends in `.limit(1000)`. The
     band is ~824 names today, so it is not truncating yet.
-- **`confluenceGate.ts`'s fallbacks have drifted from `scan_config`**
-  (`price_max: 3` / `150000` vs `5.00` / `50000`). Live inconsistency.
+- ~~`confluenceGate.ts`'s fallbacks have drifted from `scan_config`~~ —
+  realigned 2026-09-15.
 - **The Reports live-vs-backtest panel** (item 4, Phase 8) is unbuilt.
 - **Do not add a 36th trigger variant.** The search returned negative
   across ~35 variants, a 5-year multi-regime backtest, a full duration

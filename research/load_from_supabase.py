@@ -109,10 +109,13 @@ def to_arrow(rows: list[dict]) -> pa.Table:
 
 def write(con, table: str, rows: list[dict], first: bool):
     con.register("_batch", to_arrow(rows))
+    # PostgREST sends dates as strings; store a real DATE so date math works
+    # without every query having to cast (session_cohorts.py once broke on this).
+    cols = "* replace (cast(date as date) as date)" if "date" in rows[0] else "*"
     if first:
-        con.execute(f"create or replace table {table} as select * from _batch")
+        con.execute(f"create or replace table {table} as select {cols} from _batch")
     else:
-        con.execute(f"insert into {table} select * from _batch")
+        con.execute(f"insert into {table} select {cols} from _batch")
     con.unregister("_batch")
 
 
