@@ -132,11 +132,32 @@ Keep this list current: add anything left outstanding, strike it when done.
 - [ ] Reports live-vs-backtest panel is unbuilt.
 
 **Research pipeline (in progress)**
-- [ ] Full SIP minute-bar pull (`research/load_minute_bars.py`), band
-  names first, ~4-6 days; then `--reconcile` for 100% minute-vs-daily
-  coverage. Runs as launchd agent `com.stackslash.minute-pull` (restarts
-  on crash, survives reboots; log in
-  `~/Library/Logs/stackslash-minute-pull/`).
+- [x] **Full SIP minute-bar pull done 2026-09-14** (`research/load_minute_bars.py`):
+  all 740,459 units, ~3.4B raw 1-minute bars (04:00-20:00 ET), every
+  symbol with SIP daily bars since 2016, delisted included, 0 rejected
+  symbols; ~80 GB in `research/data/minute/year=/month=/`. It ran as
+  launchd agent `com.stackslash.minute-pull` (log in
+  `~/Library/Logs/stackslash-minute-pull/`); the agent is idle now.
+  `MARKET_HOURS_RATE` is still 190 (the user chose data over the site for
+  the final day); set it back to 60 before any future market-hours pull.
+  **Reconcile** (`--reconcile`, table `minute_reconciliation` in
+  `minute_log.duckdb`), 21.8M symbol-sessions:
+  - 9.8M "complete" (minute volume within 2% of daily), 10.7M "partial",
+    1.3M "missing". Median minute/daily volume 0.978 (p5 0.77, p95 1.00).
+  - **"Missing" is not lost data.** 99.99% are sessions with ≤100 trades
+    (58% of ≤10-trade sessions); spot-checked against the API, these
+    sessions' trades are all odd lots (condition `I`) or non-bar prints
+    (`M`, `9`, `Q`), which count toward daily volume but never form a
+    minute bar. Re-requesting returns 0 bars. E.g. WEED 2023-06-08:
+    2,361 trades, 2,829 shares, all odd lots.
+  - **"Partial" is mostly odd-lot volume too**: daily volume includes odd
+    lots, minute bars don't. The gap grows every year (median ratio 0.989
+    in 2016 → 0.963 in 2026) as odd-lot share of volume rose. Treat
+    minute volume as round-lot volume, not total volume.
+  - Prices: daily high and low match the minute bars within 0.1% on
+    89-91% of sessions, and both within 0.5% on 88%.
+  - Band sessions (close $0.10-$5): 5.8% missing, 33.7% partial, median
+    volume ratio 0.989.
 - [x] **Corporate actions** (`research/load_corporate_actions.py`):
   Alpaca splits/reverse splits, name changes, mergers, spin-offs,
   worthless removals and dividends since 2016, one Parquet per quarter in
