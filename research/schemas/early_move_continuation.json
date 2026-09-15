@@ -1,0 +1,23 @@
+{
+  "name": "early_move_continuation",
+  "notes": "Phase B's open question: does a move already well under way early in the session continue? A band name up >=10% from its open by 09:45-10:30, above VWAP, within 2% of its high of day, on real volume (>=30% of ADV already traded). Enter at the next bar's open, first match per session. No stop/target, to keep the first test free of tuned exit knobs.",
+  "universe": {
+    "price_min": 0.10,
+    "price_max": 5.00,
+    "min_dollar_vol_20d": 50000,
+    "exchanges": ["NYSE", "NASDAQ", "AMEX", "ARCA", "BATS"],
+    "include_delisted": true
+  },
+  "window": {"start": "09:45", "end": "10:30"},
+  "entry": {
+    "all": [
+      {"field": "session_ret", "op": ">=", "value": 0.10},
+      {"field": "dist_vwap", "op": ">", "value": 0},
+      {"field": "pct_off_hod", "op": ">=", "value": -0.02},
+      {"field": "cum_vol_vs_adv20", "op": ">=", "value": 0.3}
+    ]
+  },
+  "first_match_only": true,
+  "exit": {"horizons_min": [15, 30, 60, 120, 240]},
+  "cost": {"flat_pct": 0.01}
+}

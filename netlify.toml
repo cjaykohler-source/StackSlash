@@ -78,8 +78,11 @@
 # stamp keeps advancing into the evening instead of freezing at ~4:50 PM.
 # Premarket (4:00-9:00 AM ET) is still not covered — thin penny-stock
 # prints, not worth the extra Alpaca load.
-[functions."intraday-bars-scan"]
-  schedule = "*/5 13-23 * * 1-5"
+# intraday-bars-scan, intraday-factors-scan and record-fire-outcomes are NOT
+# scheduled here any more: at 30-60 s they overran Netlify's ~30 s
+# scheduled-function limit and were cut off and re-run 2-3x per slot. They
+# run on the worker host via launchd (scripts/run-netlify-job.sh,
+# scripts/launchd/com.stackslash.<job>.plist) at the same cadence, in ET.
 
 # manage-positions: every 5 min during market hours — the exit half of the
 # flip pipeline. Walks open 'flip' shadow_positions against profit-target /
@@ -87,14 +90,9 @@
 [functions."manage-positions"]
   schedule = "*/5 13-20 * * 1-5"
 
-# intraday-factors-scan: every 5 min during market hours — computes live
-# session-shape factors (RVOL, VWAP, gap, opening range) for the tradeable
-# band into intraday_factor_state. Read by the Phase 3 fast triggers.
-[functions."intraday-factors-scan"]
-  schedule = "*/5 13-20 * * 1-5"
-
-# intraday-flip-scan: every 5 min, offset +2 min so it reads fresh
-# intraday_factor_state. Evaluates the enabled fast flip triggers.
+# intraday-flip-scan: every 5 min, offset +2 min so it reads the
+# intraday_factor_state the launchd intraday-factors-scan writes on :00/:05.
+# Evaluates the enabled fast flip triggers.
 [functions."intraday-flip-scan"]
   schedule = "2-59/5 13-20 * * 1-5"
 
@@ -127,11 +125,8 @@
 # via pg_cron (migration nightly_db_jobs_on_pg_cron, logged to job_runs).
 # Both functions stay deployed for manual runs.
 
-# record-fire-outcomes: 23:10 UTC weekdays — after eod-scan's bars_daily
-# upsert. Fills fire_outcomes (realized forward return of every promoted
-# entry trigger_event) — the live counterpart to backtest-triggers.
-[functions."record-fire-outcomes"]
-  schedule = "10 23 * * 1-5"
+# record-fire-outcomes: launchd, 19:10 ET weekdays (see the note near the
+# top of this list).
 
 # data-integrity-check is NOT scheduled here: it runs on the worker host
 # via launchd (scripts/launchd/com.stackslash.data-integrity-check.plist,

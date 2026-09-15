@@ -122,10 +122,13 @@ What exists and works, as of the end of the 2026-09-11 → 09-15 session:
 | `data-integrity-check` | launchd | 19:45 ET nightly |
 | `research-update` (SIP daily + minute, corporate actions) | launchd | 20:30 ET weekdays |
 | `outlier-worker` (IEX websocket) | launchd | always on |
+| `intraday-bars-scan` | launchd (`scripts/run-netlify-job.sh`) | every 5 min, 09:00-19:55 ET weekdays |
+| `intraday-factors-scan` | launchd | every 5 min, 09:00-16:55 ET weekdays |
+| `record-fire-outcomes` | launchd | 19:10 ET weekdays |
 | `refresh-window-stats` | Supabase pg_cron | 23:00 UTC weekdays |
 | `weekly-bars-scan` | pg_cron | Mon 06:00 UTC |
 | `refresh-spread-estimates` | pg_cron | Sun 07:00 UTC |
-| intraday scans, prunes, `fundamentals-sync`, `record-fire-outcomes`, news | Netlify scheduled functions | see `netlify.toml` |
+| `intraday-scan`, `intraday-flip-scan`, `manage-positions`, prunes, `fundamentals-sync`, news, volume profile | Netlify scheduled functions | see `netlify.toml` |
 
 Every job writes `job_runs`; check it (status, duplicates, `running` rows
 that never finished) before assuming a job works.
@@ -185,13 +188,15 @@ Keep this list current: add anything left outstanding, strike it when done.
   per night, verified.
 
 **Jobs / infrastructure**
-- [ ] **Netlify runs long scheduled functions 2-3×.** `intraday-bars-scan`
-  (30-60 s), `intraday-factors-scan` (~30-45 s) and `record-fire-outcomes`
-  (~45 s) exceed Netlify's ~30 s scheduled limit, get cut off and
-  re-invoked; `job_runs` shows 2-3 rows per slot and leftover `running`
-  rows (251 on 2026-09-14, when the minute pull was saturating Alpaca).
-  Fix: split them into smaller batches, or move them to launchd on the
-  worker host ("The plan forward" step 6).
+- [x] **Netlify ran long scheduled functions 2-3×** (`intraday-bars-scan`
+  30-60 s, `intraday-factors-scan` ~30 s, `record-fire-outcomes` ~45 s, all
+  over the ~30 s limit; 2-3 `job_runs` rows per slot plus orphaned
+  `running` rows). Moved to launchd on 2026-09-15: one generic runner,
+  `scripts/run-netlify-job.sh JOB [START END]` (ET weekday window gate),
+  and a plist per job in `scripts/launchd/`, fired on minutes 0,5,…55 so
+  `intraday-flip-scan` (+2 min, still Netlify) reads fresh factors.
+  `intraday-factors-scan`'s market-hours check is now ET (the UTC one cut
+  the last session hour in winter). Verify: one `job_runs` row per slot.
 
 **Measurement / data**
 - [ ] **Production bars are IEX-only** (`feed: "iex"` in `lib/alpaca.ts`).
