@@ -193,9 +193,11 @@ async function withRetry<T>(fn: () => PromiseLike<{ data: T; error: unknown }>, 
   throw lastErr;
 }
 
+// ET wall clock, so the window doesn't slip an hour when DST ends (the old
+// UTC 13-21 check cut the last session hour all winter).
 function isLikelyMarketHours(): boolean {
-  const now = new Date();
-  const d = now.getUTCDay();
-  const h = now.getUTCHours();
-  return d >= 1 && d <= 5 && h >= 13 && h < 21;
+  const now = Date.now();
+  const day = new Date(`${etDateString(now)}T12:00:00Z`).getUTCDay();
+  const open = etWallClock(etDateString(now), 9, 0);
+  return day >= 1 && day <= 5 && now >= open && now < open + 8 * 3_600_000;
 }
