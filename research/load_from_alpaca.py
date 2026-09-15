@@ -36,6 +36,7 @@ Usage:
     research/.venv/bin/python research/load_from_alpaca.py              # everything
     research/.venv/bin/python research/load_from_alpaca.py --limit 400  # smoke test
     research/.venv/bin/python research/load_from_alpaca.py --fresh      # drop and reload
+    research/.venv/bin/python research/load_from_alpaca.py --update     # nightly: new sessions only
 """
 
 from __future__ import annotations
@@ -46,8 +47,9 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import duckdb
 import pyarrow as pa
@@ -67,6 +69,10 @@ ADJUSTMENTS = ("raw", "split")
 # Uppercase letter first, then letters/digits and the class/unit
 # separators Alpaca uses (BRK.B, and / or - on some units and warrants).
 TICKER_RE = "[A-Z][A-Z0-9./-]*"
+CORP_ACTIONS = REPO / "research" / "data" / "corporate_actions"
+# Corporate-action types that rescale split-adjusted history.
+SPLIT_TYPES = ("forward_splits", "reverse_splits", "unit_splits")
+ET = ZoneInfo("America/New_York")
 BAR_SCHEMA = pa.schema([
     ("symbol", pa.string()), ("date", pa.date32()),
     ("open", pa.float64()), ("high", pa.float64()), ("low", pa.float64()), ("close", pa.float64()),
@@ -219,13 +225,13 @@ def ensure_tables(con, fresh: bool):
     )
 
 
-def fetch_batch(api: Alpaca, symbols: list[str], adjustment: str, end: str) -> tuple[list[dict], int]:
+def fetch_batch(api: Alpaca, symbols: list[str], adjustment: str, end: str, start: str = START) -> tuple[list[dict], int]:
     rows, pages, token = [], 0, None
     while True:
         params = {
             "symbols": ",".join(symbols),
             "timeframe": "1Day",
-            "start": START,
+            "start": start,
             "end": end,
             "limit": PAGE_LIMIT,
             "feed": "sip",
@@ -262,14 +268,16 @@ def fetch_batch(api: Alpaca, symbols: list[str], adjustment: str, end: str) -> t
             return rows, pages
 
 
-def fetch_batch_isolating(api: Alpaca, symbols: list[str], adjustment: str, end: str) -> tuple[list[dict], int, list[str]]:
+def fetch_batch_isolating(
+    api: Alpaca, symbols: list[str], adjustment: str, end: str, start: str = START
+) -> tuple[list[dict], int, list[str]]:
     """
     fetch_batch, but a 400 (one unacceptable symbol poisons the whole
     request) is bisected down to the offending symbols, which are returned
     as rejected instead of failing the load.
     """
     try:
-        rows, pages = fetch_batch(api, symbols, adjustment, end)
+        rows, pages = fetch_batch(api, symbols, adjustment, end, start)
         return rows, pages, []
     except requests.HTTPError as e:
         if e.response is None or e.response.status_code != 400:
@@ -277,8 +285,8 @@ def fetch_batch_isolating(api: Alpaca, symbols: list[str], adjustment: str, end:
         if len(symbols) == 1:
             return [], 1, symbols
         mid = len(symbols) // 2
-        r1, p1, bad1 = fetch_batch_isolating(api, symbols[:mid], adjustment, end)
-        r2, p2, bad2 = fetch_batch_isolating(api, symbols[mid:], adjustment, end)
+        r1, p1, bad1 = fetch_batch_isolating(api, symbols[:mid], adjustment, end, start)
+        r2, p2, bad2 = fetch_batch_isolating(api, symbols[mid:], adjustment, end, start)
         return r1 + r2, p1 + p2 + 1, bad1 + bad2
 
 
@@ -323,9 +331,148 @@ def load_bars(con, api: Alpaca, symbols: list[str], adjustment: str, end: str):
                 print(f"  {n}/{len(futures)} batches, {total_bars:,} bars, {elapsed/60:.1f}m elapsed, ETA {eta/60:.1f}m", flush=True)
 
 
+def last_complete_session() -> date:
+    """
+    The latest date whose full 04:00-20:00 ET session is both over and at
+    least 15 minutes old (the free plan's SIP delay). Before 20:16 ET that is
+    yesterday, so an evening run never stores a half-finished day.
+    """
+    now = datetime.now(ET)
+    return now.date() if (now.hour, now.minute) >= (20, 16) else now.date() - timedelta(days=1)
+
+
+def fetch_all(api: Alpaca, symbols: list[str], adjustment: str, end: str, start: str) -> list[dict]:
+    """Every 200-symbol batch for one window, concurrently; rejected symbols are reported."""
+    batches = [symbols[i : i + SYMBOLS_PER_REQUEST] for i in range(0, len(symbols), SYMBOLS_PER_REQUEST)]
+    rows: list[dict] = []
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        for r, _, rejected in pool.map(lambda b: fetch_batch_isolating(api, b, adjustment, end, start), batches):
+            rows += r
+            if rejected:
+                print(f"  API rejected {len(rejected)} symbol(s): {', '.join(rejected[:10])}", flush=True)
+    return rows
+
+
+def replace_rows(con, table: str, rows: list[dict], where_sql: str, params: list) -> None:
+    """Delete-then-insert, so re-running the same window is idempotent."""
+    con.execute(f"delete from {table} where {where_sql}", params)
+    if rows:
+        con.register("_bars", pa.Table.from_pylist(rows, schema=BAR_SCHEMA))
+        con.execute(f"insert into {table} select * from _bars")
+        con.unregister("_bars")
+
+
+def update(con, api: Alpaca, symbols: list[str]) -> None:
+    """
+    Nightly incremental. Appends every complete session after the newest
+    date in the warehouse, both adjustments, then re-pulls the full
+    split-adjusted history of any symbol whose split/reverse split has its
+    ex-date in that window (a split rescales every earlier adjusted price).
+    Needs the current quarter of corporate actions to be fresh:
+    scripts/run-research-update.sh runs load_corporate_actions.py first.
+    """
+    last = con.execute("select max(date) from sip_bars_daily_raw").fetchone()[0]
+    first, final = last + timedelta(days=1), last_complete_session()
+    if first > final:
+        print(f"daily bars already current through {last}")
+        return
+    # Skip symbols the API has already rejected (CUSIP/CVR placeholders that
+    # pass TICKER_RE); each one costs a bisection every night otherwise.
+    rejected = {
+        s
+        for (r,) in con.execute("select rejected_symbols from sip_load_log where rejected_symbols is not null").fetchall()
+        for s in r.split(",")
+    }
+    symbols = [s for s in symbols if s not in rejected]
+    start = f"{first.isoformat()}T00:00:00Z"
+    # Daily bars are stamped midnight ET; ending at the next UTC midnight
+    # takes the final session's bar and nothing after it.
+    end = f"{(final + timedelta(days=1)).isoformat()}T00:00:00Z"
+    print(f"\nupdate: sessions {first} -> {final} for {len(symbols):,} symbols")
+    added = {}
+    for adj in ADJUSTMENTS:
+        rows = fetch_all(api, symbols, adj, end, start)
+        replace_rows(con, f"sip_bars_daily_{adj}", rows, "date >= ?", [first])
+        added[adj] = len(rows)
+        print(f"  sip_bars_daily_{adj}: +{len(rows):,} bars", flush=True)
+
+    split_syms: list[str] = []
+    if any(CORP_ACTIONS.glob("*.parquet")):
+        split_syms = [
+            r[0]
+            for r in con.execute(
+                f"""select distinct upper(symbol) from read_parquet('{CORP_ACTIONS / "*.parquet"}')
+                    where type in {SPLIT_TYPES} and ex_date between ? and ?
+                      and regexp_full_match(upper(symbol), '{TICKER_RE}')""",
+                [first.isoformat(), final.isoformat()],
+            ).fetchall()
+        ]
+    # Only symbols in this universe: corporate actions also cover mutual
+    # funds and other non-us_equity symbols that have no raw bars here, and
+    # re-pulling those would give the split table rows raw doesn't have.
+    universe = set(symbols)
+    split_syms = [s for s in split_syms if s in universe]
+    if split_syms:
+        rows = fetch_all(api, split_syms, "split", end, START)
+        replace_rows(con, "sip_bars_daily_split", rows, "list_contains(?, symbol)", [split_syms])
+        print(f"  re-pulled split-adjusted history for {len(split_syms)} split symbol(s): {', '.join(split_syms[:12])}", flush=True)
+
+    con.execute(
+        """create table if not exists sip_update_log (
+             run_at timestamptz, first_date date, last_date date,
+             raw_bars integer, split_bars integer, split_repulls varchar)"""
+    )
+    con.execute(
+        "insert into sip_update_log values (now(), ?, ?, ?, ?, ?)",
+        [first, final, added["raw"], added["split"], ",".join(split_syms) or None],
+    )
+
+
+def backfill_new_symbols(con, api: Alpaca) -> list[str]:
+    """
+    Full history for symbols that first appeared in the last 10 days of the
+    warehouse. Some are genuine new listings, but not all: on 2026-09-14,
+    9 of 15 "new" symbols (OPTT, IPDN, ATTO, NFE, ...) had years of SIP
+    history that the 2026-09-11 bulk load never requested, because they
+    weren't in Alpaca's asset list that day. Each symbol is re-pulled once
+    (sip_backfill_log), so a real IPO costs one extra request.
+    """
+    con.execute("create table if not exists sip_backfill_log (symbol varchar primary key, bars integer, backfilled_at timestamptz)")
+    recent = [
+        r[0]
+        for r in con.execute(
+            """select symbol from sip_bars_daily_raw group by 1
+               having min(date) >= (select max(date) from sip_bars_daily_raw) - interval 10 day
+               except select symbol from sip_backfill_log order by 1"""
+        ).fetchall()
+    ]
+    if not recent:
+        return []
+    final = con.execute("select max(date) from sip_bars_daily_raw").fetchone()[0]
+    end = f"{(final + timedelta(days=1)).isoformat()}T00:00:00Z"
+    counts: dict[str, int] = {}
+    for adj in ADJUSTMENTS:
+        rows = fetch_all(api, recent, adj, end, START)
+        replace_rows(con, f"sip_bars_daily_{adj}", rows, "list_contains(?, symbol)", [recent])
+        if adj == "raw":
+            for r in rows:
+                counts[r["symbol"]] = counts.get(r["symbol"], 0) + 1
+    con.executemany(
+        "insert or replace into sip_backfill_log values (?, ?, now())", [(s, counts.get(s, 0)) for s in recent]
+    )
+    older = sorted(s for s in recent if counts.get(s, 0) > 5)
+    print(f"  new symbols: {len(recent)}; with earlier history backfilled: {len(older)} {', '.join(older[:15])}", flush=True)
+    return recent
+
+
 def verify(con, symbols_expected: int):
     print("\nVerification")
     ok = True
+    # Nightly --update runs add bars outside sip_load_log's batches, so the
+    # table-vs-log count check only holds for a warehouse never updated.
+    updated = con.execute(
+        "select count(*) from information_schema.tables where table_name = 'sip_update_log'"
+    ).fetchone()[0] and con.execute("select count(*) from sip_update_log").fetchone()[0]
     for adj in ADJUSTMENTS:
         t = f"sip_bars_daily_{adj}"
         n, syms, dmin, dmax = con.execute(f"select count(*), count(distinct symbol), min(date), max(date) from {t}").fetchone()
@@ -335,7 +482,7 @@ def verify(con, symbols_expected: int):
         ).fetchone()
         dups = con.execute(f"select count(*) from (select symbol, date from {t} group by 1, 2 having count(*) > 1)").fetchone()[0]
         print(f"  {t}: {n:,} bars, {syms:,} symbols with data, {dmin} -> {dmax}; log says {logged[0]:,} bars over {logged[1]:,} symbols requested; duplicate (symbol,date): {dups}")
-        if n != logged[0]:
+        if n != logged[0] and not updated:
             print(f"  !!! {t}: table has {n:,} bars but the load log recorded {logged[0]:,}")
             ok = False
         if logged[1] < symbols_expected:
@@ -352,6 +499,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, help="only the first N symbols (smoke test)")
     ap.add_argument("--fresh", action="store_true", help="drop the SIP tables and load log first")
+    ap.add_argument("--update", action="store_true", help="nightly: append sessions newer than the warehouse")
     args = ap.parse_args()
 
     env = load_env()
@@ -359,7 +507,15 @@ def main():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
 
+    # Refreshed every run, so new listings and delistings are picked up.
     symbols = load_assets(con, api)
+    if args.update:
+        ensure_tables(con, False)
+        update(con, api, symbols)
+        backfill_new_symbols(con, api)
+        con.execute("checkpoint")
+        con.close()
+        return
     if args.limit:
         symbols = symbols[: args.limit]
     ensure_tables(con, args.fresh or bool(args.limit))

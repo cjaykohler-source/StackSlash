@@ -136,8 +136,25 @@ Keep this list current: add anything left outstanding, strike it when done.
   all 740,459 units, ~3.4B raw 1-minute bars (04:00-20:00 ET), every
   symbol with SIP daily bars since 2016, delisted included, 0 rejected
   symbols; ~80 GB in `research/data/minute/year=/month=/`. It ran as
-  launchd agent `com.stackslash.minute-pull` (log in
-  `~/Library/Logs/stackslash-minute-pull/`); the agent is idle now.
+  launchd agent `com.stackslash.minute-pull`, now unloaded (the plist
+  stays in `scripts/launchd/` for a future bulk re-pull).
+  **Kept current nightly** by `com.stackslash.research-update` (weekdays
+  20:30 ET, `scripts/run-research-update.sh`, log in
+  `~/Library/Logs/stackslash-research-update/`): the current quarter of
+  corporate actions, then `load_from_alpaca.py --update` (new sessions,
+  both adjustments, plus a full split-adjusted re-pull for any symbol that
+  split), then `load_minute_bars.py --update` (one set of `dYYYYMMDD-*`
+  units per new session). Every step is idempotent, so a missed night is
+  caught up by the next run. It also self-heals the universe: any symbol
+  first seen in the last 10 days gets its full daily history re-pulled
+  once (`sip_backfill_log`), and `load_minute_bars.py --update` plans gap
+  units for any symbol-session that has a daily bar but no minute unit.
+  The first run found 9 such symbols (OPTT, IPDN, ATTO, NFE, CPOP, NXXT,
+  NRSN, HUBC, BURU) with years of history the 2026-09-11 bulk load missed
+  because they weren't in Alpaca's asset list that day; the bulk universe
+  may have more like them that never trade again. It writes the DuckDB warehouse, so a
+  `schema_lab.py` run holding it at 20:30 makes that night's run fail;
+  the next night catches up.
   `MARKET_HOURS_RATE` is still 190 (the user chose data over the site for
   the final day); set it back to 60 before any future market-hours pull.
   **Reconcile** (`--reconcile`, table `minute_reconciliation` in

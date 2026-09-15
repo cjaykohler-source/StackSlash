@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.research-update</string>
+
+    <!-- Nightly research-warehouse update: corporate actions, SIP daily
+         bars and SIP minute bars for the day's session. See
+         scripts/run-research-update.sh. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/scripts/run-research-update.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+
+    <!-- 20:30 on weekdays, local time (the host is on America/New_York):
+         after extended hours end at 20:00 plus the 15-minute SIP delay. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-research-update/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-research-update/launchd.err.log</string>
+</dict>
+</plist>

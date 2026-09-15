@@ -33,6 +33,11 @@ Usage:
     research/.venv/bin/python research/load_minute_bars.py                 # run / resume
     research/.venv/bin/python research/load_minute_bars.py --max-units 20  # smoke test
     research/.venv/bin/python research/load_minute_bars.py --reconcile     # minute vs daily audit
+    research/.venv/bin/python research/load_minute_bars.py --update        # nightly: new sessions only
+
+--update plans one set of units per new session (unit ids dYYYYMMDD-NNNNN,
+`day` set) from the warehouse's daily bars, so run load_from_alpaca.py
+--update first. See scripts/run-research-update.sh.
 """
 
 from __future__ import annotations
@@ -42,7 +47,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -70,6 +75,9 @@ MARKET_HOURS_RATE = 190
 OFF_HOURS_RATE = 190
 WORKERS = 4
 ET = ZoneInfo("America/New_York")
+# The bulk pull's plan covered sessions through this date; --update takes
+# over from the next session.
+BULK_THROUGH = date(2026, 9, 11)
 
 
 def load_env() -> dict:
@@ -144,6 +152,11 @@ def log_con():
              unit_id varchar primary key, bars bigint, symbols_with_bars integer,
              pages integer, rejected_symbols varchar, file varchar, loaded_at timestamptz)"""
     )
+    # Bulk units cover a calendar month (day null); --update units one session.
+    con.execute("alter table minute_units add column if not exists day date")
+    con.execute(
+        "create table if not exists minute_update_days (date date primary key, units integer, planned_at timestamptz)"
+    )
     return con
 
 
@@ -187,10 +200,118 @@ def plan(log):
     print(f"Planned {n:,} units ({band_units:,} band-first), ~{est_total/1e9:.2f}B bars expected (upper bound)")
 
 
-def fetch_unit(api: Alpaca, symbols: list[str], month) -> tuple[list[dict], int, list[str]]:
-    start = datetime(month.year, month.month, 1, tzinfo=timezone.utc)
-    end = datetime(month.year + (month.month == 12), month.month % 12 + 1, 1, tzinfo=timezone.utc)
-    end = min(end, datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0))
+def plan_day(log, wh, d: date) -> int:
+    """Pack one session's symbols (every symbol with a daily bar that day) into units."""
+    rows = wh.execute(
+        f"""select symbol, least(coalesce(trade_count, {MAX_BARS_PER_SESSION}), {MAX_BARS_PER_SESSION})
+            from sip_bars_daily_raw where date = ? order by symbol""",
+        [d],
+    ).fetchall()
+    units, cur, est = [], [], 0
+    for sym, e in rows:
+        if cur and (est + e > TARGET_BARS_PER_UNIT or len(cur) >= MAX_SYMBOLS_PER_UNIT):
+            units.append((cur, est))
+            cur, est = [], 0
+        cur.append(sym)
+        est += e
+    if cur:
+        units.append((cur, est))
+    log.executemany(
+        """insert or replace into minute_units (unit_id, month, priority, symbols, n_symbols, est_bars, day)
+           values (?, ?, 0, ?, ?, ?, ?)""",
+        [(f"d{d:%Y%m%d}-{i:05d}", d.replace(day=1), ",".join(s), len(s), e, d) for i, (s, e) in enumerate(units)],
+    )
+    log.execute("insert or replace into minute_update_days values (?, ?, now())", [d, len(units)])
+    return len(units)
+
+
+def pack(rows: list[tuple[str, int]]) -> list[tuple[list[str], int]]:
+    """Greedy-pack (symbol, est_bars) into units of ~TARGET_BARS_PER_UNIT."""
+    units, cur, est = [], [], 0
+    for sym, e in rows:
+        if cur and (est + e > TARGET_BARS_PER_UNIT or len(cur) >= MAX_SYMBOLS_PER_UNIT):
+            units.append((cur, est))
+            cur, est = [], 0
+        cur.append(sym)
+        est += e
+    if cur:
+        units.append((cur, est))
+    return units
+
+
+def plan_gaps(log, wh) -> int:
+    """
+    Units for any symbol-session with a daily bar but no minute unit covering
+    it: symbols the warehouse gained after the bulk plan (see
+    load_from_alpaca.backfill_new_symbols). Months before BULK_THROUGH's month
+    get month units; from that month on, where day units take over, gaps are
+    planned per day so no two units ever cover the same session.
+    """
+    bulk_month0 = BULK_THROUGH.replace(day=1)
+    covered_months = set(
+        log.execute(
+            "select distinct unnest(string_split(symbols, ',')), month from minute_units where day is null"
+        ).fetchall()
+    )
+    covered_days = set(
+        log.execute("select distinct unnest(string_split(symbols, ',')), day from minute_units where day is not null").fetchall()
+    )
+    through = log.execute("select max(date) from minute_update_days").fetchone()[0] or BULK_THROUGH
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+    batch = []
+
+    by_month: dict = {}
+    for sym, month, est in wh.execute(
+        f"""select symbol, date_trunc('month', date)::date, sum(least(coalesce(trade_count, {MAX_BARS_PER_SESSION}), {MAX_BARS_PER_SESSION}))
+            from sip_bars_daily_raw where date < ? group by 1, 2 order by 2, 1""",
+        [bulk_month0],
+    ).fetchall():
+        if (sym, month) not in covered_months:
+            by_month.setdefault(month, []).append((sym, est))
+    for month, rows in by_month.items():
+        for i, (syms, est) in enumerate(pack(rows)):
+            batch.append((f"g{month:%Y%m}-{stamp}-{i:05d}", month, ",".join(syms), len(syms), est, None))
+
+    by_day: dict = {}
+    for sym, d, est in wh.execute(
+        f"""select symbol, date, least(coalesce(trade_count, {MAX_BARS_PER_SESSION}), {MAX_BARS_PER_SESSION})
+            from sip_bars_daily_raw where date >= ? and date <= ? order by 2, 1""",
+        [bulk_month0, through],
+    ).fetchall():
+        # The bulk units for BULK_THROUGH's month cover its sessions through BULK_THROUGH.
+        if d <= BULK_THROUGH and (sym, bulk_month0) in covered_months:
+            continue
+        if (sym, d) not in covered_days:
+            by_day.setdefault(d, []).append((sym, est))
+    for d, rows in by_day.items():
+        for i, (syms, est) in enumerate(pack(rows)):
+            batch.append((f"g{d:%Y%m%d}-{stamp}-{i:05d}", d.replace(day=1), ",".join(syms), len(syms), est, d))
+
+    if batch:
+        log.executemany(
+            """insert into minute_units (unit_id, month, priority, symbols, n_symbols, est_bars, day)
+               values (?, ?, 0, ?, ?, ?, ?)""",
+            batch,
+        )
+        print(f"planned {len(batch)} gap units: {len(by_month)} month(s) before {bulk_month0}, {len(by_day)} later session(s)", flush=True)
+    return len(batch)
+
+
+def last_complete_session() -> date:
+    """Latest date whose 04:00-20:00 ET session is over and past the 15-min SIP delay."""
+    now = datetime.now(ET)
+    return now.date() if (now.hour, now.minute) >= (20, 16) else now.date() - timedelta(days=1)
+
+
+def fetch_unit(api: Alpaca, symbols: list[str], month, day: date | None = None) -> tuple[list[dict], int, list[str]]:
+    if day is not None:
+        start = datetime(day.year, day.month, day.day, 4, 0, tzinfo=ET).astimezone(timezone.utc)
+        end = datetime(day.year, day.month, day.day, 20, 0, tzinfo=ET).astimezone(timezone.utc)
+        end = min(end, datetime.now(timezone.utc) - timedelta(minutes=16))
+    else:
+        start = datetime(month.year, month.month, 1, tzinfo=timezone.utc)
+        end = datetime(month.year + (month.month == 12), month.month % 12 + 1, 1, tzinfo=timezone.utc)
+        end = min(end, datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0))
 
     def run(syms: list[str]) -> tuple[list[dict], int, list[str]]:
         out, pages, token = [], 0, None
@@ -244,7 +365,7 @@ SCHEMA = pa.schema([
 
 def run_units(log, api: Alpaca, max_units: int | None):
     todo = log.execute(
-        """select u.unit_id, u.month, u.symbols from minute_units u
+        """select u.unit_id, u.month, u.symbols, u.day from minute_units u
            left join minute_load_log l using (unit_id)
            where l.unit_id is null order by u.priority desc, u.month, u.unit_id"""
     ).fetchall()
@@ -264,7 +385,7 @@ def run_units(log, api: Alpaca, max_units: int | None):
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
       for w in range(0, len(todo), WINDOW):
         window = todo[w : w + WINDOW]
-        futures = [(uid, m, pool.submit(fetch_unit, api, syms.split(","), m)) for uid, m, syms in window]
+        futures = [(uid, m, pool.submit(fetch_unit, api, syms.split(","), m, day)) for uid, m, syms, day in window]
         for uid, month, fut in futures:
             n += 1
             rows, pages, rejected = fut.result()
@@ -286,6 +407,37 @@ def run_units(log, api: Alpaca, max_units: int | None):
             if n % 50 == 0 or n == len(todo):
                 el = time.time() - t0
                 print(f"  {n:,}/{len(todo):,} units, {done_bars:,} bars, {el/60:.1f}m, ETA {el/n*(len(todo)-n)/3600:.1f}h, rate now {current_rate()}/min", flush=True)
+
+
+def update(log, api: Alpaca) -> None:
+    """
+    Nightly: plan and load minute bars for every complete session in the
+    warehouse newer than what's already planned, then re-export the plan so
+    schema_lab.py sees the new units. Idempotent: a planned day's units that
+    are already logged are skipped, so a failed run just resumes next time.
+    """
+    covered = log.execute("select max(date) from minute_update_days").fetchone()[0] or BULK_THROUGH
+    wh = duckdb.connect(str(WAREHOUSE), read_only=True)
+    days = [
+        r[0]
+        for r in wh.execute(
+            "select distinct date from sip_bars_daily_raw where date > ? and date <= ? order by 1",
+            [covered, last_complete_session()],
+        ).fetchall()
+    ]
+    for d in days:
+        print(f"planned {plan_day(log, wh, d)} units for {d}", flush=True)
+    plan_gaps(log, wh)
+    wh.close()
+    if not days:
+        print(f"no new sessions after {covered}")
+    run_units(log, api, None)
+    log.execute(f"copy minute_units to '{PLAN_PARQUET}' (format parquet)")
+    for d, syms, bars in log.execute(
+        """select u.day, sum(l.symbols_with_bars), sum(l.bars) from minute_units u join minute_load_log l using (unit_id)
+           where u.day in (select date from minute_update_days) group by 1 order by 1 desc limit 5"""
+    ).fetchall():
+        print(f"  {d}: {syms:,} symbols with minute bars, {bars:,} bars")
 
 
 def reconcile():
@@ -336,10 +488,17 @@ def main():
     ap.add_argument("--plan", action="store_true", help="(re)build the unit plan from daily bars")
     ap.add_argument("--max-units", type=int, help="run at most N units (smoke test)")
     ap.add_argument("--reconcile", action="store_true", help="audit minute bars against daily bars")
+    ap.add_argument("--update", action="store_true", help="nightly: load sessions newer than what's covered")
     args = ap.parse_args()
 
     if args.reconcile:
         reconcile()
+        return
+    if args.update:
+        log = log_con()
+        env = load_env()
+        update(log, Alpaca(env["ALPACA_API_KEY_ID"], env["ALPACA_API_SECRET_KEY"]))
+        log.close()
         return
     log = log_con()
     if args.plan or log.execute("select count(*) from minute_units").fetchone()[0] == 0:
