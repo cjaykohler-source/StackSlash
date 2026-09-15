@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { clampEmbed, opsEmbed, type DiscordEmbed } from "./discordEmbed";
 
 /**
  * Alert delivery, kept as one abstraction so a new channel (email, SMS)
@@ -21,14 +22,15 @@ async function sendTelegram(text: string) {
   return true;
 }
 
-async function sendDiscord(text: string) {
+/** With an embed, the alert posts as its own card; the plain text is only a fallback. */
+async function sendDiscord(text: string, embed?: DiscordEmbed) {
   const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl) return false;
 
   const res = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: text }),
+    body: JSON.stringify(embed ? { embeds: [clampEmbed(embed)] } : { content: text }),
   });
   if (!res.ok) {
     throw new Error(`Discord send failed: ${res.status} ${await res.text()}`);
@@ -56,6 +58,8 @@ export async function dispatchAlert(
     dedupKey: string;
     cooldownMinutes: number;
     message: string;
+    /** Discord card; Telegram always gets `message`. */
+    embed?: DiscordEmbed;
   },
 ): Promise<{ status: "sent" | "skipped" | "failed"; reason?: string }> {
   const channel = channelFromEnv();
@@ -98,7 +102,7 @@ export async function dispatchAlert(
 
   try {
     if (channel === "telegram") await sendTelegram(params.message);
-    if (channel === "discord") await sendDiscord(params.message);
+    if (channel === "discord") await sendDiscord(params.message, params.embed);
     await db
       .from("alerts")
       .update({ status: "sent", sent_at: new Date().toISOString() })
@@ -124,6 +128,6 @@ export async function sendOperationalAlert(text: string): Promise<"sent" | "skip
   const channel = channelFromEnv();
   if (!channel) return "skipped";
   if (channel === "telegram") await sendTelegram(text);
-  if (channel === "discord") await sendDiscord(text);
+  if (channel === "discord") await sendDiscord(text, opsEmbed(text));
   return "sent";
 }
