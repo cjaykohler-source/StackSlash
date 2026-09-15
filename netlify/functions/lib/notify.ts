@@ -22,20 +22,37 @@ async function sendTelegram(text: string) {
   return true;
 }
 
-/** With an embed, the alert posts as its own card; the plain text is only a fallback. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * With an embed, the alert posts as its own card; the plain text is only a
+ * fallback. A webhook takes ~5 posts per 2 s, and the 09:00 ET scan and
+ * eod-scan fire dozens of alerts at once: before this retried, 23 of them
+ * were marked failed on 2026-09-14/15. A 429 now waits for Discord's
+ * retry_after and tries again (up to 6 times, jittered so the parallel
+ * deep-dive invocations don't retry in lockstep).
+ */
 async function sendDiscord(text: string, embed?: DiscordEmbed) {
   const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl) return false;
 
-  const res = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(embed ? { embeds: [clampEmbed(embed)] } : { content: text }),
-  });
-  if (!res.ok) {
-    throw new Error(`Discord send failed: ${res.status} ${await res.text()}`);
+  const body = JSON.stringify(embed ? { embeds: [clampEmbed(embed)] } : { content: text });
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const res = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    if (res.ok) return true;
+    if (res.status !== 429 && res.status < 500) {
+      throw new Error(`Discord send failed: ${res.status} ${await res.text()}`);
+    }
+    let waitMs = 1000 * 2 ** attempt;
+    if (res.status === 429) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const payload = (await res.json().catch(() => null)) as { retry_after?: number } | null;
+      const secs = payload?.retry_after ?? (Number.isFinite(retryAfter) ? retryAfter : null);
+      if (secs != null) waitMs = secs * 1000;
+    }
+    await sleep(waitMs + Math.random() * 500);
   }
-  return true;
+  throw new Error("Discord send failed: still rate-limited after 6 attempts");
 }
 
 function channelFromEnv(): "telegram" | "discord" | null {

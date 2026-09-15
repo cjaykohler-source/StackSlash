@@ -21,15 +21,16 @@ export default async () => {
   await withJobRun(db, "prune-bars-daily", async () => {
     const cutoff = new Date(Date.now() - RETAIN_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    const daily = await db.from("bars_daily").delete({ count: "exact" }).lt("date", cutoff);
-    if (daily.error) throw daily.error;
-
-    const weekly = await db.from("bars_weekly").delete({ count: "exact" }).lt("week_start", cutoff);
-    if (weekly.error) throw weekly.error;
+    // Through an RPC with its own statement timeout: the plain PostgREST
+    // DELETE ran under the API role's 8 s limit and timed out on its first
+    // attempt most nights (57014), succeeding only on Netlify's retry.
+    const { data, error } = await db.rpc("prune_bars_history", { cutoff });
+    if (error) throw error;
+    const { bars_daily = 0, bars_weekly = 0 } = (data ?? {}) as { bars_daily?: number; bars_weekly?: number };
 
     return {
-      rowsProcessed: (daily.count ?? 0) + (weekly.count ?? 0),
-      result: { cutoff, bars_daily: daily.count ?? 0, bars_weekly: weekly.count ?? 0 },
+      rowsProcessed: bars_daily + bars_weekly,
+      result: { cutoff, bars_daily, bars_weekly },
     };
   });
 
