@@ -120,14 +120,12 @@
 [functions."fundamentals-sync"]
   schedule = "0 6,21 * * *"
 
-[functions."weekly-bars-scan"]
-  schedule = "0 6 * * 1"
-
-# refresh-window-stats: 23:00 UTC weekdays (~6-7pm ET) — after eod-scan
-# has upserted the day's bars_daily. Rebuilds factor_window_stats, the
-# trailing-window metric table the Isolator screener reads.
-[functions."refresh-window-stats"]
-  schedule = "0 23 * * 1-5"
+# weekly-bars-scan (Mon 06:00 UTC) and refresh-window-stats (23:00 UTC
+# weekdays, after eod-scan) are NOT scheduled here any more: their RPCs
+# (~96 s and ~33 s) outgrew Netlify's ~30 s scheduled-function limit, so
+# each run was killed and retried up to 3 times. They run in the database
+# via pg_cron (migration nightly_db_jobs_on_pg_cron, logged to job_runs).
+# Both functions stay deployed for manual runs.
 
 # record-fire-outcomes: 23:10 UTC weekdays — after eod-scan's bars_daily
 # upsert. Fills fire_outcomes (realized forward return of every promoted
