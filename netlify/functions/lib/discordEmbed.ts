@@ -61,6 +61,60 @@ export function symbolUrl(ticker: string): string {
   return `${SITE_URL}/symbol/${encodeURIComponent(ticker)}`;
 }
 
+export interface AlertCard {
+  ticker: string;
+  triggerName: string;
+  highPriority: boolean;
+  price: number | null;
+  /** Every trigger in confluence; listed only when there are 2+. */
+  confluence: string[];
+  flags: { level: string; label: string }[];
+  /** Label/value rows for the aligned block (size, stop, fundamentals, score). */
+  rows: [string, string][];
+  news?: { headline: string; url?: string; ageHours?: number | null };
+  /** Marks a formatting test so it can't be mistaken for a live signal. */
+  sample?: boolean;
+}
+
+// Same-size markers: the colored circles render at one size on every
+// platform; the 🟥🟨🟩 squares didn't on iOS Discord.
+const FLAG_ICON: Record<string, string> = { red: "🔴", amber: "🟡", green: "🟢" };
+
+/**
+ * One alert card. The numbers sit in a monospace block, the only way
+ * Discord keeps columns aligned (it has no tables, and it stacks inline
+ * fields on phones). Kept under ~32 characters wide to fit a phone.
+ */
+export function buildAlertEmbed(a: AlertCard): DiscordEmbed {
+  const order = { red: 0, amber: 1, green: 2 } as Record<string, number>;
+  const flags = [...a.flags].sort((x, y) => (order[x.level] ?? 3) - (order[y.level] ?? 3));
+  const width = Math.max(0, ...a.rows.map(([k]) => k.length)) + 2;
+  const table = a.rows.length ? "```\n" + a.rows.map(([k, v]) => k.padEnd(width) + v).join("\n") + "\n```" : null;
+  const age = a.news?.ageHours;
+  const ageText = age != null ? ` · ${age < 1 ? "<1h" : `${Math.round(age)}h`} ago` : "";
+  const headline = a.news?.headline.slice(0, 200);
+  return {
+    title: `${a.sample ? "SAMPLE · " : ""}${a.highPriority ? "🔴 HIGH PRIORITY · " : ""}${a.ticker} · ${triggerDisplayName(a.triggerName)}`,
+    url: symbolUrl(a.ticker),
+    color: alertColor(a.triggerName, a.highPriority),
+    description: [
+      a.price != null ? `**$${a.price.toFixed(2)}**` : null,
+      a.confluence.length > 1
+        ? `**${a.confluence.length} signals:** ${a.confluence.map(triggerDisplayName).join(", ")}`
+        : null,
+      flags.length ? flags.map((f) => `${FLAG_ICON[f.level] ?? "⚪"} ${f.label}`).join("\n") : null,
+      table,
+      headline ? `📰 ${a.news?.url ? `[${headline}](${a.news.url})` : headline}${ageText}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    footer: {
+      text: `RIOT · research alert, not investment advice${a.sample ? " · SAMPLE (formatting test, not a live signal)" : ""}`,
+    },
+    timestamp: new Date().toISOString(),
+  };
+}
+
 /** Operational (infrastructure) alert as an amber card: first line is the title, the rest the body. */
 export function opsEmbed(text: string): DiscordEmbed {
   const [first, ...rest] = text.split("\n");
