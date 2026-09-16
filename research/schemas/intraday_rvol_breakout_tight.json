@@ -1,0 +1,26 @@
+{
+  "name": "intraday_rvol_breakout_tight",
+  "notes": "Selective variant of intraday_rvol_breakout. The loose version matched 16.5% of sessions — a screen, not a signal — and returned the cost. This demands a genuine volume event: 2x a normal full day's volume already traded, a 5x one-minute volume spike, a real move off the open, and price pinned at the high of day. Tests whether selectivity separates anything, given the project's finding that the extreme-volume tail is where the disasters live.",
+  "universe": {
+    "price_min": 0.10,
+    "price_max": 5.00,
+    "min_dollar_vol_20d": 50000,
+    "exchanges": ["NYSE", "NASDAQ", "AMEX", "ARCA", "BATS"],
+    "include_delisted": true
+  },
+  "window": {"start": "09:45", "end": "15:00"},
+  "entry": {
+    "all": [
+      {"field": "or15_dist", "op": ">", "value": 0},
+      {"field": "dist_vwap", "op": ">", "value": 0},
+      {"field": "pct_off_hod", "op": ">=", "value": -0.005},
+      {"field": "cum_vol_vs_adv20", "op": ">=", "value": 2},
+      {"field": "bar_vol_spike", "op": ">=", "value": 5},
+      {"field": "session_ret", "op": ">=", "value": 0.03},
+      {"field": "new_hod_count", "op": ">=", "value": 5}
+    ]
+  },
+  "first_match_only": true,
+  "exit": {"horizons_min": [15, 30, 60, 120]},
+  "cost": {"flat_pct": 0.01}
+}

@@ -37,8 +37,21 @@ async function sendDiscord(text: string, embed?: DiscordEmbed) {
   if (!webhookUrl) return false;
 
   const body = JSON.stringify(embed ? { embeds: [clampEmbed(embed)] } : { content: text });
+  let lastNetworkErr: unknown = null;
   for (let attempt = 0; attempt < 6; attempt++) {
-    const res = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    let res: Response;
+    try {
+      res = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    } catch (err) {
+      // A network-level failure (socket hang-up, reset, DNS) throws instead
+      // of returning a status, and used to escape this loop on the first
+      // try — one alert in the 2026-09-15 eod burst was marked failed
+      // immediately (sent_at null) while its neighbours retried a 429 and
+      // sent fine. Treat it like a 5xx: back off and try again.
+      lastNetworkErr = err;
+      await sleep(1000 * 2 ** attempt + Math.random() * 500);
+      continue;
+    }
     if (res.ok) return true;
     if (res.status !== 429 && res.status < 500) {
       throw new Error(`Discord send failed: ${res.status} ${await res.text()}`);
@@ -52,7 +65,11 @@ async function sendDiscord(text: string, embed?: DiscordEmbed) {
     }
     await sleep(waitMs + Math.random() * 500);
   }
-  throw new Error("Discord send failed: still rate-limited after 6 attempts");
+  throw new Error(
+    lastNetworkErr
+      ? `Discord send failed after 6 attempts, last error: ${lastNetworkErr}`
+      : "Discord send failed: still rate-limited after 6 attempts",
+  );
 }
 
 function channelFromEnv(): "telegram" | "discord" | null {

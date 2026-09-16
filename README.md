@@ -133,6 +133,109 @@ What exists and works, as of the end of the 2026-09-11 → 09-15 session:
 Every job writes `job_runs`; check it (status, duplicates, `running` rows
 that never finished) before assuming a job works.
 
+## The alert pipeline audit (2026-09-16)
+
+Two symptoms were reported: nothing ever appears under **Sell Signals**, and
+every trigger fires once early in the session and then nothing all day.
+Both reproduce, and neither is a UI bug.
+
+**Why the Sell column is empty.** The feed's side mapping is correct — all
+three short triggers are in `SELL_TRIGGERS` and exits map to sell by
+category. The data never produces sell rows:
+- Two of the three short triggers (`bb_rsi_confluence_short`,
+  `macd_bearish_cross`) are disabled as net losers.
+- The survivor, `volatility_squeeze_breakout_short`, fired 29× in three days
+  at a **median price of $9.76**. Only 12 were under $5 and only **1** also
+  cleared the $50k dollar-volume floor — one promoted event in three days.
+- `momentum_exit` events *do* map to sell (9 on 09-15), but they fire on
+  shadow positions from the momentum triggers, which are large caps. The
+  feed filters every row to the scan_config band on a live quote, so they
+  never render.
+
+**Why everything fires once, early.** Three things compound:
+1. `intraday-scan` is not intraday. Its only enabled trigger reads
+   `bb_pctb` / `rsi2` / `risk_on` from the **previous day's** `factor_state`,
+   which cannot change during the session — the evaluation log shows exactly
+   **660 fires per hour, every hour**, on the same symbols. `latest_price`
+   is the one live input and no enabled condition uses it.
+2. `pending_fires` is unique on `(symbol_id, trigger_id, trade_date)` with
+   duplicates ignored, so only the day's **first** scan stages anything.
+3. That first scan ran at 13:00 UTC = **09:00 ET**, half an hour before the
+   open. Every `bb_rsi_confluence_long` pending fire on 09-15 carries the
+   timestamp 09:00:45 ET. Fixed 2026-09-16: the guard is now ET-based and
+   waits until 09:35, so the first slot is 09:40.
+
+Then `eod-scan` fires the daily triggers in one burst at ~17:48 ET. That was
+the whole day: one pre-market batch on stale data, one post-close batch.
+
+**The live intraday pipeline is built and unused.** All five `speed='fast'`
+triggers are disabled, so `intraday-flip-scan` returns immediately on every
+run (12 runs/hour, `rows_processed` 0, for days) while
+`intraday-factors-scan` computes live session factors for ~1,100 symbols
+every 5 minutes that nothing consumes. **There is currently no live
+breakout detection at all.**
+
+Other structural findings:
+- `scan_config.min_confluence = 1`, so the confluence gate promotes every
+  lone fire while the UI still shows "N signals" cluster badges. What
+  actually filters is the price/volume band: `macd_bullish_cross` had 556
+  fires, 25 in band, 26 promoted. **Open decision.**
+- `intraday-flip-scan` hard-codes `direction: "long"`, and
+  `openFlipPositions` is long-only in both its filter and its stop math
+  (`entry × (1 − stop)`, `high_water`). Making the fast path short-capable
+  needs short stop math, low-water tracking and `manage-positions` changes —
+  not attempted, and borrow availability is the real constraint on shorting
+  sub-$5 names anyway.
+- `realtime_outlier_zscore`: 56 fires in three days, **0** promoted — every
+  one a mega-cap (min $11.29, median $271). The worker's ~30 websocket slots
+  are spent outside the band.
+- `earnings_surprise_drift`: 22 fires, none ever in band (cheapest $5.83).
+  **Disabled 2026-09-16** as non-functional for a sub-$5 scanner.
+
+**Live outcomes of what stayed enabled** (`fire_outcomes`, avg 5-day, net
+figures in the cost model): `macd_bullish_cross` −2.02% over 248 fires (31%
+win), `bb_rsi_confluence_long` −1.68% over 212 (37%), and
+`volatility_squeeze_breakout_long` −1.38% over 9. Every one has a positive
+backtested mean that goes negative once the top 1% is removed.
+
+### Minute-level breakout tests — all four fail
+
+The five intraday triggers had **no** `trigger_stats` at all: they were
+never testable, because `backtest-triggers` only replays daily factors.
+`schema_lab.py` settles them on the minute data. Four minute-level
+equivalents, net of a 1% round trip, against a random-minute control
+(`research/schemas/intraday_*.json`):
+
+| schema | tier | matches | 15 min | to close | control | promising |
+|---|---|---|---|---|---|---|
+| `intraday_rvol_breakout` | 50k | **8,049** | −0.89% | −0.87% | −0.99% | no |
+| `intraday_rvol_breakout_tight` | 50k | 366 | −1.22% | −0.54% | −0.99% | no |
+| `intraday_squeeze_release` | 50k | 741 | −1.02% | −1.24% | −1.01% | no |
+| `intraday_gap_and_go` | 50k | 186 | −0.98% | −1.22% | −1.00% | no |
+
+- **`rvol_breakout` is settled beyond argument.** 8,049 matches, a 15-minute
+  interval of [−0.93%, −0.85%], and a **median of exactly −1.00%** — the
+  cost. Gross return is ~zero: you pay the spread and get nothing. Win rate
+  15.9%; all six years negative.
+- **Selectivity makes it worse, not better.** The tight variant (2× a day's
+  volume already traded, 5× minute spike, pinned at the high) cut matches
+  from 16.1% to 0.73% of sessions and *lowered* the 15-minute mean to
+  −1.22%. Consistent with the project's finding that the extreme-volume
+  tail is where the disasters live.
+- **`squeeze_release` is worse than random** — −1.43% at 2 hours against a
+  −1.01% control, whole interval below it.
+- **`gap_and_go`** is tail-driven: mean near the cost, median −3.8% to the
+  close.
+
+Practical read: these are usable as a **live screen** ("this sub-$5 name is
+breaking out right now"), not as trade signals. The 2022+ holdout is
+untouched and not worth spending on these.
+
+**Operational constraint found:** `schema_lab` takes an exclusive lock on
+`research/data/schema_runs.duckdb`, so **only one run at a time** on this
+host — a second run dies at startup with a DuckDB lock error. (Separate
+from the warehouse conflict with the 20:30 ET `research-update`.)
+
 ## Open items (to-do)
 
 Keep this list current: add anything left outstanding, strike it when done.
@@ -170,22 +273,32 @@ Keep this list current: add anything left outstanding, strike it when done.
   `SS_SingleLine_Logo.png` is now unused: keep or delete.
 
 **Verify on first scheduled run**
-- [ ] `fundamentals-sync` failed every run 2026-09-11 → 09-15 with FMP 401
-  (invalid key). User rotated the key 2026-09-15 (works from `.env`); confirm
-  the 06:00 UTC run is `ok` — if not, the Netlify env var still has the
-  old key.
-- [ ] pg_cron `refresh-window-stats` (first run 2026-09-15 23:00 UTC),
-  `weekly-bars-scan` (Mon 09-21 06:00 UTC), `refresh-spread-estimates`
-  (Sun 09-20 07:00 UTC; the 09-13 run died at a 2-min timeout, so spread
-  estimates are from 2026-09-11). Expect `job_runs` status `ok`.
-- [ ] `prune-bars-daily` via the new `prune_bars_history` RPC (22:25 UTC):
-  expect one `ok` row per night, no 57014.
-- [ ] Discord alerts: next morning/evening burst should show 0 `failed` in
-  `alerts` (retry on 429 added 2026-09-15; 23 had failed 09-14/15).
-- [ ] `research-update` first scheduled run 2026-09-15 20:30 ET: log in
-  `~/Library/Logs/stackslash-research-update/`.
+- [x] `fundamentals-sync`: the rotated FMP key works — 2026-09-15 21:00 UTC
+  run `ok`, 71 rows (the 06:00 UTC run still 401'd; it preceded the
+  rotation).
+- [x] pg_cron `refresh-window-stats`: first run 2026-09-15 23:00 UTC `ok`,
+  179,892 rows, no timeout (the last three Netlify attempts had all died at
+  the API role's 8 s limit).
+- [x] `prune-bars-daily` via `prune_bars_history`: 2026-09-15 22:25 UTC
+  `ok`, one row, no 57014.
+- [x] `research-update`: first scheduled run 2026-09-15 20:30 ET completed
+  20:35 ET (377 minute units, 1.85M bars).
 - [x] `launchd` `com.stackslash.data-integrity-check`: one `job_runs` row
   per night, verified.
+- [x] `record-fire-outcomes` on launchd: 2026-09-15 19:10 ET `ok`, one row.
+- [ ] Still pending by schedule: `weekly-bars-scan` (Mon 09-21 06:00 UTC)
+  and `refresh-spread-estimates` (Sun 09-20 07:00 UTC; the 09-13 run died
+  at a 2-min timeout, so estimates are from 2026-09-11 — a manual
+  `run_refresh_spread_estimates_job()` on 09-15 refreshed 4,830 symbols).
+- [x] Discord alerts: the 429 retry works — 24 of 25 sent in the
+  2026-09-15 17:48 ET burst, several after waiting out a 429. The one
+  failure (CYPH) was a *network-level* throw, which `sendDiscord` never
+  caught; fixed 2026-09-16 by retrying those too. The embed was ruled out
+  by rebuilding it locally (396 chars, valid).
+- [x] `refresh-intraday-volume-profile` hit the 8 s API timeout on
+  2026-09-15 and only survived Netlify's retry; the function now sets its
+  own 600 s `statement_timeout` (migration
+  `refresh_intraday_volume_profile_own_timeout`).
 
 **Jobs / infrastructure**
 - [x] **Netlify ran long scheduled functions 2-3×** (`intraday-bars-scan`
@@ -302,8 +415,17 @@ Keep this list current: add anything left outstanding, strike it when done.
   runs are retained and resumable (`runs`, `report RUN_ID`, `--resume`).
   2016-2021 is for iteration; the 2022+ holdout needs `--holdout` and is
   one-shot per schema version. Tiers draw from sessions whose minute data
-  is on disk, which since 2026-09-14 is all of 2016 → today. No schema has
-  been run at scale yet: that is the next research step.
+  is on disk, which since 2026-09-14 is all of 2016 → today. Only one run
+  can hold `schema_runs.duckdb` at a time (see the audit section above).
+  **First schemas run at scale 2026-09-15/16, all negative:** four
+  breakout patterns (see "Minute-level breakout tests") plus
+  `early_move_continuation` — a band name already up ≥10% by 09:45-10:30,
+  above VWAP, at its high, on real volume. At 50k (513 matches) it does not
+  continue: −1.8% at 60 min against a −1.0% control, 31% win rate, and the
+  apparent next-day +2.7% is pure tail (median −5.0%, −3.2% excluding the
+  top 1%). The 2,500-tier read had shown a −9% fade to the close; at scale
+  that shrank to −1.6% and overlaps the control, so the fade is not
+  tradeable either — a short would clear ~+0.3% before borrow.
 - [x] **Session snapshot charts built** (#65-#67): symbol page → **Session
   (candles)**. SIP 1-minute bars for any date since 2016 via the
   on-demand `session-candles` function, drawn as regular-session candles
