@@ -4,6 +4,7 @@ import { fetchSnapshots } from "./lib/alpaca";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 import { filterByCooldown } from "./lib/cooldown";
 import { stageAndPromote } from "./lib/confluenceGate";
+import { etDateString, etWallClock } from "./lib/etTime";
 
 /**
  * Job B — intraday polling scan.
@@ -199,13 +200,22 @@ export default async () => {
   return new Response("ok");
 };
 
+// The cron's first slot (13:00 UTC) is 09:00 ET — half an hour BEFORE the
+// open. Because pending_fires dedups on (symbol, trigger, trade_date), that
+// pre-market slot claimed the whole day's fires: every alert on 2026-09-15
+// carried the timestamp 09:00:45 ET and nothing fired again all session.
+// Hold off until the opening range exists, and use the ET wall clock so the
+// window doesn't slip an hour when DST ends.
+const START_MIN_AFTER_OPEN = 5; // 09:35 ET; the first cron slot past it is 09:40
+const SESSION_MINUTES = 390;
+
 function isLikelyMarketHours(): boolean {
-  const now = new Date();
-  const utcHour = now.getUTCHours();
-  const utcDay = now.getUTCDay(); // 0 = Sunday
-  // Rough US market hours in UTC (13:30-20:00), Mon-Fri. Doesn't account
-  // for holidays — fine for a v1 no-op guard, not a trading calendar.
-  return utcDay >= 1 && utcDay <= 5 && utcHour >= 13 && utcHour < 21;
+  const now = Date.now();
+  const today = etDateString(now);
+  const day = new Date(`${today}T12:00:00Z`).getUTCDay(); // 0 = Sunday
+  if (day < 1 || day > 5) return false;
+  const open = etWallClock(today, 9, 30);
+  return now >= open + START_MIN_AFTER_OPEN * 60_000 && now < open + SESSION_MINUTES * 60_000;
 }
 
 // Schedule is configured in netlify.toml under [functions."intraday-scan"].

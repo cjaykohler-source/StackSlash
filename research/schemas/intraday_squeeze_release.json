@@ -1,0 +1,24 @@
+{
+  "name": "intraday_squeeze_release",
+  "notes": "Minute-level stand-in for the disabled squeeze_release_intraday trigger: a normally quiet band name (low 20-day volatility) whose session range has already expanded past twice its recent daily range, breaking out on a volume spike while above VWAP. Tests range expansion from a quiet base rather than absolute momentum.",
+  "universe": {
+    "price_min": 0.10,
+    "price_max": 5.00,
+    "min_dollar_vol_20d": 50000,
+    "exchanges": ["NYSE", "NASDAQ", "AMEX", "ARCA", "BATS"],
+    "include_delisted": true
+  },
+  "window": {"start": "09:45", "end": "15:00"},
+  "entry": {
+    "all": [
+      {"field": "atr14_pct", "op": "<=", "value": 0.08},
+      {"field": "day_range_vs_atr", "op": ">=", "value": 2},
+      {"field": "bar_vol_spike", "op": ">=", "value": 3},
+      {"field": "dist_vwap", "op": ">", "value": 0},
+      {"field": "pct_off_hod", "op": ">=", "value": -0.02}
+    ]
+  },
+  "first_match_only": true,
+  "exit": {"horizons_min": [15, 30, 60, 120]},
+  "cost": {"flat_pct": 0.01}
+}

@@ -111,6 +111,8 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
     ],
     detail:
       "Markets are often slow to fully price in a big surprise. There is no backtest record yet: historical earnings surprises aren't in the data, so this can only be judged on live fires.",
+    offReason:
+      "Turned off for this scanner: it fires about 22 times a day, but never on a stock inside the price band — the cheapest was $5.83 — so it has never produced a single alert.",
   },
   momentum_exit: {
     label: "Exit Signal: Momentum Fading",
@@ -200,7 +202,8 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "Trading above VWAP.",
       "At least 20 minutes into the session, and within 3% of the day's high.",
     ],
-    offReason: "Lost money in simulation (profit factor 0.72) once relative volume was measured correctly.",
+    offReason:
+      "Tested on 8,049 real breakouts in this price band: the average trade returns exactly the round-trip cost, so the gross move is about zero. Only 16% are winners after 15 minutes, and every year from 2016 to 2021 loses money. Demanding much heavier volume made it worse, not better.",
   },
   vwap_reclaim: {
     label: "VWAP Reclaim",
@@ -228,7 +231,8 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "Volume so far is at least 3× normal for this time of day.",
       "Trading above VWAP.",
     ],
-    offReason: "Only 41 simulated trades, too few to judge.",
+    offReason:
+      "Tested on 186 real gap-ups in this price band: a few big winners hide a mostly losing set — the typical trade is down about 3.8% by the close, and no holding period beats a random entry.",
   },
   squeeze_release_intraday: {
     label: "Squeeze Release (Intraday)",
@@ -242,7 +246,8 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "Up 2% or more on the day.",
       "Volume so far is at least 3× normal for this time of day.",
     ],
-    offReason: "Not simulated yet: the intraday simulator can't combine the daily squeeze measure with intraday data.",
+    offReason:
+      "Tested on 741 real range expansions in this price band, and it is worse than picking a random minute: −1.4% after two hours against −1.0% for a coin flip. Buying a quiet stock that suddenly moves is an active mistake here.",
   },
 };
 
