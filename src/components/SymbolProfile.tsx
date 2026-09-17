@@ -31,6 +31,8 @@ interface ProfileTrigger {
   /** a live trigger with no live factors for this symbol this session */
   noLiveData: boolean;
   lastFired: string | null;
+  /** an event trigger (filing / corporate action), not a factor condition: shown by its last fire */
+  event?: boolean;
   position?: TrackedPosition | null;
 }
 
@@ -199,13 +201,19 @@ export function SymbolProfile({
         const timing: "live" | "close" = t.speed === "fast" ? "live" : "close";
         const inputs = timing === "live" ? (live as TriggerInputs | null) : closeInputs;
         const def = t.definition as unknown as TriggerDefinition;
+        const kind = category === "avoid" || t.direction === "short" ? "avoid" : category === "watch" ? "watch" : "buy";
+        if (t.name in EVENT_WINDOW_DAYS) {
+          const recent = lastFired != null && Date.now() - new Date(lastFired).getTime() <= EVENT_WINDOW_DAYS[t.name] * 86_400_000;
+          results.push({ trigger: t, satisfied: recent, stats, proximity: null, variant: "entry", kind, timing, noLiveData: false, lastFired, event: true });
+          continue;
+        }
         results.push({
           trigger: t,
           satisfied: inputs ? evaluateTrigger(def, inputs) : false,
           stats,
           proximity: inputs ? computeProximity(def, inputs) : null,
           variant: "entry",
-          kind: category === "avoid" || t.direction === "short" ? "avoid" : category === "watch" ? "watch" : "buy",
+          kind,
           timing,
           noLiveData: timing === "live" && !live,
           lastFired,
@@ -325,6 +333,11 @@ const FACTOR_ORDER = [
   "vol_percentile_252d",
 ];
 
+// Event triggers fire from a filing or corporate action that factor_state
+// doesn't carry, so they can't be evaluated here; their status is the last
+// fire, "recent" within the window the event stays relevant.
+const EVENT_WINDOW_DAYS: Record<string, number> = { earnings_release: 28, avoid_reverse_split: 30 };
+
 function factorOrder(key: string): number {
   const i = FACTOR_ORDER.indexOf(key);
   return i === -1 ? FACTOR_ORDER.length : i;
@@ -332,7 +345,7 @@ function factorOrder(key: string): number {
 
 /** One trigger in the symbol page's Trigger status list. */
 function TriggerStatusRow({ row }: { row: ProfileTrigger }) {
-  const { trigger, satisfied, stats, proximity, variant, kind, timing, noLiveData, lastFired, position } = row;
+  const { trigger, satisfied, stats, proximity, variant, kind, timing, noLiveData, lastFired, position, event } = row;
   const info = TRIGGER_INFO[trigger.name];
 
   let statusText: string;
@@ -342,6 +355,13 @@ function TriggerStatusRow({ row }: { row: ProfileTrigger }) {
     statusText = "Tracking";
     statusClass = "tracking";
     statusTip = "A buy alert on this stock is being followed for its exit: stop, take profit, trailing stop or time limit.";
+  } else if (event) {
+    const days = EVENT_WINDOW_DAYS[trigger.name];
+    statusText = satisfied && lastFired ? `Fired ${new Date(lastFired).toLocaleDateString([], { month: "short", day: "numeric" })}` : "No recent event";
+    statusClass = !satisfied ? "unsatisfied" : kind === "avoid" ? "warning" : "satisfied";
+    statusTip = satisfied
+      ? `This event fired within the last ${days} days.`
+      : `Fires on a filing or corporate action, not a price condition; none in the last ${days} days.`;
   } else if (noLiveData) {
     statusText = "No live data";
     statusClass = "unsatisfied";
@@ -395,7 +415,7 @@ function TriggerStatusRow({ row }: { row: ProfileTrigger }) {
           {position.rules?.time_stop_days != null ? ` · ${position.rules.time_stop_days}-day limit` : ""}
         </p>
       ) : (
-        !noLiveData && <ProximityBar proximity={proximity} variant={variant} />
+        !noLiveData && !event && <ProximityBar proximity={proximity} variant={variant} />
       )}
       {evidence && <p className="trigger-profile-note">{evidence}</p>}
       {lastFired && <p className="trigger-profile-meta">Last fired here: {fmtTs(lastFired)}</p>}
