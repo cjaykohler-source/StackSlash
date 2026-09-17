@@ -157,6 +157,19 @@ export async function dispatchAlert(
 }
 
 /**
+ * A digest card (the after-close next-day targets). Like operational
+ * alerts it bypasses the per-dossier alerts table: it summarises many
+ * dossiers in one post.
+ */
+export async function sendDigest(text: string, embed: DiscordEmbed): Promise<"sent" | "skipped"> {
+  const channel = channelFromEnv();
+  if (!channel) return "skipped";
+  if (channel === "telegram") await sendTelegram(text);
+  if (channel === "discord") await sendDiscord(text, embed);
+  return "sent";
+}
+
+/**
  * Operational alerts — infrastructure problems, not trade signals.
  * Deliberately bypasses the `alerts` table and its dedup/cooldown
  * machinery, which is keyed to dossiers and would be meaningless here.

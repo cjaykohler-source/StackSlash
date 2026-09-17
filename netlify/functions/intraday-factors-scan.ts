@@ -18,7 +18,7 @@ import { etDateString, etWallClock } from "./lib/etTime";
  * Scheduled via netlify.toml, every 5 min during market hours.
  */
 
-const MAX_SYMBOLS = 900;
+const MAX_SYMBOLS = 1500; // the $10k+/day band is ~700 names; headroom
 
 export default async () => {
   const db = getSupabaseAdmin();
@@ -32,11 +32,13 @@ export default async () => {
 
     const { data: cfgRow } = await db
       .from("scan_config")
-      .select("price_max, min_dollar_vol_20d")
+      .select("price_max, min_dollar_vol_20d, monitor_min_dollar_vol_20d")
       .eq("id", 1)
       .maybeSingle();
     const priceMax = Number(cfgRow?.price_max ?? 5);
-    const minVol = Number(cfgRow?.min_dollar_vol_20d ?? 50_000);
+    // Live monitoring covers the band down to the monitoring floor (~700
+    // names at $10k/day), not just the $50k alerting floor.
+    const minVol = Number(cfgRow?.monitor_min_dollar_vol_20d ?? cfgRow?.min_dollar_vol_20d ?? 10_000);
 
     const { data: fsAsOf } = await db
       .from("factor_state")

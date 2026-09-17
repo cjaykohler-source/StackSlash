@@ -382,6 +382,15 @@ export default async (req: Request) => {
 
   await db.from("trigger_events").update({ status: "dossier_ready" }).eq("id", event.id);
 
+  // After-close setups are delivered as one ranked digest (eod-digest.ts);
+  // the dossier above still backs that ranking and the site.
+  if (snapshot.delivery === "digest") {
+    return new Response(
+      JSON.stringify({ dossierId: dossier.id, alert: { status: "skipped", reason: "in eod digest" } }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   if (earningsSuppressed) {
     await db.from("trigger_events").update({ status: "dismissed" }).eq("id", event.id);
     return new Response(
