@@ -149,6 +149,32 @@ body {
 .symbol-title-line .symbol-quote {
   margin: 0;
 }
+/* Track / Tracking toggle, riding the title line after the price. */
+.track-button {
+  align-self: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  padding: 4px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.track-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.track-button.tracking {
+  border-color: var(--brand-green);
+  color: var(--brand-green);
+  background: rgba(37, 233, 121, 0.1);
+}
+.track-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .company-description-unavailable {
   font-style: italic;
 }
@@ -1180,6 +1206,12 @@ h1 .quote-tag {
     grid-template-columns: 1fr;
   }
 }
+.top-movers-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
 .top-movers-asof {
   grid-column: 1 / -1;
   margin: 0 0 -4px;
@@ -1248,6 +1280,47 @@ h1 .quote-tag {
   color: var(--red);
 }
 
+/* Tracking column (the dashboard sidebar's second column). */
+.tracking-list .tracking-add {
+  margin-bottom: 8px;
+}
+.tracking-list .tracking-add input {
+  width: 100%;
+  min-width: 0;
+}
+.tracking-list .tracking-error {
+  margin-bottom: 8px;
+}
+.tracking-row {
+  grid-template-columns: auto 1fr auto auto auto;
+}
+.spotlight-toggle,
+.tracking-row-remove {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+.spotlight-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+}
+.spotlight-toggle:hover {
+  color: var(--brand-green);
+}
+.spotlight-toggle.on {
+  color: var(--brand-green);
+}
+.tracking-row-remove {
+  font-size: 1rem;
+}
+.tracking-row-remove:hover {
+  color: var(--red);
+}
+
 /* Tracking panel (above the trigger feed) */
 .tracking {
   margin-bottom: 20px;
@@ -1261,6 +1334,10 @@ h1 .quote-tag {
 }
 .tracking-head h2 {
   margin: 0;
+}
+.tracking-hint {
+  color: var(--text-dim);
+  font-size: 0.78rem;
 }
 .tracking-add {
   display: flex;
@@ -1325,6 +1402,11 @@ h1 .quote-tag {
   line-height: 1;
   cursor: pointer;
   padding: 0 2px;
+}
+.tracked-remove {
+  display: inline-flex;
+  align-items: center;
+  color: var(--brand-green);
 }
 .tracked-remove:hover {
   color: var(--red);

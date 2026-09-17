@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { etTimeLabel } from "../lib/marketTime";
+import { TrackingList } from "./TrackingList";
 
 interface Mover {
   ticker: string;
@@ -15,7 +16,8 @@ const TOP_N = 35;
 
 /**
  * Live dashboard sidebar: the day's 35 biggest gainers and 35 biggest
- * losers across the tracked universe, % measured from today's open (same
+ * losers (stacked in the first column) beside the Tracking column. The
+ * movers are measured across the tracked universe, % measured from today's open (same
  * basis as the per-symbol quote tags). Data comes straight from the
  * `top_movers()` Postgres function over `bars_intraday` — no Alpaca call —
  * so it's only as complete as that day's intraday coverage, and refreshes
@@ -61,8 +63,10 @@ export function TopMovers() {
     };
   }, []);
 
-  if (failed && !movers) return null;
+  // The movers RPC can fail independently of the Tracking column beside
+  // it — keep the column rendered either way.
 
+  const failedMovers = failed && !movers;
   const gainers = (movers ?? []).filter((m) => m.bucket === "gainer");
   const losers = (movers ?? []).filter((m) => m.bucket === "loser");
 
@@ -71,8 +75,17 @@ export function TopMovers() {
       {asOf !== null && (
         <p className="top-movers-asof">as of {etTimeLabel(asOf)}</p>
       )}
-      <MoverList title="Top gainers" rows={gainers} loading={movers === null} />
-      <MoverList title="Top losers" rows={losers} loading={movers === null} />
+      {/* Gainers and losers stack in the first column; the second is the
+          Tracking column (it used to hold the losers). */}
+      <div className="top-movers-stack">
+        {!failedMovers && (
+          <>
+            <MoverList title="Top gainers" rows={gainers} loading={movers === null} />
+            <MoverList title="Top losers" rows={losers} loading={movers === null} />
+          </>
+        )}
+      </div>
+      <TrackingList />
     </aside>
   );
 }
