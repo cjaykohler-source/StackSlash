@@ -5,13 +5,14 @@
  *
  * The scanner surfaces price action; it says nothing about *why* a stock
  * is moving or whether the move has legs. Flags are colour-coded by what
- * they mean for the trade, not by severity:
- *   red   — a negative: something that tends to hurt a small position
- *           (offering-sized volume, nano-cap float, short cash runway,
- *           heavy dilution).
- *   amber — neutral / situational: a binary or two-sided condition to be
- *           aware of (imminent earnings, fresh news, parabolic run,
- *           biotech / crypto-AI catalyst risk).
+ * they mean for the trade, never by urgency:
+ *   red   — a negative: something that tends to hurt a small long
+ *           position. Only four: 25x+ volume (the backtested disaster
+ *           tier), nano-cap, <=2 quarters of cash, shares +50% YoY.
+ *   amber — neutral / two-sided: a condition to be aware of that can go
+ *           either way (news, earnings of any recency, unusual volume
+ *           below 25x, parabolic run, biotech / crypto-AI catalyst risk).
+ *           Recency goes in the label, not the colour.
  *   green — a positive: well-capitalised, growing, or analyst-favoured.
  */
 
@@ -54,14 +55,14 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
 
   if (typeof x.news_age_hours === "number" && x.news_age_hours >= 0 && x.news_age_hours <= 24) {
     f.push({
-      level: x.news_age_hours <= 6 ? "red" : "amber",
+      level: "amber", // news cuts both ways; recency is in the label
       label: `Fresh news (${x.news_age_hours < 1 ? "<1h" : `${Math.round(x.news_age_hours)}h`} ago)`,
       note: "A headline this recent means the move is catalyst-driven — read it before assuming the technical setup is the whole story.",
     });
   }
   if (typeof x.earnings_days === "number" && x.earnings_days >= 0 && x.earnings_days <= 7) {
     f.push({
-      level: x.earnings_days <= 2 ? "red" : "amber",
+      level: "amber", // a gap either way; the day count is in the label
       label: `EARNINGS ${x.earnings_date ?? ""} (${x.earnings_days}d)`,
       note: "A report inside the hold window is a gap coin-flip regardless of the technical setup.",
     });
@@ -102,10 +103,13 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
         "Historically the worst entry condition in this universe: backtested fires at >=25x volume averaged -10% over 18 sessions (median -16%), vs roughly break-even below that. A volume spike this size on a micro-cap is usually someone else's exit, not the start of a move.",
     });
   } else if ((x.volume_ratio_20d ?? 0) >= 5) {
+    // Amber, not red: backtested entries at 5-10x and 10-25x volume were
+    // roughly break-even (10-25x slightly positive, PF 1.106). Only 25x+
+    // is a measured negative.
     f.push({
-      level: "red",
+      level: "amber",
       label: `Volume ${Math.round(x.volume_ratio_20d ?? 0)}x normal`,
-      note: "Abnormal volume on a low-priced name often means an offering / ATM is being marketed into the move.",
+      note: "Unusual activity, well above normal volume. Two-sided: in backtests entries at 5-25x volume were roughly break-even; only 25x+ was reliably negative.",
     });
   }
   if (x.price != null && x.price < 1) {
