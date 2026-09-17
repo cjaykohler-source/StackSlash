@@ -543,6 +543,61 @@ def summarise(ev: dict, ctl: dict, seed: int) -> dict:
     return out
 
 
+def big_move_summary(ev: dict, ctl: dict, seed: int) -> dict:
+    """
+    Direction-neutral attention score: how often a matched session makes a
+    BIG move either way, against the random-minute control. Gross of costs —
+    this grades "is something about to happen here", not a trade. A
+    research-target trigger is useful when its rate clearly beats the
+    control (lift > 1 with the 90% CI lower bound above the control rate).
+    """
+    rng = np.random.default_rng(seed + 1)
+    out = {}
+
+    def arr(d, k):
+        return np.asarray(d.get(k, []), dtype=float)
+
+    measures = []
+    for thr in (0.05, 0.10, 0.20):
+        tag = f"{int(thr * 100)}%"
+        for col, label in (("ret_close", "close"), ("ret_next_close", "next close")):
+            measures.append((f"|move| >= {tag} by {label}", lambda d, c=col, t=thr: np.abs(arr(d, c)) >= t, col))
+        measures.append((f"touches +{tag} or -{tag} intraday",
+                         lambda d, t=thr: (arr(d, "mfe_to_close") >= t) | (arr(d, "mae_to_close") <= -t), "mfe_to_close"))
+    for name, fn, basecol in measures:
+        e_valid = ~np.isnan(arr(ev, basecol)) if len(arr(ev, basecol)) else np.array([], dtype=bool)
+        c_valid = ~np.isnan(arr(ctl, basecol)) if len(arr(ctl, basecol)) else np.array([], dtype=bool)
+        e = fn(ev)[e_valid].astype(float) if e_valid.size else np.array([])
+        c = fn(ctl)[c_valid].astype(float) if c_valid.size else np.array([])
+        if not len(e):
+            out[name] = {"n": 0}
+            continue
+        boots = rng.choice(e, size=(1000, len(e)), replace=True).mean(axis=1) if len(e) > 1 else np.array([e.mean()])
+        lo, hi = np.percentile(boots, [5, 95])
+        crate = float(c.mean()) if len(c) else None
+        out[name] = {
+            "n": int(len(e)),
+            "rate": float(e.mean()),
+            "ci90": [float(lo), float(hi)],
+            "control_rate": crate,
+            "lift": float(e.mean() / crate) if crate else None,
+            "notable": bool(crate is not None and lo > crate),
+        }
+    return out
+
+
+def print_big_move(bm: dict):
+    print("\n  Big-move probability (either direction, gross) vs random-minute control")
+    print(f"  {'measure':<40}{'n':>8}{'rate':>8}{'90% CI':>18}{'control':>9}{'lift':>7}  notable")
+    for name, s in bm.items():
+        if not s.get("n"):
+            continue
+        ctl = f"{s['control_rate'] * 100:.1f}%" if s["control_rate"] is not None else "-"
+        lift = f"{s['lift']:.2f}x" if s["lift"] is not None else "-"
+        print(f"  {name:<40}{s['n']:>8,}{s['rate'] * 100:>7.1f}%   [{s['ci90'][0] * 100:>5.1f}%, {s['ci90'][1] * 100:>5.1f}%]"
+              f"{ctl:>9}{lift:>7}  {'YES' if s['notable'] else 'no'}")
+
+
 def print_summary(summary: dict, meta: dict):
     print(
         f"\nRun {meta['run_id']}  schema={meta['schema_name']} v{meta['schema_hash']}  tier={meta['tier']}  "
@@ -680,11 +735,14 @@ def finish(rc, con, run_id: str, run_dir: Path, seed: int):
     ev = con.execute(f"select * from read_parquet('{run_dir}/events_*.parquet')").fetchnumpy() if evf else {}
     ct = con.execute(f"select * from read_parquet('{run_dir}/control_*.parquet')").fetchnumpy() if ctf else {}
     summary = summarise(ev, ct, seed) if ev else {}
+    big_move = big_move_summary(ev, ct, seed) if ev else {}
     rc.execute("update runs set status = 'done', summary_json = ?, finished_at = now(), events = ? where run_id = ?",
-               [json.dumps(summary), int(len(ev.get("symbol", []))) if ev else 0, run_id])
+               [json.dumps({**summary, "big_move": big_move}), int(len(ev.get("symbol", []))) if ev else 0, run_id])
     row =rc.execute("select run_id, schema_name, schema_hash, tier, seed, period, sessions_sampled, sessions_with_bars, events from runs where run_id = ?", [run_id]).fetchone()
     meta = dict(zip(["run_id", "schema_name", "schema_hash", "tier", "seed", "period", "sessions_sampled", "sessions_with_bars", "events"], row))
     print_summary(summary, meta)
+    if big_move:
+        print_big_move(big_move)
     if evf:
         per_year(run_dir, con)
     print(f"  retained: {run_dir}")
