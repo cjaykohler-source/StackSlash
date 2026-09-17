@@ -91,44 +91,131 @@ below for the full derivation, every number, and every bug found along
 the way — worth reading before changing any trigger or exit logic,
 so the next attempt doesn't re-discover the same dead ends.
 
-## Current state — handoff (2026-09-15)
+## Current state — handoff (2026-09-17)
 
-What exists and works, as of the end of the 2026-09-11 → 09-15 session:
+Read this, then "The alert pipeline audit (2026-09-16)" below for the
+derivations. Everything here was built and verified 2026-09-15 → 09-17.
 
-- **Research warehouse (local, `research/data/`, ~80 GB):** SIP daily bars
-  (raw + split-adjusted) for 15,809 symbols 2016 → today, delisted
-  included; SIP 1-minute bars (04:00-20:00 ET, raw) for 15,803 symbols,
-  ~3.4B bars, reconciled against daily; Alpaca corporate actions; SEC
-  EDGAR filings + XBRL facts. **Updated every weekday night** by the
-  `research-update` launchd agent (see Open items → Research pipeline).
-  `research/schema_lab.py` tests minute-level patterns on seeded tiers
-  against a random control, net of costs, with a sealed 2022+ holdout.
-- **Site (https://stackslash.netlify.app, single user):** every symbol-page
-  range is SIP candlesticks (Session 1-min with live refresh; Week →
-  Since 2016 split-adjusted), stats row colored vs the prior session,
-  full-width description, RIOT branding, About page documenting all 16
-  triggers with live backtest/fire stats.
-- **Alerts:** Discord embed cards (one colored card per alert, aligned
-  number block, 🔴🟡🟢 flags), retrying on Discord's rate limit.
-- **Jobs:** see the table below; the nightly DB-heavy jobs moved to
-  pg_cron on 2026-09-15 because Netlify cut them off at ~30 s.
-- **Verdict unchanged:** no trigger has an edge after costs (see above and
-  "Trigger disposition"). The open research path is minute-level pattern
-  discovery with `schema_lab.py` on the new data.
+### What the system does now
+
+- **Universe:** $0.10–$5. **Daily bars are SIP consolidated tape**
+  (`fetchDailyBars` feed `sip`; `bars_daily` reloaded 5 years from the local
+  warehouse 2026-09-17). Intraday 1-min bars stay IEX (real-time; free SIP
+  is 15-min delayed). IEX carried only ~1.7% of band volume (SIP/IEX median
+  58.7x), so every pre-09-17 volume number was distorted.
+- **Liquidity floors (scan_config, SIP scale):** live monitoring
+  `monitor_min_dollar_vol_20d` **$800k/day** (~700 names), alerting
+  `min_dollar_vol_20d` **$2.5M/day**. Applied 2026-09-17 16:01 ET by the
+  one-shot launchd job `com.stackslash.set-sip-floors-once`
+  (`scripts/set-sip-floors-once.sh`, date-guarded) — verify, then unload it.
+- **Buy / Watch / Sell — one rule everywhere** (feed, symbol page, Discord,
+  digest, position tracking):
+  - **Watch** = a `watch`-category trigger, or any buy setup whose dossier
+    carries a red flag. Blue 👀 WATCH cards, no buy sizing, no exit tracking.
+  - **Buy** = buy setups with no red flag. Only these get Exit Warnings.
+  - **Sell** = avoid warnings + exit warnings.
+- **Red flags mean a negative, never urgency** (`lib/riskFlags.ts`): 25x+
+  volume, share offering filed ≤30 days (SEC), nano-cap < $50M, ≤2 quarters
+  of cash, shares +50% YoY. News and earnings are always amber.
+- **Live intraday (launchd, every 5 min, 09:35–16:00 ET):**
+  `intraday-flip-scan` is the live alert engine. It evaluates enabled
+  `speed='fast'` triggers on `intraday_factor_state`, bypasses the
+  confluence gate (per-trigger cooldown instead), ranks by RVOL and caps at
+  `scan_config.intraday_alert_cap` (10) per scan.
+  - **Heavy Volume Breakout** (`rvol_breakout`, category `watch`)
+  - **Avoid: Don't Chase** (`avoid_chase_extended`, first hour)
+- **After close:** `eod-scan` (17:45 ET, launchd) evaluates the daily
+  triggers, tags every event `delivery=digest` (deep-dive builds the dossier,
+  sends no card); `eod-digest` (18:10 ET) posts one ranked card: **Targets**
+  (top 15) · **Watch** · **Avoid**. Daily triggers enabled:
+  - Buy: Oversold Bounce (`bb_rsi_confluence_long`, moved here from the
+    09:40 intraday scan), Trend Turning Up (`macd_bullish_cross`), Breakout
+    After Quiet Period Up, **Earnings Release** (`earnings_release`: 8-K item
+    2.02 filed the previous session; 20-session hold, 25% disaster stop)
+  - Sell/avoid: Breakout After Quiet Period Down, **Avoid: Volume Blow-off**
+    (≥25x), **Avoid: Reverse Split** (ex-date last 4 weeks / next 30 days,
+    Alpaca corporate actions; once per 30 days)
+- **Exit Warnings** (`manage-positions`, launchd, every 5 min): every Buy
+  alert opens a tracked position (`lib/alertPositions.ts`): −12% stop, +10%
+  take profit, 5% trail armed at +5%, 10-day limit — **overridden by a
+  trigger's own `exit_rules`**. Positions whose entry turns out Watch are
+  cancelled.
+- **SEC:** `sec-filings-sync` (launchd 07:30 / 17:30 ET) loads EDGAR's daily
+  form index into `sec_filings` (offering forms, 8-K with `items` from the
+  submissions API for band companies, SC 13D/13G). Requires
+  `SEC_USER_AGENT` in the host `.env` (SEC fair-access policy).
+- **Site:** trigger feed = Time · Symbol · **Catalyst** · Flags · **Fired at**
+  (static fire price) · Price · **Change since the fire**, three sections,
+  one row per stock+trigger+session. Symbol page: right-hand snapshot column
+  (price stats, then the factor snapshot incl. 1w/1m/3m/6m/1y average
+  volume, values under labels) running down the page; trigger status grouped
+  Buy / Watch / Avoid / Exit and evaluated live for fast triggers; dossiers
+  (no news links) with older sessions folded; company description from FMP
+  (`symbols.description`, band-first sync, on-demand `company-profile`) →
+  Wikipedia fallback; sector-roundup headlines filtered everywhere.
+- **Data cleanup done:** zero-volume flat placeholder bars (9.7% of rows)
+  deleted and filtered on ingest (`isRealSession`); all trigger events /
+  alerts / dossiers / fire_outcomes before 2026-09-17 10:35 ET deleted
+  (live outcome history restarts).
+
+### Research results this session (net of ~1% round trip, $0.10–$5)
+
+| Study | Result |
+|---|---|
+| Minute patterns (`schema_lab.py`, 50k tier) | Volume breakout ≈ cost (n 8,049); VWAP reclaim / new HOD same tier; squeeze release **worse** than random; gap-and-go tail-driven; breakdown **better** than random (bounces — not a sell); early extended move **−2.3% vs −1.0% random over 2h** and 7.5x more likely to swing ±10% |
+| Big-move score (added to `schema_lab.py`) | Direction-neutral lift vs control; the metric for research-target triggers |
+| Daily triggers on clean SIP data (`daily_trigger_study.py`) | Nothing profitable; win rates ≤45%. Excluding red flags + offerings cut 2022+ 20-day losses ~90% (oversold) / ~75% (MACD) but did **not** help in 2016–21 |
+| Catalysts (`catalyst_study.py`) | **8-K 2.02 earnings beats a random day in both periods** (no red flags: +4.2% / +0.4% 20d vs random +1.8% / −3.2%). **Reverse split −17% to −22%**, 424B4 priced offering −17% (2022+). 52-week high on volume and 8-K 1.01 did not beat random |
+
+**Caveat:** 2022+ was examined repeatedly this week; treat it as seen, not a
+sealed holdout.
+
+### Verify next session
+
+- `scan_config` floors are 800000 / 2500000; then
+  `launchctl unload ~/Library/LaunchAgents/com.stackslash.set-sip-floors-once.plist`.
+- Tonight's first SIP `eod-scan` (17:45): `job_runs` ok, `factor_state`
+  `avg_volume_*` populated, sane fire counts; `eod-digest` (18:10)
+  `rows_processed > 0` and one Discord card; `earnings_release` /
+  `avoid_reverse_split` fires plausible.
+- `data-integrity-check` (19:45): counts move after the SIP reload and
+  placeholder delete — a regression card may be benign; check before acting.
+- Live engine: Heavy Volume Breakout / Don't Chase counts; no tracked
+  positions for Watch; `alerts.error` explains any failed card.
+- `refresh-spread-estimates` (Sun) and `weekly-bars-scan` (Mon) on SIP bars.
+
+### Open decisions / next steps
+
+- `scan_config.min_confluence = 1` (the confluence gate is off).
+- Trigger redesign remaining: **big-move watchlist** (after close) and a
+  **catalyst + volume** live trigger (score with the big-move metric);
+  **spread / liquidity tier** study; decide the fate of Oversold Bounce,
+  Trend Turning Up and both Quiet Period breakouts (no edge after costs).
+- Symbol page trigger status evaluates event triggers (`earnings_release`,
+  `avoid_reverse_split`) against `factor_state`, so they always read "Not
+  now"; show their last fire instead.
+- Code fallbacks for the dollar-volume floors (50000 / 10000) in several
+  functions are still IEX-scale (used only if scan_config is unreadable).
+- IBKR on hold (paid bundles not started).
 
 | Job | Runs on | When |
 |---|---|---|
-| `eod-scan` | launchd (worker host) | 17:45 ET weekdays |
+| `eod-scan` | launchd | 17:45 ET weekdays |
+| `eod-digest` | launchd | 18:10 ET weekdays |
 | `data-integrity-check` | launchd | 19:45 ET nightly |
 | `research-update` (SIP daily + minute, corporate actions) | launchd | 20:30 ET weekdays |
 | `outlier-worker` (IEX websocket) | launchd | always on |
-| `intraday-bars-scan` | launchd (`scripts/run-netlify-job.sh`) | every 5 min, 09:00-19:55 ET weekdays |
-| `intraday-factors-scan` | launchd | every 5 min, 09:00-16:55 ET weekdays |
+| `intraday-bars-scan` | launchd (`scripts/run-netlify-job.sh`) | every 5 min, 09:00–19:55 ET |
+| `intraday-factors-scan` | launchd | every 5 min, 09:00–16:55 ET |
+| `intraday-flip-scan` (live alert engine) | launchd | every 5 min (+2), 09:35–16:00 ET |
+| `manage-positions` (Exit Warnings) | launchd | every 5 min, 09:30–16:00 ET |
 | `record-fire-outcomes` | launchd | 19:10 ET weekdays |
+| `sec-filings-sync` | launchd | 07:30 and 17:30 ET weekdays |
 | `refresh-window-stats` | Supabase pg_cron | 23:00 UTC weekdays |
 | `weekly-bars-scan` | pg_cron | Mon 06:00 UTC |
 | `refresh-spread-estimates` | pg_cron | Sun 07:00 UTC |
-| `intraday-scan`, `intraday-flip-scan`, `manage-positions`, prunes, `fundamentals-sync`, news, volume profile | Netlify scheduled functions | see `netlify.toml` |
+| `news-scan`, `fundamentals-sync`, prunes, `refresh-intraday-volume-profile` | Netlify scheduled functions | see `netlify.toml` |
+| `intraday-scan` | not scheduled (its trigger moved to eod-scan) | — |
 
 Every job writes `job_runs`; check it (status, duplicates, `running` rows
 that never finished) before assuming a job works.
