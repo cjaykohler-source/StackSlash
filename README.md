@@ -128,13 +128,12 @@ derivations. Everything here was built and verified 2026-09-15 → 09-17.
   triggers, tags every event `delivery=digest` (deep-dive builds the dossier,
   sends no card); `eod-digest` (18:10 ET) posts one ranked card: **Targets**
   (top 15) · **Watch** · **Avoid**. Daily triggers enabled:
-  - Buy: Oversold Bounce (`bb_rsi_confluence_long`, moved here from the
-    09:40 intraday scan), Trend Turning Up (`macd_bullish_cross`), Breakout
-    After Quiet Period Up, **Earnings Release** (`earnings_release`: 8-K item
-    2.02 filed the previous session; 20-session hold, 25% disaster stop)
+  - Buy: **Earnings Release** (`earnings_release`: 8-K item 2.02 filed the
+    previous session; 20-session hold, 25% disaster stop) — the only buy
+    setup left after 2026-09-17 (see "Disabled 2026-09-17" below)
   - Watch: **Big-Move Watchlist** (`bigmove_watchlist`, added 2026-09-17:
     big-move score >= 3 — see "The trigger redesign" below)
-  - Sell/avoid: Breakout After Quiet Period Down, **Avoid: Volume Blow-off**
+  - Sell/avoid: **Avoid: Volume Blow-off**
     (≥25x), **Avoid: Reverse Split** (ex-date last 4 weeks / next 30 days,
     Alpaca corporate actions; once per 30 days)
 - **Exit Warnings** (`manage-positions`, launchd, every 5 min): every Buy
@@ -264,12 +263,10 @@ justifies is a Watch note ("8-K filed today") on names already listed.
 - **Decision for the user: `scan_config.min_confluence = 1`** (gate off) —
   every lone fire promotes while the UI still shows "N signals" badges.
   Turn the gate on (2) or remove it and the badges?
-- **Recommended, not done** (20-day net, 2016-21 / 2022+; random day +1.8% /
-  -3.2%): disable **Trend Turning Up** (-0.1% / -3.3%, indistinguishable from
-  random) and both **Quiet Period** breakouts (up: n=160, tail-driven; down:
-  never studied); disable or demote to Watch **Oversold Bounce** (-1.0% /
-  -2.6%). If all go, Targets holds only Earnings Release — which is the
-  honest state of the evidence.
+- **Done 2026-09-17:** Oversold Bounce, Trend Turning Up and both Quiet
+  Period breakouts **disabled** (see "Trigger disposition"). Targets now holds
+  only Earnings Release. Watch tonight's digest: Targets may be empty, which
+  is correct rather than broken.
 - Code fallbacks for the dollar-volume floors (50000 / 10000) in several
   functions are still IEX-scale (used only if scan_config is unreadable).
 - IBKR on hold (paid bundles not started).
@@ -1458,10 +1455,11 @@ in 5 years across the whole ~5,000-symbol universe — they are not
 
 | trigger | category | speed | direction | enabled | why |
 |---|---|---|---|---|---|
-| `bb_rsi_confluence_long` | technical | slow | long | ✅ | gross PF 1.34 (3d), but mean excl. top 1% −0.05%; tail-driven, net loser after costs |
-| `macd_bullish_cross` | breakout | slow | long | ✅ | gross PF 1.04 (3d), mean excl. top 1% −0.52%; net loser, left on for visibility |
-| `volatility_squeeze_breakout_long` | breakout | slow | long | ✅ | gross PF 1.02 (3d), n=3,951; coin flip gross, loser net |
-| `volatility_squeeze_breakout_short` | breakout | slow | short | ✅ | gross PF 0.90 (3d), negative at every horizon; left on per earlier explicit call |
+| `bb_rsi_confluence_long` | technical | slow | long | ❌ 09-17 | Oversold Bounce. SIP study 20d net −1.0% (2016-21) / −2.6% (2022+) against a random day's +1.8% / −3.2% — worse than random in one period, no better in the other |
+| `macd_bullish_cross` | breakout | slow | long | ❌ 09-17 | Trend Turning Up. 20d net −0.1% / −3.3%: indistinguishable from a random in-band day |
+| `volatility_squeeze_breakout_long` | breakout | slow | long | ❌ 09-17 | Quiet Period Up. n=160 in the SIP study and tail-driven; +6.8% 20d (2016-21) does not survive −4.0% (2022+) |
+| `volatility_squeeze_breakout_short` | breakout | slow | short | ❌ 09-17 | Quiet Period Down. Never studied on SIP data; 29 fires in three days, median price $9.76, **one** in-band promotion — it was the only sell trigger and produced nothing |
+| `bigmove_watchlist` | watch | slow | long | ✅ | Big-Move Watchlist, added 09-17: next-session 10%+ move 3-9x a random day in both periods; Watch, never Buy |
 | `earnings_surprise_drift` | earnings | slow | long | ✅ (inert) | needs a paid estimates feed FMP's free tier doesn't have |
 | `realtime_outlier_zscore` | outlier | slow | long | ✅ | tick-level, no backtest possible; live-confirmation-scored only |
 | `momentum_exit` | exit | slow | long | ✅ | the swing exit path (rank-drop/weekly-reversal/180d for momentum entries; time+disaster stop for others) |
@@ -1473,6 +1471,15 @@ in 5 years across the whole ~5,000-symbol universe — they are not
 | `momentum_rank_entry` | momentum | slow | long | ❌ | negative expectancy at every horizon; also has an unreachable percentile threshold at this symbol count |
 | `momentum_breakout` | breakout | slow | long | ❌ | negative/coin-flip expectancy |
 | `bb_rsi_confluence_short`, `macd_bearish_cross` | — | slow | short | ❌ | negative expectancy shorting "overbought" in this universe |
+
+**Disabled 2026-09-17.** The four technical daily triggers above were
+turned off after the SIP-clean `daily_trigger_study.py` re-run: none beats a
+random in-band day net of ~1% costs, in either period. What stays is what has
+evidence: **Earnings Release** (buy), **Big-Move Watchlist** and **Heavy
+Volume Breakout** (watch), **Avoid: Volume Blow-off / Reverse Split / Don't
+Chase** (avoid), and the exits. No open `shadow_positions` were orphaned by
+the change. Targets now holds only Earnings Release — the honest state of the
+evidence, not a gap to fill.
 
 `scan_config` (current): `price_min/max` 0.10–5.00, `min_dollar_vol_20d`
 50k, `max_rsi14` 85, `min_confluence` 1 (multi-trigger confluence is

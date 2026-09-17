@@ -58,7 +58,7 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "2-day RSI is 10 or lower, meaning the last two days were an unusually sharp drop.",
       RISK_ON,
     ],
-    detail: "The intraday scan only checks this on stocks already in the top third for momentum.",
+    detail: "Evaluated after the close (it moved off the 09:40 intraday scan on 2026-09-17, since it reads only the prior close). Disabled 2026-09-17: on clean SIP data its 20-day net return (−1.0% in 2016-21, −2.6% in 2022+) is no better than a random day in this price band.",
   },
   macd_bullish_cross: {
     label: "Trend Turning Up",
@@ -71,7 +71,7 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       RISK_ON,
     ],
     detail:
-      "MACD compares a short-term and a longer-term average of price. When the short one overtakes the long one, it's read as an early sign the trend is turning up. Uses the textbook default settings.",
+      "MACD compares a short-term and a longer-term average of price. When the short one overtakes the long one, it's read as an early sign the trend is turning up. Uses the textbook default settings. Disabled 2026-09-17: on clean SIP data it is indistinguishable from a random day (20-day net −0.1% in 2016-21, −3.3% in 2022+).",
   },
   volatility_squeeze_breakout_long: {
     label: "Breakout After Quiet Period (Up)",
@@ -85,7 +85,7 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "Volume is at least 2× its 20-day average.",
       RISK_ON,
     ],
-    detail: "A long stretch of unusually small moves often ends with a big one. This catches the first day of the break upward.",
+    detail: "A long stretch of unusually small moves often ends with a big one. This catches the first day of the break upward. Disabled 2026-09-17: only 160 clean-data cases and driven by a few outliers, with nothing left in 2022+.",
   },
   volatility_squeeze_breakout_short: {
     label: "Breakout After Quiet Period (Down)",
@@ -98,7 +98,7 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "Price closes at or below the lower band.",
       "Volume is at least 2× its 20-day average.",
     ],
-    detail: "The downside version of the squeeze breakout. Unlike the upside version, it has no market-regime filter.",
+    detail: "The downside version of the squeeze breakout. Unlike the upside version, it has no market-regime filter. Disabled 2026-09-17: never tested on clean data, and in three live days it produced one in-band alert.",
   },
   earnings_surprise_drift: {
     label: "Earnings Beat Follow-Through",
