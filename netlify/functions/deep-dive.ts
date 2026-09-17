@@ -152,21 +152,9 @@ export default async (req: Request) => {
     /* non-critical */
   }
 
-  // Confluence metadata, when this event was promoted by the confluence
-  // gate (lib/confluenceGate.ts). `trigger_id` above is the cluster's
-  // primary trigger; `confluence.triggers` is the full contributing set.
-  const confluence = (snapshot.confluence ?? null) as {
-    count: number;
-    direction: "long" | "short";
-    tier: "normal" | "high";
-    triggers: { id: number; name: string | null }[];
-  } | null;
-
   // --- 1. Historical expectancy, if there's enough of it to trust ---
-  // For a confluence event, blend the historical win rate across every
-  // contributing trigger (sample-size weighted) rather than reading only
-  // the primary trigger's stats — the whole point of the cluster is that
-  // more than one signal agreed.
+  // One event, one trigger (the confluence gate was removed 2026-09-17), so
+  // this is simply that trigger's stats at the configured horizon.
   const { data: horizonCfg } = await db
     .from("scan_config")
     .select("score_horizon_days")
@@ -177,9 +165,7 @@ export default async (req: Request) => {
       DEFAULT_HISTORICAL_HORIZON_DAYS,
   );
 
-  const statTriggerIds = confluence?.triggers.length
-    ? confluence.triggers.map((t) => t.id)
-    : [event.trigger_id];
+  const statTriggerIds = [event.trigger_id];
   const { data: statRows } = await db
     .from("trigger_stats")
     .select("trigger_id, sample_size, win_rate, avg_return, cev_score")
@@ -348,13 +334,6 @@ export default async (req: Request) => {
     trigger: triggerName,
     ticker,
     priority,
-    confluence: confluence
-      ? {
-          count: confluence.count,
-          direction: confluence.direction,
-          triggers: confluence.triggers.map((t) => t.name).filter(Boolean),
-        }
-      : null,
     price: currentPrice,
     risk_flags: flags,
     trade,
@@ -422,13 +401,9 @@ export default async (req: Request) => {
     );
   }
 
-  const confluentNames = confluence?.triggers.map((t) => t.name).filter(Boolean) ?? [];
   const headline =
     priority === "high" ? `🔴 *HIGH PRIORITY* — *${ticker}*` : `*${ticker}* — ${triggerName}`;
   const priceLine = currentPrice != null ? `  ·  $${currentPrice.toFixed(2)}` : "";
-  const confluenceLine = confluentNames.length
-    ? `\n${confluentNames.length} signals: ${confluentNames.join(", ")}`
-    : "";
   const redFlags = flags.filter((x) => x.level === "red");
   const amberFlags = flags.filter((x) => x.level === "amber");
   const greenFlags = flags.filter((x) => x.level === "green");
@@ -492,7 +467,6 @@ export default async (req: Request) => {
     highPriority: priority === "high",
     watch: watchSide,
     price: currentPrice,
-    confluence: confluentNames.filter((n): n is string => !!n),
     flags,
     rows,
     news: news.length ? { headline: news[0].headline, url: news[0].url, ageHours: newsAgeHours } : undefined,
@@ -502,7 +476,7 @@ export default async (req: Request) => {
     dossierId: dossier.id,
     dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}${redFlags.length ? ":rf" : ""}`,
     cooldownMinutes,
-    message: `${headline}${priceLine}${confluenceLine}${flagLine}${tradeLine}${fundLine}${newsLine}\nscore: ${score.toFixed(2)}`,
+    message: `${headline}${priceLine}${flagLine}${tradeLine}${fundLine}${newsLine}\nscore: ${score.toFixed(2)}`,
     embed,
   });
 

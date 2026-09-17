@@ -9,7 +9,6 @@ interface RawEvent {
   trigger_id: number;
   priority: "normal" | "high" | null;
   snapshot: {
-    confluence?: { count: number; direction: "long" | "short"; triggers: { name: string | null }[] } | null;
   } | null;
   symbols: { ticker: string } | null;
   triggers: { name: string } | null;
@@ -26,12 +25,6 @@ interface TriggerBreakdown {
   top1pctProfitShare: number | null;
 }
 
-interface ConfluentSymbol {
-  ticker: string;
-  triggerNames: string[];
-  highPriority: boolean;
-}
-
 interface ReportData {
   date: string;
   regimeText: string | null;
@@ -39,7 +32,6 @@ interface ReportData {
   totalFires: number;
   distinctSymbols: number;
   distinctTriggers: number;
-  confluent: ConfluentSymbol[];
   triggers: TriggerBreakdown[];
 }
 
@@ -88,9 +80,6 @@ function measureAndDraw(canvas: HTMLCanvasElement, data: ReportData) {
   height += 34; // date
   height += 40; // regime line
   height += 56; // stats row
-  height += sectionGapH;
-  height += 32; // "Confluence" heading
-  height += Math.max(1, data.confluent.length) * rowH;
   height += sectionGapH;
   height += 32; // "Triggers fired" heading
   height += Math.max(1, data.triggers.length) * (rowH * 2);
@@ -141,7 +130,6 @@ function measureAndDraw(canvas: HTMLCanvasElement, data: ReportData) {
     ["Total fires", String(data.totalFires)],
     ["Symbols", String(data.distinctSymbols)],
     ["Triggers", String(data.distinctTriggers)],
-    ["Confluence", String(data.confluent.length)],
   ];
   const statW = (WIDTH - MARGIN * 2) / stats.length;
   stats.forEach(([label, value], i) => {
@@ -155,28 +143,6 @@ function measureAndDraw(canvas: HTMLCanvasElement, data: ReportData) {
   });
   y += 56 + sectionGapH;
 
-  // Confluence section
-  ctx.fillStyle = COLORS.brandGreen;
-  ctx.font = "bold 17px -apple-system, Helvetica, Arial, sans-serif";
-  ctx.fillText("Confluence", MARGIN, y + 16);
-  y += 32;
-  if (data.confluent.length === 0) {
-    ctx.fillStyle = COLORS.textDim;
-    ctx.font = "italic 14px -apple-system, Helvetica, Arial, sans-serif";
-    ctx.fillText("No symbols with 2+ agreeing triggers today.", MARGIN, y + 14);
-    y += rowH;
-  } else {
-    for (const c of data.confluent) {
-      ctx.fillStyle = c.highPriority ? COLORS.red : COLORS.text;
-      ctx.font = "bold 14px -apple-system, Helvetica, Arial, sans-serif";
-      ctx.fillText(c.highPriority ? `${c.ticker}  ●` : c.ticker, MARGIN, y + 14);
-      ctx.fillStyle = COLORS.textDim;
-      ctx.font = "14px -apple-system, Helvetica, Arial, sans-serif";
-      ctx.fillText(c.triggerNames.join(", "), MARGIN + 90, y + 14);
-      y += rowH;
-    }
-  }
-  y += sectionGapH;
 
   // Trigger breakdown section
   ctx.fillStyle = COLORS.brandGreen;
@@ -266,20 +232,6 @@ export function Reports() {
         if (e.triggers?.name) triggerNameById.set(e.trigger_id, e.triggers.name);
       }
 
-      // Every promoted trigger_event already carries its confluence
-      // cluster (the gate only promotes clusters of >= 2) — read that
-      // rather than re-deriving it from multiple rows.
-      const confluent: ConfluentSymbol[] = rawEvents
-        .filter((e) => (e.snapshot?.confluence?.count ?? 0) >= 2)
-        .map((e) => ({
-          ticker: e.symbols?.ticker ?? tickerBySymbol.get(e.symbol_id) ?? String(e.symbol_id),
-          triggerNames: (e.snapshot!.confluence!.triggers ?? [])
-            .map((t) => t.name)
-            .filter((n): n is string => !!n)
-            .map((n) => triggerLabel(n)),
-          highPriority: e.priority === "high",
-        }));
-
       const triggerCounts = new Map<number, number>();
       for (const e of rawEvents) triggerCounts.set(e.trigger_id, (triggerCounts.get(e.trigger_id) ?? 0) + 1);
       const triggerIds = [...triggerCounts.keys()];
@@ -334,7 +286,6 @@ export function Reports() {
         totalFires: rawEvents.length,
         distinctSymbols: tickerBySymbol.size,
         distinctTriggers: triggerIds.length,
-        confluent,
         triggers,
       };
 

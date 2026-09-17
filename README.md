@@ -260,9 +260,18 @@ justifies is a Watch note ("8-K filed today") on names already listed.
 
 ### Open decisions / next steps
 
-- **Decision for the user: `scan_config.min_confluence = 1`** (gate off) —
-  every lone fire promotes while the UI still shows "N signals" badges.
-  Turn the gate on (2) or remove it and the badges?
+- **Done 2026-09-17: the confluence gate is gone.**
+  `lib/confluenceGate.ts` → **`lib/promotionGate.ts`**: every in-band
+  pending fire now promotes to its own `trigger_event`. Removed with it —
+  cluster merging and the `snapshot.confluence` blob, the high-priority
+  escalation tier, `PRIMARY_RANK`, the feed's "N signals" badges, the
+  dossier confluence line, the Discord "N signals" line, the daily report's
+  Confluence section, and the Settings field. What still filters is the
+  `scan_config` band (price, 20-day dollar volume, RSI ceiling for longs)
+  plus `alert_excluded`. The HTTP endpoint keeps the file name
+  `confluence-gate.ts` so the worker's deployed `CONFLUENCE_GATE_URL`
+  resolves. `scan_config.min_confluence` is unread and commented
+  DEPRECATED — drop the column once a day or two has passed.
 - **Done 2026-09-17:** Oversold Bounce, Trend Turning Up and both Quiet
   Period breakouts **disabled** (see "Trigger disposition"). Targets now holds
   only Earnings Release. Watch tonight's digest: Targets may be empty, which
@@ -1482,9 +1491,8 @@ the change. Targets now holds only Earnings Release — the honest state of the
 evidence, not a gap to fill.
 
 `scan_config` (current): `price_min/max` 0.10–5.00, `min_dollar_vol_20d`
-50k, `max_rsi14` 85, `min_confluence` 1 (multi-trigger confluence is
-near-zero at this price band — see Phase 5 in the plan doc if
-redefining this), `account_size` 40, `max_risk_pct` 0.20,
+2.5M (SIP scale), `max_rsi14` 85 (`min_confluence` is deprecated and
+unread since the gate was removed 2026-09-17), `account_size` 40, `max_risk_pct` 0.20,
 `default_stop_pct` 0.12, `score_horizon_days` 3, `flip_profit_target_pct`
 0.06, `flip_trail_pct` 0.03, `flip_time_stop_days` 2, `swing_time_stop_days`
 10, `swing_disaster_stop_pct` 0.25.

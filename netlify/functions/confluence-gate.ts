@@ -1,16 +1,21 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
-import { stageAndPromote, promotePending, type Direction } from "./lib/confluenceGate";
+import { stageAndPromote, promotePending, type Direction } from "./lib/promotionGate";
 
 /**
- * HTTP entry point for the confluence gate, used by the realtime worker
+ * HTTP entry point for the promotion gate (lib/promotionGate.ts), used by
+ * the realtime worker
  * (which runs outside Netlify and can't import the lib directly). eod-scan
- * and intraday-scan call lib/confluenceGate.ts in-process instead.
+ * and intraday-scan call lib/promotionGate.ts in-process instead.
  *
  * POST with a single fire to stage + promote:
  *   { "symbol_id": 1, "trigger_id": 9, "direction": "long",
  *     "snapshot": {...}, "trade_date": "2026-09-08" }
  * POST with an empty body just runs a promotion sweep over whatever is
- * already pending (harmless no-op if nothing has reached confluence).
+ * already pending (harmless no-op if nothing is in band).
+ *
+ * The file name is kept as confluence-gate so the worker's deployed
+ * CONFLUENCE_GATE_URL keeps resolving; the confluence concept itself was
+ * removed 2026-09-17.
  *
  * Not scheduled. Like deep-dive.ts it accepts unauthenticated POSTs from
  * the Postgres webhook / the worker — it only ever reads/writes rows the
