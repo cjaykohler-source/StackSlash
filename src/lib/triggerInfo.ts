@@ -226,8 +226,8 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
   rvol_breakout: {
     evidence: "Minute test, 8,049 cases: about break-even before costs; slightly better than a random entry by the close.",
     label: "Heavy Volume Breakout",
-    category: "intraday",
-    categoryLabel: "Intraday",
+    category: "watch",
+    categoryLabel: "Watch",
     timing: "intraday",
     summary: "Volume is running well above normal for the time of day and price just broke out of its opening range.",
     conditions: [
@@ -332,9 +332,16 @@ const SELL_TRIGGERS = new Set([
   "avoid_chase_extended",
 ]);
 
-export function triggerSide(name: string | null): "buy" | "sell" {
+/**
+ * Buy / Watch / Sell. Watch = "something is happening, direction unproven"
+ * (e.g. Heavy Volume Breakout: tested ~break-even). A buy setup that carries
+ * a red flag is also shown as Watch — the feed applies that per row.
+ */
+export function triggerSide(name: string | null): "buy" | "watch" | "sell" {
   if (!name) return "buy";
   if (SELL_TRIGGERS.has(name)) return "sell";
-  if (TRIGGER_INFO[name]?.category === "exit") return "sell";
+  const category = TRIGGER_INFO[name]?.category;
+  if (category === "exit") return "sell";
+  if (category === "watch") return "watch";
   return "buy";
 }

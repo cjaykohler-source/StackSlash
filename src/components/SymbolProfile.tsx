@@ -25,7 +25,7 @@ interface ProfileTrigger {
   proximity: number | null;
   variant: "entry" | "exit";
   /** buy setup, avoid warning, or exit tracking */
-  kind: "buy" | "avoid" | "exit";
+  kind: "buy" | "watch" | "avoid" | "exit";
   /** fast triggers read today's live session; slow ones the last close */
   timing: "live" | "close";
   /** a live trigger with no live factors for this symbol this session */
@@ -205,7 +205,7 @@ export function SymbolProfile({
           stats,
           proximity: inputs ? computeProximity(def, inputs) : null,
           variant: "entry",
-          kind: category === "avoid" || t.direction === "short" ? "avoid" : "buy",
+          kind: category === "avoid" || t.direction === "short" ? "avoid" : category === "watch" ? "watch" : "buy",
           timing,
           noLiveData: timing === "live" && !live,
           lastFired,
@@ -268,6 +268,7 @@ export function SymbolProfile({
               {(
                 [
                   ["buy", "Buy setups"],
+                  ["watch", "Watch"],
                   ["avoid", "Avoid warnings"],
                   ["exit", "Exit"],
                 ] as const
@@ -349,6 +350,10 @@ function TriggerStatusRow({ row }: { row: ProfileTrigger }) {
     statusText = satisfied ? "Warning now" : "Clear";
     statusClass = satisfied ? "warning" : "unsatisfied";
     statusTip = satisfied ? "This avoid condition is true right now." : "This avoid condition is not true right now.";
+  } else if (kind === "watch") {
+    statusText = satisfied ? "Active now" : "Not now";
+    statusClass = satisfied ? "tracking" : "unsatisfied";
+    statusTip = satisfied ? "Something is happening on this stock right now; direction unproven." : "This watch condition is not true right now.";
   } else {
     statusText = satisfied ? "Setup now" : "Not now";
     statusClass = satisfied ? "satisfied" : "unsatisfied";

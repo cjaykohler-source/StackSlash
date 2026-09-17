@@ -41,7 +41,10 @@ interface FeedRow {
   priority: "normal" | "high" | null;
   status: string; // "pending" for un-promoted single fires
   riskFlags: RiskFlag[]; // from the linked dossier (promoted events only)
-  side: "buy" | "sell"; // exit / bearish triggers -> "sell"
+  side: "buy" | "watch" | "sell"; // exit / bearish -> sell; watch triggers or red-flagged buys -> watch
+  /** fires of this trigger on this stock this session (rows are collapsed) */
+  fireCount: number;
+  lastTs: string;
   /** Price when the trigger fired (static), from the fire's snapshot. */
   firePrice: number | null;
 }
@@ -193,6 +196,8 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
               ? ("sell" as const)
               : triggerSide(r.triggers?.name ?? null),
           firePrice: firePriceOf(r.snapshot),
+          fireCount: 1,
+          lastTs: r.ts,
         };
       });
 
@@ -211,6 +216,8 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         riskFlags: [],
         side: triggerSide(r.triggers?.name ?? null),
         firePrice: firePriceOf(r.snapshot),
+        fireCount: 1,
+        lastTs: r.created_at,
       }));
 
       setEventRows(events);
@@ -231,10 +238,28 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
     };
   }, [mode]);
 
-  const rows = useMemo(
-    () => [...eventRows, ...pendingRows].sort((a, b) => (a.ts < b.ts ? 1 : -1)),
-    [eventRows, pendingRows],
-  );
+  const rows = useMemo(() => {
+    // One row per stock + trigger + session: keep the FIRST fire (its Fired at
+    // price stays the reference) and count the re-fires.
+    const byKey = new Map<string, FeedRow>();
+    for (const r of [...eventRows, ...pendingRows].sort((a, b) => (a.ts < b.ts ? -1 : 1))) {
+      const key = `${r.symbol_id}|${r.triggerName}|${dayKey(r.ts)}`;
+      const first = byKey.get(key);
+      if (!first) {
+        byKey.set(key, { ...r });
+        continue;
+      }
+      first.fireCount += 1;
+      if (r.ts > first.lastTs) first.lastTs = r.ts;
+      if (!first.riskFlags.length && r.riskFlags.length) first.riskFlags = r.riskFlags;
+      if (first.status === "pending" && r.status !== "pending") first.status = r.status;
+    }
+    // A buy setup carrying a red flag (a real negative) is shown as Watch.
+    for (const r of byKey.values()) {
+      if (r.side === "buy" && r.riskFlags.some((f) => f.level === "red")) r.side = "watch";
+    }
+    return [...byKey.values()].sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  }, [eventRows, pendingRows]);
 
   const quotes = useQuotes(rows.map((r) => r.ticker ?? "").filter(Boolean));
   const quotesReady = quotes.size > 0;
@@ -288,7 +313,14 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
     const isHigh = row.priority === "high" || row.signalCount >= 3;
     return (
       <tr key={row.key} className={isHigh || hasRed ? "trigger-feed-row-high" : undefined}>
-        <td>{timeOnly(row.ts)}</td>
+        <td>
+          {timeOnly(row.ts)}
+          {row.fireCount > 1 && (
+            <span className="feed-refire" title="Fired again later this session; Fired at is the first fire.">
+              {" "}×{row.fireCount} · last {timeOnly(row.lastTs)}
+            </span>
+          )}
+        </td>
         <td>
           <Link to={`/symbol/${row.ticker ?? row.symbol_id}`}>{row.ticker ?? row.symbol_id}</Link>
         </td>
@@ -372,7 +404,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
   // the dashboard so the split is always visible; history hides an empty
   // side to cut clutter.
   const sidedSections = (rowsToRender: FeedRow[], showEmpty: boolean) => {
-    const block = (title: string, side: "buy" | "sell") => {
+    const block = (title: string, side: "buy" | "watch" | "sell") => {
       const sideRows = rowsToRender.filter((r) => r.side === side);
       if (!sideRows.length && !showEmpty) return null;
       return (
@@ -387,6 +419,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
     return (
       <>
         {block("Buy Signals", "buy")}
+        {block("Watch", "watch")}
         {block("Sell Signals", "sell")}
       </>
     );

@@ -2145,3 +2145,13 @@ h1 .quote-tag {
 .catalyst-chip.catalyst-sell {
   border-color: color-mix(in srgb, var(--red) 55%, var(--border));
 }
+
+/* Buy / Watch / Sell: Watch is neutral blue. */
+.catalyst-chip.catalyst-watch {
+  border-color: color-mix(in srgb, #3498db 60%, var(--border));
+}
+.feed-refire {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}

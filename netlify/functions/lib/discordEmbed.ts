@@ -51,7 +51,7 @@ const SELL_TRIGGERS = new Set([
   "avoid_chase_extended",
 ]);
 
-const COLOR = { buy: 0x2ecc71, sell: 0xe74c3c, high: 0xff6b00, ops: 0xf1c40f };
+const COLOR = { buy: 0x2ecc71, watch: 0x3498db, sell: 0xe74c3c, high: 0xff6b00, ops: 0xf1c40f };
 
 export function triggerDisplayName(name: string): string {
   return LABELS[name] ?? name.replace(/_/g, " ");
@@ -71,6 +71,8 @@ export interface AlertCard {
   ticker: string;
   triggerName: string;
   highPriority: boolean;
+  /** Watch, not buy: a watch trigger, or a buy setup carrying a red flag. */
+  watch?: boolean;
   price: number | null;
   /** Every trigger in confluence; listed only when there are 2+. */
   confluence: string[];
@@ -100,9 +102,9 @@ export function buildAlertEmbed(a: AlertCard): DiscordEmbed {
   const ageText = age != null ? ` · ${age < 1 ? "<1h" : `${Math.round(age)}h`} ago` : "";
   const headline = a.news?.headline.slice(0, 200);
   return {
-    title: `${a.sample ? "SAMPLE · " : ""}${a.highPriority ? "🔴 HIGH PRIORITY · " : ""}${a.ticker} · ${triggerDisplayName(a.triggerName)}`,
+    title: `${a.sample ? "SAMPLE · " : ""}${a.highPriority ? "🔴 HIGH PRIORITY · " : ""}${a.watch ? "👀 WATCH · " : ""}${a.ticker} · ${triggerDisplayName(a.triggerName)}`,
     url: symbolUrl(a.ticker),
-    color: alertColor(a.triggerName, a.highPriority),
+    color: a.watch && !a.highPriority ? COLOR.watch : alertColor(a.triggerName, a.highPriority),
     description: [
       a.price != null ? `**$${a.price.toFixed(2)}**` : null,
       a.confluence.length > 1

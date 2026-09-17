@@ -44,11 +44,11 @@ export default async () => {
 
     const { data: trigData, error: te } = await db
       .from("triggers")
-      .select("id, name, definition, cooldown_minutes, direction")
+      .select("id, name, definition, cooldown_minutes, direction, category")
       .eq("enabled", true)
       .eq("speed", "fast");
     if (te) throw te;
-    type Trig = { id: number; name: string; definition: unknown; cooldown_minutes: number; direction: string | null };
+    type Trig = { id: number; name: string; definition: unknown; cooldown_minutes: number; direction: string | null; category: string | null };
     const triggers = (trigData as Trig[] | null) ?? [];
     if (!triggers.length) return empty;
     const trigById = new Map(triggers.map((t) => [t.id, t]));
@@ -200,7 +200,9 @@ export default async () => {
       if (px > 0) priceBySymbolId.set(f.symbol_id, px);
     }
 
-    const opened = await openAlertPositions(db, alerted, priceBySymbolId);
+    // Only Buy alerts get exit tracking; Watch triggers are not positions.
+    const buyAlerts = alerted.filter((ev) => trigById.get(ev.trigger_id)?.category !== "watch");
+    const opened = await openAlertPositions(db, buyAlerts, priceBySymbolId);
     return {
       rowsProcessed: liveRows.length,
       result: { fired: fires.length, coolable: coolable.length, alerted: alerted.length, opened },
