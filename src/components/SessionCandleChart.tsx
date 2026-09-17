@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type React from "react";
 import { etTimeLabel, sessionAxis } from "../lib/marketTime";
 
 /** One SIP 1-minute bar, as returned by the session-candles function. */
@@ -28,6 +30,8 @@ interface Props {
   prevSession?: PrevSession | null;
   /** Session still in progress: Auto judges coverage over elapsed minutes only. */
   live?: boolean;
+  /** Page column to render the snapshot stats into (right side). */
+  statsTarget?: HTMLElement | null;
 }
 
 const LEFT = 8;
@@ -93,7 +97,7 @@ function niceStep(span: number, target: number): number {
  * Plain SVG rather than recharts: recharts has no candlestick, and a
  * session is at most ~960 bars, so direct drawing stays light.
  */
-export function SessionCandleChart({ bars, prevClose, prevSession = null, live = false }: Props) {
+export function SessionCandleChart({ bars, prevClose, prevSession = null, live = false, statsTarget = null }: Props) {
   const height = HEIGHT;
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
@@ -272,6 +276,7 @@ export function SessionCandleChart({ bars, prevClose, prevSession = null, live =
 
   return (
     <div className="candle-chart" ref={wrapRef}>
+      {portalStats(statsTarget,
       <div className="candle-stats">
         <select
           className="candle-interval"
@@ -293,14 +298,14 @@ export function SessionCandleChart({ bars, prevClose, prevSession = null, live =
         {/* Green = better than the prior session, red = worse: prices vs the
             prior close, activity vs the prior session (same time of day
             while this one is live). */}
+        {/* Top to bottom: where it is now, how it got there, then activity. */}
+        <span>{live ? "Last" : "Close"} <b className={cmp(stats.close, prevClose)}>{stats.close != null ? fmtPrice(stats.close) : "—"}</b></span>
+        <span>Change <b className={cmp(stats.close, prevClose)}>{change(stats.close)}</b></span>
         <span>Open <b className={cmp(stats.open, prevClose)}>{stats.open != null ? fmtPrice(stats.open) : "—"}</b></span>
         <span>High <b className={cmp(stats.high, prevClose)}>{stats.high != null ? fmtPrice(stats.high) : "—"}</b></span>
         <span>Low <b className={cmp(stats.low, prevClose)}>{stats.low != null ? fmtPrice(stats.low) : "—"}</b></span>
-        <span>
-          Close <b className={cmp(stats.close, prevClose)}>{stats.close != null ? fmtPrice(stats.close) : "—"}</b>{" "}
-          <em className={cmp(stats.close, prevClose)}>{change(stats.close)}</em>
-        </span>
         <span>Gap <b className={cmp(stats.open, prevClose)}>{change(stats.open)}</b></span>
+        <span>Prev close <b>{prevClose != null ? fmtPrice(prevClose) : "—"}</b></span>
         <span title={prevTitle(prevSession && fmtVol(prevSession.volume))}>
           Volume <b className={cmp(stats.volume, prevSession?.volume)}>{fmtVol(stats.volume)}</b>
         </span>
@@ -310,7 +315,7 @@ export function SessionCandleChart({ bars, prevClose, prevSession = null, live =
         <span title={prevTitle(prevSession && `${prevSession.minutes_traded}`)}>
           Minutes traded <b className={cmp(stats.minutesTraded, prevSession?.minutes_traded)}>{stats.minutesTraded}/390</b>
         </span>
-      </div>
+      </div>)}
       <svg width={width} height={height} onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img"
            aria-label="Session candlestick chart with volume">
         {yTicks.map((v) => (
@@ -379,4 +384,9 @@ export function SessionCandleChart({ bars, prevClose, prevSession = null, live =
       )}
     </div>
   );
+}
+
+/** Render the stats block into the page's snapshot column when one is provided. */
+export function portalStats(target: HTMLElement | null, node: React.ReactNode) {
+  return target ? createPortal(node, target) : node;
 }

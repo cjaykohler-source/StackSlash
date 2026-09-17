@@ -733,6 +733,47 @@ body {
   display: block;
   max-width: 100%;
 }
+/* Symbol page: chart on the left, a single snapshot column on the right,
+   both starting level with the range buttons. Stacks on narrow screens. */
+.chart-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 16px;
+  align-items: start;
+}
+.chart-main {
+  min-width: 0;
+}
+.chart-stats-col .candle-stats {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+.chart-stats-col .candle-stats > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.chart-stats-col .candle-stats > span:last-child {
+  border-bottom: none;
+}
+.chart-stats-col .candle-interval {
+  align-self: stretch;
+  margin-bottom: 6px;
+}
+@media (max-width: 760px) {
+  .chart-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .candle-stats {
   display: flex;
   flex-wrap: wrap;
