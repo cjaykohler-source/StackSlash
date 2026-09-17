@@ -1,15 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { etDateString, sessionAxis } from "../lib/marketTime";
 import { PriceChart, type PricePoint } from "./PriceChart";
 import { useQuotes, type Quote } from "./QuoteTag";
-
-interface Tracked {
-  symbol_id: number;
-  ticker: string;
-  name: string | null;
-}
+import { SpotlightIcon } from "./SpotlightIcon";
+import { useTracking, type TrackedSymbol as Tracked } from "../lib/useTracking";
 
 // The live quote (price + intraday %) polls fast; the chart's bar series
 // reloads slowly, since bars_intraday only updates every ~5 min and the
@@ -18,105 +14,43 @@ const QUOTE_MS = 15_000;
 const SERIES_MS = 90_000;
 
 /**
- * Dashboard "Tracking" panel — a user-curated watchlist (persisted in the
- * `tracked_symbols` table). Search a ticker, hit Track, and it gets a
- * live mini chart. Sits above the trigger feed.
+ * Dashboard "Spotlight" grid — the live mini charts at the top of the
+ * page. It shows only the tracked symbols flagged `spotlight`; everything
+ * else tracked lives as a row in the sidebar's Tracking column, where the
+ * spotlight toggle lifts it up here. Renders nothing when none are lit.
  */
 export function TrackingPanel() {
-  const [tracked, setTracked] = useState<Tracked[]>([]);
-  const [input, setInput] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { tracked, setSpotlight } = useTracking();
+  const spotlit = tracked.filter((t) => t.spotlight);
 
-  const load = useCallback(async () => {
-    const { data } = await supabase
-      .from("tracked_symbols")
-      .select("symbol_id, symbols(ticker, name)")
-      .order("created_at", { ascending: true });
-    const rows = (data as unknown as { symbol_id: number; symbols: { ticker: string; name: string | null } | null }[] | null) ?? [];
-    setTracked(
-      rows
-        .filter((r) => r.symbols)
-        .map((r) => ({ symbol_id: r.symbol_id, ticker: r.symbols!.ticker, name: r.symbols!.name })),
-    );
-  }, []);
-
-  useEffect(() => {
-    load();
-    const channel = supabase
-      .channel("tracked_symbols_panel")
-      .on("postgres_changes", { event: "*", schema: "public", table: "tracked_symbols" }, () => load())
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [load]);
-
-  async function track(e: React.FormEvent) {
-    e.preventDefault();
-    const ticker = input.trim().toUpperCase();
-    if (!ticker || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const { data: sym } = await supabase.from("symbols").select("id").eq("ticker", ticker).maybeSingle();
-      if (!sym) {
-        setError(`${ticker} isn't in the tracked universe — add it from the search box at the top first.`);
-        return;
-      }
-      const { error: insErr } = await supabase.from("tracked_symbols").insert({ symbol_id: sym.id });
-      if (insErr && insErr.code !== "23505") throw insErr; // 23505 = already tracked, fine
-      setInput("");
-      await load();
-    } catch {
-      setError(`Couldn't track ${ticker}.`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function untrack(symbolId: number) {
-    await supabase.from("tracked_symbols").delete().eq("symbol_id", symbolId);
-    await load();
-  }
-
-  // One batched, self-repolling quote fetch for every tracked ticker.
+  // One batched, self-repolling quote fetch for every spotlit ticker.
   const quotes = useQuotes(
-    tracked.map((t) => t.ticker),
+    spotlit.map((t) => t.ticker),
     QUOTE_MS,
   );
+
+  // Nothing spotlit: the Tracking column in the sidebar is the whole
+  // watchlist, and this grid stays out of the way.
+  if (spotlit.length === 0) return null;
 
   return (
     <section className="tracking">
       <div className="tracking-head">
-        <h2>Tracking</h2>
-        <form className="tracking-add" onSubmit={track}>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Add symbol…"
-            aria-label="Symbol to track"
-          />
-          <button type="submit" disabled={busy || !input.trim()}>
-            Track
-          </button>
-        </form>
+        <h2>Spotlight</h2>
+        <span className="tracking-hint">
+          {spotlit.length} of {tracked.length} tracked · the rest are in the Tracking column
+        </span>
       </div>
-      {error && <p className="tracking-error">{error}</p>}
-      {tracked.length === 0 ? (
-        <p className="empty-state">Nothing tracked yet — search a symbol above and hit Track.</p>
-      ) : (
-        <div className="tracking-grid">
-          {tracked.map((t) => (
-            <TrackedCard
-              key={t.symbol_id}
-              tracked={t}
-              quote={quotes.get(t.ticker)}
-              onRemove={() => untrack(t.symbol_id)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="tracking-grid">
+        {spotlit.map((t) => (
+          <TrackedCard
+            key={t.symbol_id}
+            tracked={t}
+            quote={quotes.get(t.ticker)}
+            onRemove={() => setSpotlight(t.symbol_id, false)}
+          />
+        ))}
+      </div>
     </section>
   );
 }
@@ -274,8 +208,13 @@ function TrackedCard({
         <Link to={`/symbol/${tracked.ticker}`} className="tracked-ticker">
           {tracked.ticker}
         </Link>
-        <button className="tracked-remove" onClick={onRemove} aria-label={`Stop tracking ${tracked.ticker}`}>
-          ×
+        <button
+          className="tracked-remove"
+          onClick={onRemove}
+          aria-label={`Remove ${tracked.ticker} from the Spotlight`}
+          title={`Remove ${tracked.ticker} from the Spotlight (stays tracked)`}
+        >
+          <SpotlightIcon on />
         </button>
       </div>
       <div className="tracked-quote">

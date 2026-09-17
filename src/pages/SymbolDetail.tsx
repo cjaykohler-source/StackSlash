@@ -10,6 +10,7 @@ import { SymbolNews } from "../components/SymbolNews";
 import { SessionCandleChart, type Candle, type PrevSession } from "../components/SessionCandleChart";
 import { RangeCandleChart, TIMEFRAME_LABEL, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
 import { BrandHomeLink } from "../components/BrandHomeLink";
+import { TrackButton } from "../components/TrackButton";
 
 type Range = "session" | "week" | "month" | "year" | "18mo" | "5y" | "since2016";
 
@@ -183,6 +184,8 @@ export function SymbolDetail() {
               {symbolName && <span className="symbol-company-name"> ({symbolName})</span>}
             </h1>
             {ticker && <SymbolQuote quote={quotes.get(ticker)} />}
+            {/* Track / Tracking sits right of "today" on the title line. */}
+            <TrackButton symbolId={symbolId} />
           </div>
           <CompanyDescription ticker={ticker ?? null} name={symbolName} />
         </div>
