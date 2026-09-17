@@ -735,11 +735,16 @@ body {
 }
 /* Symbol page: chart on the left, a single snapshot column on the right,
    both starting level with the range buttons. Stacks on narrow screens. */
-.chart-layout {
+.symbol-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 210px;
   gap: 16px;
   align-items: start;
+}
+.symbol-body-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 .chart-main {
   min-width: 0;
@@ -756,11 +761,14 @@ body {
 }
 .chart-stats-col .candle-stats > span {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   padding: 5px 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.chart-stats-col .candle-stats b {
+  font-size: 0.9rem;
 }
 .chart-stats-col .candle-stats > span:last-child {
   border-bottom: none;
@@ -786,10 +794,9 @@ body {
   gap: 0;
 }
 .chart-stats-col .factor-snapshot .dossier-metric {
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   padding: 5px 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
@@ -802,12 +809,12 @@ body {
   font-size: 0.78rem;
 }
 .chart-stats-col .factor-snapshot .dossier-metric-value {
-  font-size: 0.82rem;
-  text-align: right;
+  font-size: 0.9rem;
+  font-weight: 600;
   white-space: nowrap;
 }
 @media (max-width: 760px) {
-  .chart-layout {
+  .symbol-body {
     grid-template-columns: minmax(0, 1fr);
   }
 }

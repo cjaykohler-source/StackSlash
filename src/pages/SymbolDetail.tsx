@@ -188,7 +188,11 @@ export function SymbolDetail() {
         </div>
       </header>
 
-      <section className="chart-layout">
+      {/* Body: sections on the left; the snapshot column runs down the right
+          side beside all of them, starting level with the range buttons. */}
+      <div className="symbol-body">
+      <div className="symbol-body-main">
+      <section>
         <div className="chart-main">
         {/* Chart controls: one row riding the top of the chart. */}
         <div className="chart-controls">
@@ -262,12 +266,6 @@ export function SymbolDetail() {
           <RangeCandleChart bars={rangeCandles.bars} timeframe={rangeCandles.timeframe} statsTarget={statsEl} />
         )}
         </div>
-        {/* Snapshot column: the chart's stats render here (portal), starting
-            level with the range buttons. */}
-        <aside className="chart-stats-col" aria-label="Snapshot">
-          <div ref={setStatsEl} />
-          <div ref={setFactorsEl} />
-        </aside>
       </section>
 
       {symbolId !== null && (
@@ -310,6 +308,14 @@ export function SymbolDetail() {
           </>
         )}
       </section>
+      </div>
+      {/* Snapshot column: the chart's price stats and SymbolProfile's factor
+          snapshot render here (portals). */}
+      <aside className="chart-stats-col" aria-label="Snapshot">
+        <div ref={setStatsEl} />
+        <div ref={setFactorsEl} />
+      </aside>
+      </div>
     </div>
   );
 }
