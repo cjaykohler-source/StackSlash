@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { etDateString } from "../lib/marketTime";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "../lib/triggerEval";
 import { computeProximity } from "../lib/triggerProximity";
-import { triggerLabel, triggerCategoryLabel, humanize, TRIGGER_INFO } from "../lib/triggerInfo";
+import { triggerLabel, humanize, TRIGGER_INFO } from "../lib/triggerInfo";
 import { FIELD_META, HIDDEN_FIELDS, formatField, pct } from "../lib/factorFormat";
 import type { FactorState, RegimeState, Trigger } from "../lib/types";
 import { InfoTooltip } from "./InfoTooltip";
@@ -23,6 +24,22 @@ interface ProfileTrigger {
   stats: TriggerStatRow[];
   proximity: number | null;
   variant: "entry" | "exit";
+  /** buy setup, avoid warning, or exit tracking */
+  kind: "buy" | "avoid" | "exit";
+  /** fast triggers read today's live session; slow ones the last close */
+  timing: "live" | "close";
+  /** a live trigger with no live factors for this symbol this session */
+  noLiveData: boolean;
+  lastFired: string | null;
+  position?: TrackedPosition | null;
+}
+
+interface TrackedPosition {
+  entry_ts: string | null;
+  entry_date: string;
+  entry_price: number | null;
+  stop_price: number | null;
+  rules: { profit_target_pct?: number; trail_pct?: number; time_stop_days?: number } | null;
 }
 
 interface OpenShadowPosition {
@@ -87,7 +104,8 @@ export function SymbolProfile({
 
     async function load() {
       setLoading(true);
-      const [factorRes, regimeRes, triggersRes, exitTriggerRes, openPositionRes] = await Promise.all([
+      const today = etDateString(Date.now());
+      const [factorRes, regimeRes, triggersRes, openPositionRes, trackedRes, liveRes, firedRes] = await Promise.all([
         supabase
           .from("factor_state")
           .select("*")
@@ -96,40 +114,64 @@ export function SymbolProfile({
           .limit(1)
           .maybeSingle(),
         supabase.from("regime_state").select("*").order("as_of", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("triggers").select("*").eq("enabled", true).not("category", "in", "(outlier,exit)"),
-        supabase.from("triggers").select("*").eq("name", "momentum_exit").maybeSingle(),
+        supabase.from("triggers").select("*").eq("enabled", true).neq("category", "outlier"),
         supabase
           .from("shadow_positions")
           .select("entry_date")
           .eq("symbol_id", symbolId)
           .eq("status", "open")
+          .eq("strategy", "swing")
           .order("entry_date", { ascending: false })
           .limit(1)
           .maybeSingle(),
+        supabase
+          .from("shadow_positions")
+          .select("entry_ts, entry_date, entry_price, stop_price, rules")
+          .eq("symbol_id", symbolId)
+          .eq("status", "open")
+          .eq("strategy", "flip")
+          .order("entry_ts", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("intraday_factor_state")
+          .select("*")
+          .eq("symbol_id", symbolId)
+          .eq("session_date", today)
+          .maybeSingle(),
+        supabase
+          .from("trigger_events")
+          .select("trigger_id, ts")
+          .eq("symbol_id", symbolId)
+          .order("ts", { ascending: false })
+          .limit(100),
       ]);
       if (cancelled) return;
 
       const factor = factorRes.data as FactorState | null;
       const regime = regimeRes.data as RegimeState | null;
-      const triggers = (triggersRes.data as Trigger[] | null) ?? [];
-      const exitTrigger = exitTriggerRes.data as Trigger | null;
+      const triggers = (triggersRes.data as (Trigger & { speed?: string; direction?: string })[] | null) ?? [];
       const openPosition = openPositionRes.data as OpenShadowPosition | null;
+      const tracked = trackedRes.data as TrackedPosition | null;
+      const live = liveRes.data as Record<string, number | boolean | null> | null;
 
       setFactorState(factor);
-
-      if (!factor || !triggers.length) {
+      if (!triggers.length) {
         setProfileTriggers([]);
         setLoading(false);
         return;
       }
 
-      const triggerIds = triggers.map((t) => t.id).concat(exitTrigger ? [exitTrigger.id] : []);
+      const lastFiredById = new Map<number, string>();
+      for (const r of (firedRes.data as { trigger_id: number; ts: string }[] | null) ?? []) {
+        if (!lastFiredById.has(r.trigger_id)) lastFiredById.set(r.trigger_id, r.ts);
+      }
+
       const { data: statsData } = await supabase
         .from("trigger_stats")
         .select("trigger_id, horizon_days, sample_size, win_rate, avg_return")
-        .in("trigger_id", triggerIds);
+        .in("trigger_id", triggers.map((t) => t.id));
       if (cancelled) return;
-
       const statsByTrigger = new Map<number, TriggerStatRow[]>();
       for (const row of (statsData as TriggerStatRow[] | null) ?? []) {
         const existing = statsByTrigger.get(row.trigger_id) ?? [];
@@ -137,28 +179,36 @@ export function SymbolProfile({
         statsByTrigger.set(row.trigger_id, existing);
       }
 
-      // Same merge pattern eod-scan.ts uses when building trigger inputs.
-      const inputs: TriggerInputs = { ...factor, risk_on: regime?.risk_on ?? null };
+      const closeInputs: TriggerInputs | null = factor ? { ...factor, risk_on: regime?.risk_on ?? null } : null;
+      const results: ProfileTrigger[] = [];
+      for (const t of triggers) {
+        const stats = (statsByTrigger.get(t.id) ?? []).sort((a, b) => a.horizon_days - b.horizon_days);
+        const lastFired = lastFiredById.get(t.id) ?? null;
+        const category = String(t.category ?? "");
 
-      const results: ProfileTrigger[] = triggers.map((t) => ({
-        trigger: t,
-        satisfied: evaluateTrigger(t.definition as unknown as TriggerDefinition, inputs),
-        stats: (statsByTrigger.get(t.id) ?? []).sort((a, b) => a.horizon_days - b.horizon_days),
-        proximity: computeProximity(t.definition as unknown as TriggerDefinition, inputs),
-        variant: "entry",
-      }));
+        if (category === "exit") {
+          // Exits aren't factor conditions: they follow an open tracked position.
+          if (t.name === "exit_warning" && tracked) {
+            results.push({ trigger: t, satisfied: false, stats, proximity: null, variant: "exit", kind: "exit", timing: "live", noLiveData: false, lastFired, position: tracked });
+          } else if (t.name === "momentum_exit" && openPosition && factor) {
+            results.push({ trigger: t, satisfied: false, stats, proximity: momentumExitProximity(openPosition, factor), variant: "exit", kind: "exit", timing: "close", noLiveData: false, lastFired });
+          }
+          continue;
+        }
 
-      // momentum_exit only ever applies while this symbol has an open
-      // shadow position — with none open there's nothing to be "close to
-      // exiting" from, so it's simply absent from the list rather than
-      // shown at a meaningless 0%.
-      if (exitTrigger && openPosition) {
-        results.unshift({
-          trigger: exitTrigger,
-          satisfied: false, // eod-scan.ts closes the position the instant this is true — an open one is by definition not (yet) satisfied
-          stats: (statsByTrigger.get(exitTrigger.id) ?? []).sort((a, b) => a.horizon_days - b.horizon_days),
-          proximity: momentumExitProximity(openPosition, factor),
-          variant: "exit",
+        const timing: "live" | "close" = t.speed === "fast" ? "live" : "close";
+        const inputs = timing === "live" ? (live as TriggerInputs | null) : closeInputs;
+        const def = t.definition as unknown as TriggerDefinition;
+        results.push({
+          trigger: t,
+          satisfied: inputs ? evaluateTrigger(def, inputs) : false,
+          stats,
+          proximity: inputs ? computeProximity(def, inputs) : null,
+          variant: "entry",
+          kind: category === "avoid" || t.direction === "short" ? "avoid" : "buy",
+          timing,
+          noLiveData: timing === "live" && !live,
+          lastFired,
         });
       }
 
@@ -208,77 +258,31 @@ export function SymbolProfile({
     <div className="symbol-profile">
       {factorsTarget ? createPortal(factorSnapshot, factorsTarget) : factorSnapshot}
 
-      {profileTriggers && profileTriggers.filter((p) => p.satisfied).length >= 2 && (
-        <div className="confluence-banner">
-          <strong>
-            <InfoTooltip text="Multiple independent triggers are satisfied for this symbol at the same time — historically a stronger signal than any single trigger alone.">
-              Confluence
-            </InfoTooltip>
-            : {profileTriggers.filter((p) => p.satisfied).length} signals agree right now
-          </strong>{" "}
-          —{" "}
-          {profileTriggers
-            .filter((p) => p.satisfied)
-            .map((p) => triggerLabel(p.trigger.name))
-            .join(", ")}
-        </div>
-      )}
-
       <div className="symbol-profile-split">
         <div className="symbol-profile-triggers">
           <h3 className="profile-subheading">Trigger status</h3>
           {!profileTriggers || profileTriggers.length === 0 ? (
-            <p className="empty-state">No evaluable triggers configured.</p>
+            <p className="empty-state">No enabled triggers to evaluate.</p>
           ) : (
             <div className="trigger-profile-list">
-          {profileTriggers.map(({ trigger, satisfied, stats, proximity, variant }) => {
-            const realStats = stats.filter((s) => s.sample_size > 0);
-            const statusText = variant === "exit" ? "Position open" : satisfied ? "Satisfied now" : "Not satisfied";
-            const statusTooltip =
-              variant === "exit"
-                ? "This symbol has an open hypothetical position from an earlier entry trigger — the bar below shows how close it is to the exit condition."
-                : satisfied
-                  ? "This trigger's condition is true right now, based on the latest factor snapshot."
-                  : "This trigger's condition is not currently true for this symbol.";
-            return (
-              <div className="trigger-profile-row" key={trigger.id}>
-                <div className="trigger-profile-header">
-                  <span className="trigger-profile-label">
-                    {TRIGGER_INFO[trigger.name]?.summary ? (
-                      <InfoTooltip text={TRIGGER_INFO[trigger.name]!.summary}>{triggerLabel(trigger.name)}</InfoTooltip>
-                    ) : (
-                      triggerLabel(trigger.name)
-                    )}
-                  </span>
-                  <span className="trigger-profile-category">{triggerCategoryLabel(trigger.name)}</span>
-                  <span className={`trigger-profile-status ${satisfied ? "satisfied" : "unsatisfied"}`}>
-                    <InfoTooltip underline={false} text={statusTooltip}>
-                      {statusText}
-                    </InfoTooltip>
-                  </span>
-                </div>
-                <ProximityBar proximity={proximity} variant={variant} />
-                {realStats.length === 0 ? (
-                  <p className="trigger-profile-note">No backtested history yet.</p>
-                ) : (
-                  <div className="trigger-profile-stats">
-                    {realStats.map((s, i) => (
-                      <span key={s.horizon_days} className="trigger-profile-stat">
-                        {i > 0 && <span className="trigger-profile-sep"> | </span>}
-                        <InfoTooltip
-                          text={`Backtested outcomes across every historical fire of this trigger (${s.sample_size} samples), looking ${s.horizon_days} trading day${s.horizon_days === 1 ? "" : "s"} ahead: the share of fires that were profitable, and the average return.`}
-                        >
-                          {s.horizon_days}D
-                        </InfoTooltip>
-                        : {pct(s.win_rate ?? 0, 0)} <span className="trigger-profile-sep">|</span> AVG{" "}
-                        {pct(s.avg_return ?? 0, 2)}
-                      </span>
+              {(
+                [
+                  ["buy", "Buy setups"],
+                  ["avoid", "Avoid warnings"],
+                  ["exit", "Exit"],
+                ] as const
+              ).map(([kind, title]) => {
+                const rows = profileTriggers.filter((p) => p.kind === kind);
+                if (!rows.length) return null;
+                return (
+                  <div key={kind} className="trigger-profile-group">
+                    <h4 className="trigger-profile-group-title">{title}</h4>
+                    {rows.map((row) => (
+                      <TriggerStatusRow key={row.trigger.id} row={row} />
                     ))}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                );
+              })}
             </div>
           )}
         </div>
@@ -323,4 +327,73 @@ const FACTOR_ORDER = [
 function factorOrder(key: string): number {
   const i = FACTOR_ORDER.indexOf(key);
   return i === -1 ? FACTOR_ORDER.length : i;
+}
+
+/** One trigger in the symbol page's Trigger status list. */
+function TriggerStatusRow({ row }: { row: ProfileTrigger }) {
+  const { trigger, satisfied, stats, proximity, variant, kind, timing, noLiveData, lastFired, position } = row;
+  const info = TRIGGER_INFO[trigger.name];
+
+  let statusText: string;
+  let statusClass: string;
+  let statusTip: string;
+  if (kind === "exit") {
+    statusText = "Tracking";
+    statusClass = "tracking";
+    statusTip = "A buy alert on this stock is being followed for its exit: stop, take profit, trailing stop or time limit.";
+  } else if (noLiveData) {
+    statusText = "No live data";
+    statusClass = "unsatisfied";
+    statusTip = "Checked every 5 minutes during the session; this stock has no live factors yet today (outside market hours, or below the monitoring floor).";
+  } else if (kind === "avoid") {
+    statusText = satisfied ? "Warning now" : "Clear";
+    statusClass = satisfied ? "warning" : "unsatisfied";
+    statusTip = satisfied ? "This avoid condition is true right now." : "This avoid condition is not true right now.";
+  } else {
+    statusText = satisfied ? "Setup now" : "Not now";
+    statusClass = satisfied ? "satisfied" : "unsatisfied";
+    statusTip = satisfied ? "This setup's conditions are all true right now." : "At least one of this setup's conditions is not true right now.";
+  }
+
+  // One evidence line: a backtest summary if there is one, else the tested evidence.
+  const real = stats.filter((s) => s.sample_size > 0);
+  const five = real.find((s) => s.horizon_days === 5) ?? real[real.length - 1];
+  const evidence = five
+    ? `Backtest ${five.horizon_days}-day: ${pct(five.win_rate ?? 0, 0)} win · avg ${pct(five.avg_return ?? 0, 2)} · ${five.sample_size.toLocaleString()} samples`
+    : info?.evidence ?? null;
+
+  const fmtTs = (ts: string) =>
+    new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const usd = (v: number | null) => (v != null ? `$${Number(v).toFixed(2)}` : "—");
+
+  return (
+    <div className="trigger-profile-row">
+      <div className="trigger-profile-header">
+        <span className="trigger-profile-label">
+          {info?.summary ? <InfoTooltip text={info.summary}>{triggerLabel(trigger.name)}</InfoTooltip> : triggerLabel(trigger.name)}
+        </span>
+        <span className={`trigger-profile-timing ${timing}`}>{timing === "live" ? "Live" : "At close"}</span>
+        <span className={`trigger-profile-status ${statusClass}`}>
+          <InfoTooltip underline={false} text={statusTip}>
+            {statusText}
+          </InfoTooltip>
+        </span>
+      </div>
+      {kind === "exit" && position ? (
+        <p className="trigger-profile-meta">
+          Since {fmtTs(position.entry_ts ?? `${position.entry_date}T12:00:00Z`)} · entry {usd(position.entry_price)} · stop{" "}
+          {usd(position.stop_price)}
+          {position.entry_price != null && position.rules?.profit_target_pct != null
+            ? ` · target ${usd(position.entry_price * (1 + position.rules.profit_target_pct))}`
+            : ""}
+          {position.rules?.trail_pct != null ? ` · ${Math.round(position.rules.trail_pct * 100)}% trail` : ""}
+          {position.rules?.time_stop_days != null ? ` · ${position.rules.time_stop_days}-day limit` : ""}
+        </p>
+      ) : (
+        !noLiveData && <ProximityBar proximity={proximity} variant={variant} />
+      )}
+      {evidence && <p className="trigger-profile-note">{evidence}</p>}
+      {lastFired && <p className="trigger-profile-meta">Last fired here: {fmtTs(lastFired)}</p>}
+    </div>
+  );
 }
