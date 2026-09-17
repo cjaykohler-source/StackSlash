@@ -184,10 +184,16 @@ Checked 2026-09-17 ~13:30 ET (mid-session, so the evening jobs had not run):
   ran 14:30 UTC (unscheduled, as intended). Seven Watch positions opened
   before the 12:04 ET Buy/Watch/Sell commit and were all cancelled
   `watch_not_buy`; none since. **Nothing broken.**
-- **Avoid: Don't Chase fired 0 times.** `intraday_factor_state` keeps only
-  the latest snapshot, so the first hour could not be replayed. Suspect:
-  `session_bars` counts IEX 1-min bars that traded, not minutes elapsed, so
-  the 15-60 gate may never open on thin names. Worth an explicit check.
+- **Avoid: Don't Chase fired 0 times — found and fixed.** Its "first hour"
+  gate was `session_bars` 15-60, and `session_bars` counts IEX 1-min bars
+  that *traded*, not minutes elapsed: at 14:55 ET on 09-17 the median band
+  name had 47 bars and **233 of 644 were still inside the 15-60 window**, five
+  hours into the session. So the trigger was never restricted to the first
+  hour (where the -2.3% result came from) and thin names stayed eligible all
+  day. `intraday_factor_state` now carries **`session_minutes`** (elapsed
+  minutes since 09:30 ET at `as_of`) and the trigger gates on it, keeping
+  `session_bars >= 10` as a liquidity floor. **Verify it fires tomorrow**
+  during 09:45-10:30.
 
 Still to verify (they had not run yet):
 
