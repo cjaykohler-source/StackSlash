@@ -37,20 +37,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * The free plan serves SIP (consolidated tape) only for data older than 15
+ * minutes; an `end` inside that window is rejected. Clamp it back.
+ */
+function clampSipEnd(end: string): string {
+  const cutoff = Date.now() - 16 * 60_000;
+  const endMs = end.length === 10 ? Date.parse(`${end}T23:59:59Z`) : Date.parse(end);
+  return endMs > cutoff ? new Date(cutoff).toISOString() : end;
+}
+
 async function fetchBars(
   symbols: string[],
   timeframe: string,
   start: string,
   end: string,
   pageToken?: string,
+  feed: "iex" | "sip" = "iex",
 ): Promise<{ bars: Record<string, DailyBar[]>; nextPageToken: string | null }> {
   const params = new URLSearchParams({
     symbols: symbols.join(","),
     timeframe,
     start,
-    end,
+    end: feed === "sip" ? clampSipEnd(end) : end,
     adjustment: "split",
-    feed: "iex",
+    feed,
     limit: "1000",
   });
   if (pageToken) params.set("page_token", pageToken);
@@ -138,7 +149,11 @@ export async function fetchDailyBars(
   end: string, // YYYY-MM-DD
   pageToken?: string,
 ): Promise<{ bars: Record<string, DailyBar[]>; nextPageToken: string | null }> {
-  return fetchBars(symbols, "1Day", start, end, pageToken);
+  // SIP since 2026-09-17: IEX carries ~1.7% of sub-$5 volume (SIP/IEX median
+  // 58.7x, p10 16x, p90 197x), so every daily volume, RVOL, dollar-volume
+  // floor and the 25x flag was computed on a thin, uneven slice. Intraday
+  // 1-min bars stay on IEX for real-time (SIP is 15-min delayed on free).
+  return fetchBars(symbols, "1Day", start, end, pageToken, "sip");
 }
 
 /**
@@ -177,8 +192,8 @@ export interface SipBar extends DailyBar {
 /**
  * Consolidated-tape (SIP) bars for ONE symbol, all pages, with VWAP and
  * trade count. For display (the symbol page's Session candles), not the
- * scanners — fetchBars() above stays pinned to IEX so nothing already
- * measured changes underneath it. The free data plan serves SIP only for
+ * scanners. (fetchBars() above takes a feed: daily bars are SIP since
+ * 2026-09-17, intraday 1-min bars stay IEX for real-time.) The free data plan serves SIP only for
  * requests ending more than 15 minutes ago; callers must cap `endIso`.
  */
 export async function fetchSipBars(

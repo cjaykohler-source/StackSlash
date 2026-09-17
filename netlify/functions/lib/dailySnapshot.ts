@@ -1,5 +1,6 @@
 import {
   avgDollarVolume,
+  avgVolume,
   bbWidthPercentile,
   bollinger,
   isNewCloseHigh,
@@ -37,6 +38,11 @@ export interface FactorFields {
   dist_sma200: number | null;
   bb_width_percentile_126d: number | null;
   volume_ratio_20d: number | null;
+  avg_volume_1w: number | null;
+  avg_volume_1m: number | null;
+  avg_volume_3m: number | null;
+  avg_volume_6m: number | null;
+  avg_volume_1y: number | null;
   roc_20d: number | null;
   is_20d_high: boolean | null;
   macd_cross: -1 | 0 | 1 | null;
@@ -94,6 +100,12 @@ export function computeFactors(barsBySymbolId: Map<number, Bar[]>): Map<number, 
       dist_sma200: sma200 ? last / sma200 - 1 : null,
       bb_width_percentile_126d: bbWidthPercentile(bars, 126, 20),
       volume_ratio_20d: volumeRatio(bars, 20),
+      // Average daily share volume: 1 week / 1 month / 3 / 6 / 12 months of sessions.
+      avg_volume_1w: avgVolume(bars, 5),
+      avg_volume_1m: avgVolume(bars, 21),
+      avg_volume_3m: avgVolume(bars, 63),
+      avg_volume_6m: avgVolume(bars, 126),
+      avg_volume_1y: avgVolume(bars, 252),
       roc_20d: roc20d,
       is_20d_high: isNewCloseHigh(bars, 20),
       macd_cross: macdCrossSignal(bars, 12, 26, 9),

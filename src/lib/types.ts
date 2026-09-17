@@ -37,6 +37,11 @@ export interface FactorState {
   dist_sma200: number | null;
   bb_width_percentile_126d: number | null;
   volume_ratio_20d: number | null;
+  avg_volume_1w: number | null;
+  avg_volume_1m: number | null;
+  avg_volume_3m: number | null;
+  avg_volume_6m: number | null;
+  avg_volume_1y: number | null;
   ret_1w_rank_pct: number | null;
   roc_20d: number | null;
   roc_20d_rank_pct: number | null;

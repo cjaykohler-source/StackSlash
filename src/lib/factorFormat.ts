@@ -65,6 +65,15 @@ export interface FieldMeta {
 // Anything not listed here still renders — just with a humanized key and
 // the raw value — so an unrecognized field is visible, not silently
 // dropped.
+/** Share counts, compact: 1.2M, 845K. */
+function sharesCompact(v: number): string {
+  if (!Number.isFinite(v)) return "—";
+  if (v >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+  return `${Math.round(v)}`;
+}
+
 export const FIELD_META: Record<string, FieldMeta> = {
   price: { label: "Price", format: usd, description: "Last traded price at the time this fired." },
   latest_price: { label: "Price", format: usd, description: "Most recent traded price." },
@@ -126,6 +135,11 @@ export const FIELD_META: Record<string, FieldMeta> = {
     format: (v) => `${Math.round(Number(v) * 100)}th percentile`,
     description: "Where today's Bollinger Band width ranks against this stock's own last 6 months — low means an unusually tight 'squeeze'.",
   },
+  avg_volume_1w: { label: "Avg Volume (1 Week)", format: (v) => sharesCompact(Number(v)), description: "Average shares traded per day over the last 5 sessions (consolidated tape)." },
+  avg_volume_1m: { label: "Avg Volume (1 Month)", format: (v) => sharesCompact(Number(v)), description: "Average shares traded per day over the last 21 sessions." },
+  avg_volume_3m: { label: "Avg Volume (3 Months)", format: (v) => sharesCompact(Number(v)), description: "Average shares traded per day over the last 63 sessions." },
+  avg_volume_6m: { label: "Avg Volume (6 Months)", format: (v) => sharesCompact(Number(v)), description: "Average shares traded per day over the last 126 sessions." },
+  avg_volume_1y: { label: "Avg Volume (1 Year)", format: (v) => sharesCompact(Number(v)), description: "Average shares traded per day over the last 252 sessions." },
   volume_ratio_20d: { label: "Volume vs. 20-Day Avg", format: (v) => `${num(v, 1)}x`, description: "Today's trading volume as a multiple of the last 20 days' average volume." },
   roc_20d: { label: "20-Day Rate of Change", format: (v) => pct(v), description: "Price change over the trailing 20 trading days — a faster momentum measure than the 12-1 month one." },
   roc_20d_rank_pct: {

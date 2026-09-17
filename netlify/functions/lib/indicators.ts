@@ -91,6 +91,12 @@ export function avgDollarVolume(bars: Bar[], period = 20): number | null {
   return slice.reduce((sum, b) => sum + b.close * b.volume, 0) / period;
 }
 
+/** Average daily share volume over the last `period` bars. */
+export function avgVolume(bars: Bar[], period: number): number | null {
+  if (bars.length < period) return null;
+  return bars.slice(-period).reduce((sum, b) => sum + b.volume, 0) / period;
+}
+
 /** Percentile rank of `value` within `all` (0-1), used for cross-sectional momentum ranking. */
 export function percentileRank(all: number[], value: number): number {
   const sorted = [...all].sort((a, b) => a - b);
