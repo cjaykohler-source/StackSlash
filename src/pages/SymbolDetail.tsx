@@ -184,7 +184,7 @@ export function SymbolDetail() {
             </h1>
             {ticker && <SymbolQuote quote={quotes.get(ticker)} />}
           </div>
-          <CompanyDescription name={symbolName} />
+          <CompanyDescription ticker={ticker ?? null} name={symbolName} />
         </div>
       </header>
 

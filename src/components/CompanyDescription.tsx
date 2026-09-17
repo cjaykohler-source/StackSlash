@@ -1,21 +1,21 @@
 import { useEffect, useRef, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 /**
- * Company blurb for the SymbolDetail header, sourced from Wikipedia's
- * free public summary API — no API key, no new vendor, matching the
- * "avoid a new paid vendor" bias this project's already applied once
- * (the market-breadth-over-macro-data decision). Fetched client-side,
- * keyed by company name (not ticker — Wikipedia's title-matching/
- * redirect handling is far more reliable against a full legal name like
- * "Ciena Corporation" than a bare ticker), and not persisted anywhere:
- * always fresh, at the cost of one extra request per symbol page view.
+ * Company blurb for the SymbolDetail header. Sources, in order:
+ *  1. symbols.description — the FMP profile description, stored by
+ *     fundamentals-sync / deep-dive;
+ *  2. the company-profile function, which fetches and stores the FMP
+ *     profile on demand when nothing is stored yet;
+ *  3. Wikipedia's summary API by company name — the original source, kept
+ *     as a fallback because it has no page for most sub-$5 companies.
  *
  * Full page width, visually clamped to 4 lines via CSS rather than a hard
  * character cut, so it degrades gracefully across viewport widths. When
  * the text runs past 4 lines (measured, so it tracks resizes) a "See
  * more" toggle expands it in place.
  */
-export function CompanyDescription({ name }: { name: string | null }) {
+export function CompanyDescription({ ticker, name }: { ticker: string | null; name: string | null }) {
   const [extract, setExtract] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "unavailable">("loading");
   const [expanded, setExpanded] = useState(false);
@@ -36,7 +36,7 @@ export function CompanyDescription({ name }: { name: string | null }) {
   }, [extract, status, expanded]);
 
   useEffect(() => {
-    if (!name) {
+    if (!name && !ticker) {
       setStatus("loading");
       return;
     }
@@ -45,6 +45,27 @@ export function CompanyDescription({ name }: { name: string | null }) {
 
     async function load() {
       try {
+        // 1-2. Stored FMP description, else fetched and stored on demand.
+        if (ticker) {
+          const { data: sym } = await supabase.from("symbols").select("description").eq("ticker", ticker).maybeSingle();
+          let text = (sym as { description: string | null } | null)?.description ?? null;
+          if (!text) {
+            const r = await fetch(`/.netlify/functions/company-profile?symbol=${encodeURIComponent(ticker)}`).catch(() => null);
+            const body = r && r.ok ? ((await r.json()) as { description?: string | null }) : null;
+            text = body?.description ?? null;
+          }
+          if (cancelled) return;
+          if (text) {
+            setExtract(text);
+            setStatus("ok");
+            return;
+          }
+        }
+        // 3. Wikipedia fallback (needs the company name).
+        if (!name) {
+          setStatus("unavailable");
+          return;
+        }
         const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name!)}`);
         if (cancelled) return;
         if (!res.ok) {
@@ -66,9 +87,9 @@ export function CompanyDescription({ name }: { name: string | null }) {
     return () => {
       cancelled = true;
     };
-  }, [name]);
+  }, [name, ticker]);
 
-  if (!name || status === "loading") return null;
+  if ((!name && !ticker) || status === "loading") return null;
   if (status === "unavailable") {
     return <p className="company-description company-description-unavailable">No description available.</p>;
   }

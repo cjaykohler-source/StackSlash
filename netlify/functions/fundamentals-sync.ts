@@ -65,22 +65,54 @@ export default async (_req?: Request) => {
       if (error) throw error;
     }
 
-    // --- 2. Profiles (never-synced first, then stale) ---
+    // --- 2. Profiles: the $0.10-$5 band first (never-synced, then stale),
+    // then everything else. The free tier's ~250 calls/day would take ~24
+    // days to cover the whole universe; band-first covers the ~1,400 names
+    // the scanner cares about in ~8.
     const staleCutoff = new Date(Date.now() - PROFILE_STALE_DAYS * 86400_000).toISOString();
-    const { data: needProfile } = await db
-      .from("symbols")
-      .select("id, ticker, profile_synced_at")
-      .eq("active", true)
-      .or(`profile_synced_at.is.null,profile_synced_at.lt.${staleCutoff}`)
-      .order("profile_synced_at", { ascending: true, nullsFirst: true })
-      .limit(PROFILE_MAX_PER_RUN);
+    type NeedRow = { id: number; ticker: string; profile_synced_at: string | null };
+    const need: NeedRow[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data } = await db
+        .from("symbols")
+        .select("id, ticker, profile_synced_at")
+        .eq("active", true)
+        .or(`profile_synced_at.is.null,profile_synced_at.lt.${staleCutoff}`)
+        .range(from, from + 999);
+      need.push(...((data as NeedRow[] | null) ?? []));
+      if (!data || data.length < 1000) break;
+    }
+    const inBand = new Set<number>();
+    {
+      const { data: cfg } = await db.from("scan_config").select("price_min, price_max").eq("id", 1).maybeSingle();
+      const { data: asOfRow } = await db.from("factor_state").select("as_of").order("as_of", { ascending: false }).limit(1).maybeSingle();
+      const asOf = (asOfRow as { as_of: string } | null)?.as_of;
+      if (asOf) {
+        for (let from = 0; ; from += 1000) {
+          const { data } = await db
+            .from("factor_state")
+            .select("symbol_id")
+            .eq("as_of", asOf)
+            .gte("last_close", Number(cfg?.price_min ?? 0.1))
+            .lte("last_close", Number(cfg?.price_max ?? 5))
+            .range(from, from + 999);
+          for (const r of (data as { symbol_id: number }[] | null) ?? []) inBand.add(r.symbol_id);
+          if (!data || data.length < 1000) break;
+        }
+      }
+    }
+    const rank = (r: NeedRow) => (inBand.has(r.id) ? 0 : 2) + (r.profile_synced_at ? 1 : 0);
+    const needProfile = need
+      .sort((a, b) => rank(a) - rank(b) || (a.profile_synced_at ?? "").localeCompare(b.profile_synced_at ?? ""))
+      .slice(0, PROFILE_MAX_PER_RUN);
     let profilesUpdated = 0;
-    for (const s of (needProfile as { id: number; ticker: string }[] | null) ?? []) {
+    for (const s of needProfile) {
       try {
         const p = await fetchProfile(s.ticker);
         await db
           .from("symbols")
           .update({
+            description: p?.description ?? null,
             sector: p?.sector ?? null,
             industry: p?.industry ?? null,
             market_cap: p?.marketCap ?? null,
