@@ -280,12 +280,17 @@ export default async (req: Request) => {
     zacks_rank: fundamentals?.zacks_rank != null ? Number(fundamentals.zacks_rank) : null,
   });
 
+  // Buy / Watch / Sell: a watch trigger, or a buy setup carrying a red flag
+  // (a real negative), is Watch — no buy sizing, blue card.
+  const watchSide =
+    !sellSide && (triggerCategory === "watch" || flags.some((x) => x.level === "red"));
+
   const riskCfg = {
     account_size: Number(cfg?.account_size ?? 40),
     max_risk_pct: Number(cfg?.max_risk_pct ?? 0.2),
     default_stop_pct: Number(cfg?.default_stop_pct ?? 0.12),
   };
-  const trade = currentPrice != null && !sellSide ? tradeSuggestion(currentPrice, riskCfg) : null;
+  const trade = currentPrice != null && !sellSide && !watchSide ? tradeSuggestion(currentPrice, riskCfg) : null;
 
   // Suppress the alert (keep the dossier) if earnings are imminent.
   const suppressDays = Number(cfg?.suppress_earnings_days ?? 0);
@@ -469,6 +474,7 @@ export default async (req: Request) => {
     ticker,
     triggerName,
     highPriority: priority === "high",
+    watch: watchSide,
     price: currentPrice,
     confluence: confluentNames.filter((n): n is string => !!n),
     flags,

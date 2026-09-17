@@ -18,7 +18,7 @@ import { etDateString, etWallClock } from "./lib/etTime";
 const TOP_N = 15;
 const BUY_COLOR = 0x2ecc71;
 
-type DigestResult = { sent: boolean; reason?: string; targets?: number; qualified?: number; avoid?: number };
+type DigestResult = { sent: boolean; reason?: string; targets?: number; qualified?: number; avoid?: number; watch?: number };
 
 type Row = {
   id: number;
@@ -77,6 +77,7 @@ export default async () => {
     // One line per stock: merge its setups, keep its best score.
     type Line = { ticker: string; price: number | null; score: number; setups: Set<string> };
     const buys = new Map<number, Line>();
+    const watches = new Map<number, Line>();
     const avoids = new Map<number, Line>();
     for (const r of rows) {
       const ticker = r.symbols?.ticker;
@@ -84,7 +85,10 @@ export default async () => {
       const isAvoid = r.triggers?.category === "avoid";
       const isBuy = !isAvoid && r.triggers?.direction !== "short" && r.triggers?.category !== "exit";
       if (!isAvoid && !isBuy) continue;
-      const target = isAvoid ? avoids : buys;
+      // Buy / Watch / Sell: a watch trigger or a red-flagged buy goes to Watch.
+      const flags = (r.dossiers?.[0]?.analysis?.risk_flags as { level: string }[] | undefined) ?? [];
+      const isWatch = isBuy && (r.triggers?.category === "watch" || flags.some((f) => f.level === "red"));
+      const target = isAvoid ? avoids : isWatch ? watches : buys;
       const score = Number(r.dossiers?.[0]?.score ?? 0);
       const line = target.get(r.symbol_id) ?? { ticker, price: priceOf(r), score, setups: new Set<string>() };
       line.score = Math.max(line.score, score);
@@ -107,6 +111,8 @@ export default async () => {
         ? `**Targets — top ${top.length} of ${ranked.length}**\n${top.map((l, i) => `${i + 1}. ${fmt(l)}`).join("\n")}`
         : "**Targets**\nNo buy setups qualified today.",
     );
+    const watchLines = [...watches.values()].sort((a, b) => b.score - a.score).slice(0, TOP_N);
+    if (watchLines.length) sections.push(`👀 **Watch** (setup, but a red flag or unproven direction)\n${watchLines.map(fmt).join("\n")}`);
     if (avoidLines.length) sections.push(`🔴 **Avoid**\n${avoidLines.map(fmt).join("\n")}`);
 
     const embed: DiscordEmbed = {
@@ -121,8 +127,8 @@ export default async () => {
     const sent = await sendDigest(text, embed);
 
     return {
-      rowsProcessed: sent === "sent" ? top.length + avoidLines.length : 0,
-      result: { sent: sent === "sent", targets: top.length, qualified: ranked.length, avoid: avoidLines.length },
+      rowsProcessed: sent === "sent" ? top.length + avoidLines.length + watchLines.length : 0,
+      result: { sent: sent === "sent", targets: top.length, qualified: ranked.length, avoid: avoidLines.length, watch: watchLines.length },
     };
   });
 

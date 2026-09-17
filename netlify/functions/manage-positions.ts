@@ -41,6 +41,7 @@ interface OpenPos {
   symbol_id: number;
   entry_ts: string | null;
   entry_trigger_name: string | null;
+  entry_trigger_event_id: number | null;
   entry_date: string;
   entry_price: number | null;
   stop_price: number | null;
@@ -59,11 +60,41 @@ export default async () => {
 
     const { data, error } = await db
       .from("shadow_positions")
-      .select("id, symbol_id, entry_ts, entry_trigger_name, entry_date, entry_price, stop_price, high_water, rules, symbols(ticker)")
+      .select("id, symbol_id, entry_ts, entry_trigger_event_id, entry_trigger_name, entry_date, entry_price, stop_price, high_water, rules, symbols(ticker)")
       .eq("status", "open")
       .eq("strategy", "flip");
     if (error) throw error;
-    const positions = (data as unknown as OpenPos[] | null) ?? [];
+    let positions = (data as unknown as OpenPos[] | null) ?? [];
+
+    // Buy / Watch / Sell: only real Buy alerts are tracked. A position whose
+    // entry is a watch trigger, or whose dossier carries a red flag (known
+    // only after deep-dive runs), is cancelled — no exit warning follows it.
+    if (positions.length) {
+      const eventIds = positions.map((p) => p.entry_trigger_event_id).filter((id): id is number => id != null);
+      const watchEventIds = new Set<number>();
+      if (eventIds.length) {
+        const { data: evRows } = await db
+          .from("trigger_events")
+          .select("id, triggers(category), dossiers(risk_flags:analysis->risk_flags)")
+          .in("id", eventIds);
+        for (const ev of (evRows as unknown as {
+          id: number;
+          triggers: { category: string | null } | null;
+          dossiers: { risk_flags: { level: string }[] | null }[] | null;
+        }[] | null) ?? []) {
+          const red = (ev.dossiers ?? []).some((d) => (d.risk_flags ?? []).some((f) => f.level === "red"));
+          if (ev.triggers?.category === "watch" || red) watchEventIds.add(ev.id);
+        }
+      }
+      const toCancel = positions.filter((p) => p.entry_trigger_event_id != null && watchEventIds.has(p.entry_trigger_event_id));
+      if (toCancel.length) {
+        await db
+          .from("shadow_positions")
+          .update({ status: "cancelled", exit_reason: "watch_not_buy", exit_date: new Date().toISOString().slice(0, 10) })
+          .in("id", toCancel.map((p) => p.id));
+        positions = positions.filter((p) => !toCancel.includes(p));
+      }
+    }
     if (!positions.length) return { rowsProcessed: 0, result: { open: 0, exited: 0, trailed: 0 } };
 
     const tickers = [...new Set(positions.map((p) => p.symbols?.ticker).filter((t): t is string => !!t))];
