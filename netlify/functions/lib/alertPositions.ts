@@ -51,6 +51,16 @@ export async function openAlertPositions(
     time_stop_days: Number(cfg?.swing_time_stop_days ?? 10),
   };
 
+  // A trigger's own exit_rules override the defaults (e.g. Earnings Release
+  // holds 20 sessions with only a disaster stop, matching its study).
+  const { data: trigRows } = await db
+    .from("triggers")
+    .select("id, exit_rules")
+    .in("id", [...new Set(longs.map((ev) => ev.trigger_id))]);
+  const exitRulesById = new Map(
+    ((trigRows as { id: number; exit_rules: Record<string, number> | null }[] | null) ?? []).map((t) => [t.id, t.exit_rules]),
+  );
+
   const nowIso = new Date().toISOString();
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const rows: Record<string, unknown>[] = [];
@@ -64,6 +74,7 @@ export async function openAlertPositions(
     alreadyOpen.add(ev.symbol_id);
     const primaryName =
       ev.confluence.triggers.find((t) => t.id === ev.trigger_id)?.name ?? ev.confluence.triggers[0]?.name ?? "unknown";
+    const evRules = { ...rules, ...(exitRulesById.get(ev.trigger_id) ?? {}) };
     rows.push({
       symbol_id: ev.symbol_id,
       entry_trigger_event_id: ev.id,
@@ -73,9 +84,9 @@ export async function openAlertPositions(
       entry_price: entryPrice,
       status: "open" as const,
       strategy: "flip" as const,
-      stop_price: round2(entryPrice * (1 - rules.hard_stop_pct)),
+      stop_price: round2(entryPrice * (1 - evRules.hard_stop_pct)),
       high_water: entryPrice,
-      rules,
+      rules: evRules,
     });
   }
   if (!rows.length) return 0;

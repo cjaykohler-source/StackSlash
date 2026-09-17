@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 import { etDateString } from "./lib/etTime";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * SEC filings for tracked symbols, from EDGAR's daily form index — one small
@@ -112,8 +113,70 @@ export default async () => {
       kept += rows.length;
     }
 
-    return { rowsProcessed: kept, result: { days: days.length, fetchedDays, kept } };
+    // 8-K item numbers aren't in the daily index. Fill them from SEC's
+    // submissions API (one request per company) for recent 8-Ks of $0.10-$5
+    // companies — item 2.02 drives the Earnings Release catalyst.
+    const itemsFilled = await fillEightKItems(db);
+
+    return { rowsProcessed: kept, result: { days: days.length, fetchedDays, kept, itemsFilled } };
   });
 
   return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
 };
+
+async function fillEightKItems(db: SupabaseClient): Promise<number> {
+  const since = new Date(Date.now() - 45 * 86400_000).toISOString().slice(0, 10);
+  // band symbols from the latest factor snapshot
+  const band = new Set<number>();
+  const { data: asOfRow } = await db.from("factor_state").select("as_of").order("as_of", { ascending: false }).limit(1).maybeSingle();
+  if (asOfRow?.as_of) {
+    for (let from = 0; ; from += 1000) {
+      const { data } = await db
+        .from("factor_state")
+        .select("symbol_id")
+        .eq("as_of", asOfRow.as_of)
+        .gte("last_close", 0.1)
+        .lte("last_close", 5)
+        .range(from, from + 999);
+      for (const r of (data as { symbol_id: number }[] | null) ?? []) band.add(r.symbol_id);
+      if (!data || data.length < 1000) break;
+    }
+  }
+  const pending: { accession: string; cik: number; symbol_id: number }[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from("sec_filings")
+      .select("accession, cik, symbol_id")
+      .eq("form", "8-K")
+      .is("items", null)
+      .gte("filing_date", since)
+      .range(from, from + 999);
+    if (error) throw error;
+    pending.push(...((data as { accession: string; cik: number; symbol_id: number }[] | null) ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  const byCik = new Map<number, string[]>();
+  for (const p of pending) {
+    if (!band.has(p.symbol_id)) continue;
+    const list = byCik.get(p.cik) ?? [];
+    list.push(p.accession);
+    byCik.set(p.cik, list);
+  }
+  let filled = 0;
+  for (const [cik, keys] of byCik) {
+    const res = await secFetch(`https://data.sec.gov/submissions/CIK${String(cik).padStart(10, "0")}.json`);
+    if (!res.ok) continue;
+    const body = (await res.json()) as { filings?: { recent?: { accessionNumber: string[]; items: string[] } } };
+    const recent = body.filings?.recent;
+    if (!recent) continue;
+    const itemsByAcc = new Map(recent.accessionNumber.map((a, i) => [a, recent.items[i] ?? ""]));
+    for (const key of keys) {
+      const items = itemsByAcc.get(key.split(":")[0]);
+      if (items == null) continue;
+      const { error } = await db.from("sec_filings").update({ items }).eq("accession", key);
+      if (error) throw error;
+      filled++;
+    }
+  }
+  return filled;
+}

@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
-import { fetchDailyBars } from "./lib/alpaca";
+import { fetchDailyBars, fetchReverseSplits } from "./lib/alpaca";
 import { isRealSession } from "./lib/backfillSymbol";
 import { type Bar } from "./lib/indicators";
 import { computeFactors, computeRegime } from "./lib/dailySnapshot";
@@ -335,8 +335,46 @@ export default async () => {
     const evaluations: Record<string, unknown>[] = [];
     const fires: { trigger_id: number; symbol_id: number; snapshot: unknown }[] = [];
 
+    // --- Event catalysts (research/catalyst_study.py) ---
+    // Earnings Release: an 8-K with item 2.02 filed during the previous
+    // session, so the fire (at today's close) matches the study's entry, the
+    // close of the session after the filing. Avoid: Reverse Split: a reverse
+    // split with an ex-date in the last 4 weeks or the next 30 days.
+    const spyDates = [...new Set((barsBySymbolId.get(byTicker.get("SPY") ?? -1) ?? []).map((b) => b.date))]
+      .filter((d) => d < today)
+      .sort();
+    const prevSession = spyDates[spyDates.length - 1];
+    const prevPrevSession = spyDates[spyDates.length - 2];
+    const earningsIds = new Set<number>();
+    if (prevSession && prevPrevSession) {
+      const { data: ek } = await db
+        .from("sec_filings")
+        .select("symbol_id, items")
+        .eq("form", "8-K")
+        .gt("filing_date", prevPrevSession)
+        .lte("filing_date", prevSession);
+      for (const r of (ek as { symbol_id: number | null; items: string | null }[] | null) ?? []) {
+        if (r.symbol_id != null && /(^|,)2\.02(,|$)/.test(r.items ?? "")) earningsIds.add(r.symbol_id);
+      }
+    }
+    const reverseSplitIds = new Set<number>();
+    try {
+      const shift = (days: number) => new Date(Date.parse(`${today}T12:00:00Z`) + days * 86400_000).toISOString().slice(0, 10);
+      for (const rs of await fetchReverseSplits(shift(-28), shift(30))) {
+        const id = byTicker.get(rs.symbol);
+        if (id != null) reverseSplitIds.add(id);
+      }
+    } catch (err) {
+      console.error("reverse splits unavailable this run:", err);
+    }
+
     for (const row of factorRows) {
-      const inputs: TriggerInputs = { ...row, risk_on: regime?.risk_on ?? null };
+      const inputs: TriggerInputs = {
+        ...row,
+        risk_on: regime?.risk_on ?? null,
+        earnings_release: earningsIds.has(row.symbol_id as number) ? 1 : 0,
+        reverse_split_window: reverseSplitIds.has(row.symbol_id as number) ? 1 : 0,
+      };
       for (const trigger of triggers ?? []) {
         const fired = evaluateTrigger(trigger.definition as unknown as TriggerDefinition, inputs);
         evaluations.push({

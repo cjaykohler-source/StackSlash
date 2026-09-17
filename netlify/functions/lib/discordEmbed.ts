@@ -39,6 +39,8 @@ const LABELS: Record<string, string> = {
   exit_warning: "Exit Warning",
   avoid_volume_blowoff: "Avoid: Volume Blow-off",
   avoid_chase_extended: "Avoid: Don't Chase",
+  earnings_release: "Earnings Release",
+  avoid_reverse_split: "Avoid: Reverse Split",
 };
 
 const SELL_TRIGGERS = new Set([
@@ -49,6 +51,7 @@ const SELL_TRIGGERS = new Set([
   "exit_warning",
   "avoid_volume_blowoff",
   "avoid_chase_extended",
+  "avoid_reverse_split",
 ]);
 
 const COLOR = { buy: 0x2ecc71, watch: 0x3498db, sell: 0xe74c3c, high: 0xff6b00, ops: 0xf1c40f };
