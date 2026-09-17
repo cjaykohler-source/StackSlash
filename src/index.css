@@ -769,6 +769,43 @@ body {
   align-self: stretch;
   margin-bottom: 6px;
 }
+.chart-stats-col .factor-snapshot {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.chart-stats-col .factor-snapshot .profile-subheading {
+  margin: 0 0 6px;
+  font-size: 0.82rem;
+}
+.chart-stats-col .factor-snapshot .dossier-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.chart-stats-col .factor-snapshot .dossier-metric {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.chart-stats-col .factor-snapshot .dossier-metric:last-child {
+  border-bottom: none;
+}
+.chart-stats-col .factor-snapshot .dossier-metric-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+}
+.chart-stats-col .factor-snapshot .dossier-metric-value {
+  font-size: 0.82rem;
+  text-align: right;
+  white-space: nowrap;
+}
 @media (max-width: 760px) {
   .chart-layout {
     grid-template-columns: minmax(0, 1fr);

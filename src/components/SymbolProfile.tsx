@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "../lib/triggerEval";
 import { computeProximity } from "../lib/triggerProximity";
@@ -74,11 +75,9 @@ function momentumExitProximity(position: OpenShadowPosition, factor: FactorState
  */
 export function SymbolProfile({
   symbolId,
-  news,
-}: {
+  news, factorsTarget = null }: {
   symbolId: number;
-  news?: React.ReactNode;
-}) {
+  news?: React.ReactNode; factorsTarget?: HTMLElement | null }) {
   const [factorState, setFactorState] = useState<FactorState | null>(null);
   const [profileTriggers, setProfileTriggers] = useState<ProfileTrigger[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -178,14 +177,14 @@ export function SymbolProfile({
     return <p className="empty-state">No factor data yet for this symbol — it may not have been through a scan yet.</p>;
   }
 
-  const snapshotFields = Object.entries(factorState).filter(
-    ([key, value]) => !HIDDEN_FIELDS.has(key) && key !== "as_of" && value !== null,
-  );
+  const snapshotFields = Object.entries(factorState)
+    .filter(([key, value]) => !HIDDEN_FIELDS.has(key) && key !== "as_of" && value !== null)
+    .sort(([a], [b]) => factorOrder(a) - factorOrder(b));
 
-  return (
-    <div className="symbol-profile">
+  const factorSnapshot = (
+    <div className="factor-snapshot">
       <h3 className="profile-subheading">
-        Current factor snapshot <span className="profile-asof">as of {factorState.as_of}</span>
+        Factor snapshot <span className="profile-asof">as of {factorState.as_of}</span>
       </h3>
       <div className="dossier-metrics">
         {snapshotFields.map(([key, value]) => {
@@ -202,6 +201,12 @@ export function SymbolProfile({
           );
         })}
       </div>
+    </div>
+  );
+
+  return (
+    <div className="symbol-profile">
+      {factorsTarget ? createPortal(factorSnapshot, factorsTarget) : factorSnapshot}
 
       {profileTriggers && profileTriggers.filter((p) => p.satisfied).length >= 2 && (
         <div className="confluence-banner">
@@ -281,4 +286,36 @@ export function SymbolProfile({
       </div>
     </div>
   );
+}
+
+// Top-to-bottom order for the factor snapshot column: returns (short to
+// long), their ranks, trend, oscillators, then volume and volatility.
+// Anything not listed (e.g. earnings fields) follows in its original order.
+const FACTOR_ORDER = [
+  "ret_1w",
+  "ret_1m",
+  "roc_20d",
+  "ret_6m",
+  "ret_12m_ex1m",
+  "ret_1w_rank_pct",
+  "roc_20d_rank_pct",
+  "momentum_rank_pct",
+  "dist_sma200",
+  "dist_ema20",
+  "is_20d_high",
+  "macd_cross",
+  "rsi14",
+  "rsi2",
+  "bb_pctb",
+  "bb_width",
+  "bb_width_percentile_126d",
+  "volume_ratio_20d",
+  "dollar_vol_20d",
+  "realized_vol_20d",
+  "vol_percentile_252d",
+];
+
+function factorOrder(key: string): number {
+  const i = FACTOR_ORDER.indexOf(key);
+  return i === -1 ? FACTOR_ORDER.length : i;
 }

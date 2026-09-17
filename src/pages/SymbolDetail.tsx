@@ -74,6 +74,8 @@ export function SymbolDetail() {
   const [dossiers, setDossiers] = useState<DossierRow[]>([]);
   // Right-hand snapshot column; the charts portal their stats into it.
   const [statsEl, setStatsEl] = useState<HTMLElement | null>(null);
+  // ...and SymbolProfile portals the daily factor snapshot in below it.
+  const [factorsEl, setFactorsEl] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
   const [symbolName, setSymbolName] = useState<string | null>(null);
@@ -262,7 +264,10 @@ export function SymbolDetail() {
         </div>
         {/* Snapshot column: the chart's stats render here (portal), starting
             level with the range buttons. */}
-        <aside className="chart-stats-col" ref={setStatsEl} aria-label="Snapshot" />
+        <aside className="chart-stats-col" aria-label="Snapshot">
+          <div ref={setStatsEl} />
+          <div ref={setFactorsEl} />
+        </aside>
       </section>
 
       {symbolId !== null && (
@@ -270,6 +275,7 @@ export function SymbolDetail() {
           <SymbolProfile
             symbolId={symbolId}
             news={ticker ? <SymbolNews ticker={ticker} /> : null}
+            factorsTarget={factorsEl}
           />
         </section>
       )}
