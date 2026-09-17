@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { etDateString } from "../lib/marketTime";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { DossierCard } from "../components/DossierCard";
@@ -157,6 +158,15 @@ export function SymbolDetail() {
     return () => clearInterval(id);
   }, [ticker, liveSession, loadChart]);
 
+  // The most recent session's dossiers stay open (the ET date of the newest
+  // one, so an after-close dossier counts with that day); older ones fold
+  // into a collapsed "Earlier dossiers" dropdown.
+  const newestSession = dossiers.length
+    ? etDateString(Math.max(...dossiers.map((d) => Date.parse(d.ts))))
+    : null;
+  const currentDossiers = dossiers.filter((d) => etDateString(Date.parse(d.ts)) === newestSession);
+  const olderDossiers = dossiers.filter((d) => etDateString(Date.parse(d.ts)) !== newestSession);
+
   return (
     <div className="page">
       <header className="page-header">
@@ -261,13 +271,29 @@ export function SymbolDetail() {
         {dossiers.length === 0 ? (
           <p className="empty-state">No deep-dive dossiers yet for this symbol.</p>
         ) : (
-          <ul className="dossier-list">
-            {dossiers.map((d) => (
-              <li key={d.id}>
-                <DossierCard dossier={d} />
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="dossier-list">
+              {currentDossiers.map((d) => (
+                <li key={d.id}>
+                  <DossierCard dossier={d} />
+                </li>
+              ))}
+            </ul>
+            {olderDossiers.length > 0 && (
+              <details className="trigger-feed-day dossier-older">
+                <summary>
+                  Earlier dossiers <span className="trigger-feed-day-count">({olderDossiers.length})</span>
+                </summary>
+                <ul className="dossier-list">
+                  {olderDossiers.map((d) => (
+                    <li key={d.id}>
+                      <DossierCard dossier={d} />
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
         )}
       </section>
     </div>

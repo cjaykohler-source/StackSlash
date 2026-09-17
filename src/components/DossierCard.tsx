@@ -125,10 +125,14 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
               {confluence.triggers.map((t) => triggerLabel(t)).join(", ")}
             </div>
           )}
-          <div className="dossier-timestamp">{new Date(dossier.ts).toLocaleString()}</div>
         </div>
-        <div className="dossier-score" title="Conviction score">
-          {dossier.score !== null ? `${Math.round(dossier.score * 100)}%` : "—"}
+        <div className="dossier-card-corner">
+          <div className="dossier-timestamp">
+            {new Date(dossier.ts).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+          </div>
+          <div className="dossier-score" title="Conviction score">
+            {dossier.score !== null ? `${Math.round(dossier.score * 100)}%` : "—"}
+          </div>
         </div>
       </div>
 

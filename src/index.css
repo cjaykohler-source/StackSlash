@@ -1560,7 +1560,22 @@ h1 .quote-tag {
 .dossier-timestamp {
   color: var(--text-dim);
   font-size: 0.78rem;
-  margin-top: 2px;
+  white-space: nowrap;
+}
+/* Upper-right corner: date/time above the conviction score. */
+.dossier-card-corner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+.dossier-older {
+  margin-top: 12px;
+}
+.dossier-older .dossier-list {
+  padding: 4px 8px 8px;
 }
 .dossier-score {
   font-size: 1.1rem;
