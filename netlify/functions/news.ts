@@ -1,4 +1,5 @@
 import { fetchNews } from "./lib/alpaca";
+import { isRoundupHeadline } from "./lib/newsFilter";
 
 /**
  * GET /.netlify/functions/news?symbol=AAPL
@@ -15,7 +16,8 @@ export default async (req: Request) => {
     });
   }
 
-  const items = await fetchNews([symbol], { limit: 15 });
+  // Over-fetch: sector roundups are dropped, and the page still shows 15.
+  const items = (await fetchNews([symbol], { limit: 50 })).filter((n) => !isRoundupHeadline(n.headline)).slice(0, 15);
   const news = items.map((n) => ({
     id: n.id,
     headline: n.headline,

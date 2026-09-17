@@ -1,4 +1,5 @@
 import { triggerLabel, humanize, TRIGGER_INFO } from "../lib/triggerInfo";
+import { isRoundupHeadline } from "../lib/newsFilter";
 import { pct, FIELD_META, HIDDEN_FIELDS, formatField } from "../lib/factorFormat";
 import { InfoTooltip } from "./InfoTooltip";
 
@@ -163,7 +164,7 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
 
       {analysis.news && analysis.news.length > 0 && (
         <div className="dossier-news">
-          {analysis.news.slice(0, 3).map((n) => (
+          {analysis.news.filter((n) => !isRoundupHeadline(n.headline)).slice(0, 3).map((n) => (
             <a key={n.url} href={n.url} target="_blank" rel="noopener noreferrer" className="dossier-news-item">
               <span className="dossier-news-headline">📰 {n.headline}</span>
               <span className="dossier-news-meta">

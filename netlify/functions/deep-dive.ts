@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { dispatchAlert } from "./lib/notify";
 import { buildAlertEmbed } from "./lib/discordEmbed";
 import { fetchSnapshots, fetchNews } from "./lib/alpaca";
+import { isRoundupHeadline } from "./lib/newsFilter";
 import { riskFlags, tradeSuggestion } from "./lib/riskFlags";
 import { fetchProfile } from "./lib/fmp";
 
@@ -244,7 +245,7 @@ export default async (req: Request) => {
 
   // Recent headlines for the symbol — best-effort "why is it moving"
   // context. fetchNews never throws (returns [] on any failure).
-  const newsItems = (await fetchNews([ticker], { limit: 4 })).slice(0, 4);
+  const newsItems = (await fetchNews([ticker], { limit: 20 })).filter((n) => !isRoundupHeadline(n.headline)).slice(0, 4);
   const news = newsItems.map((n) => ({
     headline: n.headline,
     url: n.url,
