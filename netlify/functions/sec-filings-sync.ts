@@ -137,6 +137,7 @@ async function fillEightKItems(db: SupabaseClient): Promise<number> {
         .eq("as_of", asOfRow.as_of)
         .gte("last_close", 0.1)
         .lte("last_close", 5)
+        .order("symbol_id")
         .range(from, from + 999);
       for (const r of (data as { symbol_id: number }[] | null) ?? []) band.add(r.symbol_id);
       if (!data || data.length < 1000) break;
@@ -150,6 +151,7 @@ async function fillEightKItems(db: SupabaseClient): Promise<number> {
       .eq("form", "8-K")
       .is("items", null)
       .gte("filing_date", since)
+      .order("accession") // paging without an order can skip rows
       .range(from, from + 999);
     if (error) throw error;
     pending.push(...((data as { accession: string; cik: number; symbol_id: number }[] | null) ?? []));
