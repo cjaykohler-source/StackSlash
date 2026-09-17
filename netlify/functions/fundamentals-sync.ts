@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
-import { fetchEarningsCalendarRecent, fetchProfile } from "./lib/fmp";
+import { fetchEarningsCalendarRecent, fetchProfile, DESCRIPTION_CAPTURE_START } from "./lib/fmp";
 
 /**
  * Daily FMP pull, sized for the free tier (see lib/fmp.ts). Two jobs:
@@ -70,14 +70,17 @@ export default async (_req?: Request) => {
     // days to cover the whole universe; band-first covers the ~1,400 names
     // the scanner cares about in ~8.
     const staleCutoff = new Date(Date.now() - PROFILE_STALE_DAYS * 86400_000).toISOString();
-    type NeedRow = { id: number; ticker: string; profile_synced_at: string | null };
+    // Also: profiles synced before descriptions were captured, still missing one.
+    type NeedRow = { id: number; ticker: string; profile_synced_at: string | null; description: string | null };
     const need: NeedRow[] = [];
     for (let from = 0; ; from += 1000) {
       const { data } = await db
         .from("symbols")
-        .select("id, ticker, profile_synced_at")
+        .select("id, ticker, profile_synced_at, description")
         .eq("active", true)
-        .or(`profile_synced_at.is.null,profile_synced_at.lt.${staleCutoff}`)
+        .or(
+          `profile_synced_at.is.null,profile_synced_at.lt.${staleCutoff},and(description.is.null,profile_synced_at.lt.${DESCRIPTION_CAPTURE_START})`,
+        )
         .range(from, from + 999);
       need.push(...((data as NeedRow[] | null) ?? []));
       if (!data || data.length < 1000) break;
@@ -101,7 +104,9 @@ export default async (_req?: Request) => {
         }
       }
     }
-    const rank = (r: NeedRow) => (inBand.has(r.id) ? 0 : 2) + (r.profile_synced_at ? 1 : 0);
+    // band first; within it never-synced, then missing-description, then stale
+    const rank = (r: NeedRow) =>
+      (inBand.has(r.id) ? 0 : 3) + (!r.profile_synced_at ? 0 : r.description == null ? 1 : 2);
     const needProfile = need
       .sort((a, b) => rank(a) - rank(b) || (a.profile_synced_at ?? "").localeCompare(b.profile_synced_at ?? ""))
       .slice(0, PROFILE_MAX_PER_RUN);

@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
-import { fetchProfile } from "./lib/fmp";
+import { fetchProfile, DESCRIPTION_CAPTURE_START } from "./lib/fmp";
 
 /**
  * GET /.netlify/functions/company-profile?symbol=KXIN
@@ -12,6 +12,7 @@ import { fetchProfile } from "./lib/fmp";
  * a profile was synced in the last 45 days and simply had no description.
  */
 const RESYNC_DAYS = 45;
+
 
 export default async (req: Request) => {
   const symbol = new URL(req.url).searchParams.get("symbol")?.trim().toUpperCase();
@@ -32,7 +33,9 @@ export default async (req: Request) => {
   if (r.description) return json({ symbol, description: r.description, source: "stored" });
 
   const recentlySynced =
-    r.profile_synced_at && Date.now() - Date.parse(r.profile_synced_at) < RESYNC_DAYS * 86400_000;
+    !!r.profile_synced_at &&
+    Date.parse(r.profile_synced_at) >= Date.parse(DESCRIPTION_CAPTURE_START) &&
+    Date.now() - Date.parse(r.profile_synced_at) < RESYNC_DAYS * 86400_000;
   if (recentlySynced) return json({ symbol, description: null, source: "no FMP description" });
 
   try {
