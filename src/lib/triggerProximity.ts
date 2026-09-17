@@ -19,6 +19,10 @@ const FIELD_RANGE: Record<string, [number, number]> = {
   bb_pctb: [0, 1],
   rsi14: [0, 100],
   rsi2: [0, 100],
+  // A regular session is 390 minutes, so an "inside the first hour"
+  // condition reads against the whole session rather than a made-up 2x
+  // fallback (which went negative late in the day).
+  session_minutes: [0, 390],
 };
 
 /**
@@ -40,15 +44,18 @@ export function conditionProximity(cond: Condition, inputs: TriggerInputs): numb
   if (Number.isNaN(value) || Number.isNaN(actual)) return null;
 
   const range = FIELD_RANGE[cond.field];
+  // A value outside the field's natural range would read as a negative
+  // fraction ("−400% of the way there"), which means nothing to a reader:
+  // floor it at 0, i.e. as far away as the bar can show.
   if (cond.op === "gte" || cond.op === "gt") {
     const lo = range?.[0] ?? 0;
     if (value === lo) return actual >= lo ? 1 : 0;
-    return (actual - lo) / (value - lo);
+    return Math.max(0, (actual - lo) / (value - lo));
   }
   // lt / lte
   const hi = range?.[1] ?? value * 2;
   if (hi === value) return actual <= value ? 1 : 0;
-  return (hi - actual) / (hi - value);
+  return Math.max(0, (hi - actual) / (hi - value));
 }
 
 /**
