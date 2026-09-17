@@ -13,6 +13,23 @@ import { fetchDailyBars, fetchIntradayBars } from "./alpaca";
  * that for many symbols concurrently in one request makes failures
  * harder to isolate and retry. Fine here since this isn't a daily job.
  */
+/**
+ * Alpaca's IEX feed emits a flat placeholder bar (open=high=low=close,
+ * volume 0) for a symbol that didn't actually trade on IEX that session —
+ * and for thinly-traded names it carries a STALE price that can be off by
+ * the factor of a recent reverse split. Measured 2026-09-16: 39,169 such
+ * rows across 1,470 symbols in a 120-day window (9.7% of all bars), and 51
+ * of the 57 split_scale_break rows in that window touch one. They are not
+ * real sessions, and they poison returns, RVOL denominators, moving
+ * averages and MFE/MAE alike, so they never belong in bars_daily.
+ *
+ * Deliberately conservative: a bar is dropped only when it is BOTH
+ * zero-volume AND perfectly flat, which is every case observed.
+ */
+export function isRealSession(b: { o: number; h: number; l: number; c: number; v: number }): boolean {
+  return !(b.v <= 0 && b.o === b.h && b.h === b.l && b.l === b.c);
+}
+
 export async function backfillSymbolBars(
   db: SupabaseClient,
   symbolId: number,
@@ -24,7 +41,7 @@ export async function backfillSymbolBars(
   let rowsForSymbol = 0;
   do {
     const { bars, nextPageToken } = await fetchDailyBars([ticker], start, end, pageToken);
-    const tickerBars = bars[ticker] ?? [];
+    const tickerBars = (bars[ticker] ?? []).filter(isRealSession);
     if (tickerBars.length) {
       const rows = tickerBars.map((b) => ({
         symbol_id: symbolId,
