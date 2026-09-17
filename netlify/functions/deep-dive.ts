@@ -126,6 +126,7 @@ export default async (req: Request) => {
         await db
           .from("symbols")
           .update({
+            description: p.description ?? null,
             sector: p.sector,
             industry: p.industry,
             market_cap: p.marketCap,
