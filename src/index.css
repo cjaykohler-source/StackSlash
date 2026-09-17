@@ -2089,3 +2089,39 @@ h1 .quote-tag {
   font-size: 0.72rem;
   color: var(--text-dim);
 }
+
+/* Symbol page Trigger status: grouped rows with timing tag and evidence line. */
+.trigger-profile-group + .trigger-profile-group {
+  margin-top: 14px;
+}
+.trigger-profile-group-title {
+  margin: 0 0 6px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.trigger-profile-timing {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.trigger-profile-timing.live {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.trigger-profile-status.warning {
+  color: var(--red);
+  font-weight: 600;
+}
+.trigger-profile-status.tracking {
+  color: var(--accent);
+}
+.trigger-profile-meta {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}

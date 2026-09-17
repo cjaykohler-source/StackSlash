@@ -27,6 +27,8 @@ export interface TriggerInfo {
   detail?: string;
   /** Why a disabled trigger is off (About page). */
   offReason?: string;
+  /** One-line tested evidence, shown when there is no daily backtest (symbol page). */
+  evidence?: string;
 }
 
 const RISK_ON = "The overall market is risk-on (SPY above its 200-day average).";
@@ -129,6 +131,7 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "Only follows positions opened by Top Performer or New High Breakout. Both of those are currently off, so this has nothing new to follow.",
   },
   exit_warning: {
+    evidence: "Exit rules: −12% stop, +10% take profit, 5% trail once up 5%, 10-day limit.",
     label: "Exit Warning",
     category: "exit",
     categoryLabel: "Exit Signal",
@@ -145,6 +148,7 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "Checked every 5 minutes during the session. The levels come from Settings: stop %, take-profit %, trail %, and the swing time limit.",
   },
   avoid_volume_blowoff: {
+    evidence: "Backtest: median −16% over the next 18 sessions at 25x+ volume; every lower bucket roughly break-even.",
     label: "Avoid: Volume Blow-off",
     category: "avoid",
     categoryLabel: "Avoid",
@@ -220,6 +224,7 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "The best of 8 intraday variants before costs (profit factor 1.32 over 49 simulated trades), but a net loser once spreads and costs are counted (0.78).",
   },
   rvol_breakout: {
+    evidence: "Minute test, 8,049 cases: about break-even before costs; slightly better than a random entry by the close.",
     label: "Heavy Volume Breakout",
     category: "intraday",
     categoryLabel: "Intraday",
@@ -235,6 +240,7 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "Checked live every 5 minutes across every $0.10–$5 stock trading $10k+ a day; fires at most once an hour per stock. Tested on 8,049 real breakouts: roughly break-even before costs and a little better than a random entry by the close, so treat it as where the action is right now, not a proven edge. Every alert is followed by an Exit Warning.",
   },
   avoid_chase_extended: {
+    evidence: "Minute test, 513 cases: −2.3% vs −1.0% random over 2 hours; 7.5x more likely to swing ±10% intraday.",
     label: "Avoid: Don't Chase",
     category: "avoid",
     categoryLabel: "Avoid",
