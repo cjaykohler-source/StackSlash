@@ -42,6 +42,22 @@ interface FeedRow {
   status: string; // "pending" for un-promoted single fires
   riskFlags: RiskFlag[]; // from the linked dossier (promoted events only)
   side: "buy" | "sell"; // exit / bearish triggers -> "sell"
+  /** Price when the trigger fired (static), from the fire's snapshot. */
+  firePrice: number | null;
+}
+
+/**
+ * The price a fire happened at, from its stored snapshot. Each source keys
+ * it differently: exits carry exit_price, live intraday alerts latest_price
+ * / last_price, the realtime worker price, after-close setups close.
+ */
+function firePriceOf(snapshot: unknown): number | null {
+  const s = (snapshot ?? {}) as Record<string, unknown>;
+  for (const k of ["exit_price", "latest_price", "last_price", "price", "close"]) {
+    const v = Number(s[k]);
+    if (s[k] != null && Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
 }
 
 interface DayGroup {
@@ -124,7 +140,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
           .limit(400),
         supabase
           .from("pending_fires")
-          .select("id, created_at, symbol_id, trigger_id, symbols(ticker, alert_excluded), triggers(name)")
+          .select("id, created_at, symbol_id, trigger_id, snapshot, symbols(ticker, alert_excluded), triggers(name)")
           .is("promoted_at", null)
           .order("created_at", { ascending: false })
           .limit(300),
@@ -147,6 +163,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         id: number;
         created_at: string;
         symbol_id: number;
+        snapshot: unknown;
         symbols: { ticker: string; alert_excluded: boolean } | null;
         triggers: { name: string } | null;
       };
@@ -175,6 +192,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
             conf?.direction === "short"
               ? ("sell" as const)
               : triggerSide(r.triggers?.name ?? null),
+          firePrice: firePriceOf(r.snapshot),
         };
       });
 
@@ -192,6 +210,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         status: "pending",
         riskFlags: [],
         side: triggerSide(r.triggers?.name ?? null),
+        firePrice: firePriceOf(r.snapshot),
       }));
 
       setEventRows(events);
@@ -255,7 +274,9 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
 
   const renderRow = (row: FeedRow) => {
     const quote = row.ticker ? quotes.get(row.ticker) : undefined;
-    const pct = quote ? Number((quote.changePct * 100).toFixed(1)) : null;
+    // Change since the trigger fired: current price vs the static fire price.
+    const pct =
+      quote && row.firePrice ? Number(((quote.price / row.firePrice - 1) * 100).toFixed(1)) : null;
     const pctDir = pct === null ? "" : pct > 0 ? "up" : pct < 0 ? "down" : "";
     // Sub-$1 is computed here from the live quote so it shows on un-promoted
     // pending fires too; suppress it when the dossier already carries it.
@@ -315,6 +336,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
               </InfoTooltip>
             ))}
         </td>
+        <td className="col-num">{row.firePrice != null ? `$${row.firePrice.toFixed(2)}` : "—"}</td>
         <td className="col-num">{quote ? `$${quote.price.toFixed(2)}` : "—"}</td>
         <td className={`col-num ${pctDir}`}>
           {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
@@ -332,8 +354,13 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
             <th>Symbol</th>
             <th className="col-catalyst">Catalyst</th>
             <th className="col-flags">Flags</th>
+            <th className="col-num">
+              <InfoTooltip underline={false} text="Price when the trigger fired. Fixed; it never updates.">Fired at</InfoTooltip>
+            </th>
             <th className="col-num">Price</th>
-            <th className="col-num">Change</th>
+            <th className="col-num">
+              <InfoTooltip underline={false} text="Change from the fired-at price to the current price: how the stock has done since the trigger.">Change</InfoTooltip>
+            </th>
           </tr>
         </thead>
         <tbody>{rowsToRender.map(renderRow)}</tbody>
