@@ -2006,6 +2006,8 @@ h1 .quote-tag {
   grid-template-columns: 1fr 1fr;
   gap: 28px;
   align-items: start;
+  /* breathing room between the chart and the Trigger status / news headings */
+  margin-top: 20px;
 }
 .symbol-profile-triggers,
 .symbol-profile-news {
