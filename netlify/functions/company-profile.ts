@@ -36,7 +36,7 @@ export default async (req: Request) => {
     !!r.profile_synced_at &&
     Date.parse(r.profile_synced_at) >= Date.parse(DESCRIPTION_CAPTURE_START) &&
     Date.now() - Date.parse(r.profile_synced_at) < RESYNC_DAYS * 86400_000;
-  if (recentlySynced) return json({ symbol, description: null, source: "no FMP description" });
+  if (recentlySynced) return json({ symbol, description: null, source: "no FMP description" }, "no-store");
 
   try {
     const p = await fetchProfile(symbol);
@@ -53,7 +53,9 @@ export default async (req: Request) => {
         profile_synced_at: new Date().toISOString(),
       })
       .eq("id", r.id);
-    return json({ symbol, description: p?.description ?? null, source: "fmp" });
+    // Never cache an empty answer: it would pin "no description" in the
+    // browser/CDN after a later sync finds one.
+    return json({ symbol, description: p?.description ?? null, source: "fmp" }, p?.description ? undefined : "no-store");
   } catch {
     // FMP down or over quota: let the page fall back to Wikipedia.
     return json({ symbol, description: null, source: "fmp unavailable" }, "no-store");
