@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
+import { isRoundupHeadline } from "./lib/newsFilter";
 import { withJobRun } from "./lib/jobRun";
 import { fetchNewsFeed } from "./lib/alpaca";
 
@@ -23,8 +24,9 @@ export default async () => {
     const start = new Date(Date.now() - LOOKBACK_MIN * 60_000).toISOString();
     const items = await fetchNewsFeed(start, { maxPages: 20 });
 
-    if (items.length) {
-      const rows = items.map((n) => ({
+    if (items.some((n) => !isRoundupHeadline(n.headline))) {
+      // Sector roundups carry no symbol-specific news (lib/newsFilter.ts).
+      const rows = items.filter((n) => !isRoundupHeadline(n.headline)).map((n) => ({
         id: n.id,
         headline: n.headline,
         summary: n.summary ?? null,

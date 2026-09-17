@@ -3,6 +3,7 @@ import { withJobRun } from "./lib/jobRun";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 import { filterByCooldown } from "./lib/cooldown";
 import { openAlertPositions } from "./lib/alertPositions";
+import { isRoundupHeadline } from "./lib/newsFilter";
 import type { ConfluenceMeta, PromotedEvent } from "./lib/confluenceGate";
 import { etDateString, etWallClock } from "./lib/etTime";
 
@@ -92,10 +93,11 @@ export default async () => {
       const idByTicker = new Map(((tickRows as { id: number; ticker: string }[] | null) ?? []).map((r) => [r.ticker, r.id]));
       const { data: news } = await db
         .from("symbol_news")
-        .select("created_at, symbols")
+        .select("created_at, symbols, headline")
         .gte("created_at", new Date(Date.now() - 4 * 3_600_000).toISOString())
         .order("created_at", { ascending: false });
-      for (const n of (news as { created_at: string; symbols: string[] }[] | null) ?? []) {
+      for (const n of (news as { created_at: string; symbols: string[]; headline: string }[] | null) ?? []) {
+        if (isRoundupHeadline(n.headline)) continue; // a sector roundup is not a catalyst
         const ageH = (Date.now() - Date.parse(n.created_at)) / 3_600_000;
         for (const tk of n.symbols ?? []) {
           const sid = idByTicker.get(tk);
