@@ -130,6 +130,21 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
     detail:
       "Only follows positions opened by Top Performer or New High Breakout. Both of those are currently off, so this has nothing new to follow.",
   },
+  earnings_release: {
+    label: "Earnings Release",
+    category: "catalyst",
+    categoryLabel: "Catalyst",
+    timing: "daily",
+    summary: "The company just released quarterly results (8-K item 2.02); stocks like this have done better than a random day over the next month.",
+    conditions: [
+      "An 8-K with item 2.02 (results of operations) was filed during the previous session.",
+      "Priced $0.10-$5 with enough dollar volume; a red flag moves it to Watch.",
+    ],
+    detail:
+      "Held 20 sessions with only a 25% disaster stop, matching how it was tested. The benefit shows up over a month, not a week.",
+    evidence:
+      "Event study, 2016-2026: 20-day net +4.2% (2016-21) and +0.4% (2022+) without red flags, vs +1.8% and -3.2% for a random day.",
+  },
   exit_warning: {
     evidence: "Exit rules: −12% stop, +10% take profit, 5% trail once up 5%, 10-day limit.",
     label: "Exit Warning",
@@ -146,6 +161,16 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
     ],
     detail:
       "Checked every 5 minutes during the session. The levels come from Settings: stop %, take-profit %, trail %, and the swing time limit.",
+  },
+  avoid_reverse_split: {
+    label: "Avoid: Reverse Split",
+    category: "avoid",
+    categoryLabel: "Avoid",
+    timing: "daily",
+    summary: "A reverse split took effect recently or is scheduled — historically the most reliably bad event in this price band.",
+    conditions: ["A reverse split with an ex-date in the last 4 weeks or the next 30 days."],
+    detail: "Fires once per stock per 30 days.",
+    evidence: "Event study, 2016-2026: -17% to -22% over the next 20 sessions, 15-21% winners, in both periods.",
   },
   avoid_volume_blowoff: {
     evidence: "Backtest: median −16% over the next 18 sessions at 25x+ volume; every lower bucket roughly break-even.",
@@ -330,6 +355,7 @@ const SELL_TRIGGERS = new Set([
   "exit_warning",
   "avoid_volume_blowoff",
   "avoid_chase_extended",
+  "avoid_reverse_split",
 ]);
 
 /**

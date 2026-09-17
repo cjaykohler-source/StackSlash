@@ -330,3 +330,27 @@ export async function fetchNewsFeed(
   }
   return out;
 }
+
+/**
+ * Reverse splits with an ex-date in [start, end] (YYYY-MM-DD), from Alpaca's
+ * corporate-actions feed, which lists announced future splits too. In the
+ * catalyst study a reverse split in the $0.10-$5 band returned -17% to -22%
+ * over the next 20 sessions in both 2016-21 and 2022+.
+ */
+export async function fetchReverseSplits(start: string, end: string): Promise<{ symbol: string; ex_date: string }[]> {
+  const out: { symbol: string; ex_date: string }[] = [];
+  let token: string | undefined;
+  do {
+    const params = new URLSearchParams({ types: "reverse_split", start, end, limit: "1000" });
+    if (token) params.set("page_token", token);
+    const res = await fetch(`${dataBaseUrl()}/v1/corporate-actions?${params.toString()}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`Alpaca corporate actions failed: ${res.status} ${await res.text()}`);
+    const body = (await res.json()) as {
+      corporate_actions?: { reverse_splits?: { symbol: string; ex_date: string }[] };
+      next_page_token?: string | null;
+    };
+    for (const r of body.corporate_actions?.reverse_splits ?? []) out.push({ symbol: r.symbol, ex_date: r.ex_date });
+    token = body.next_page_token ?? undefined;
+  } while (token);
+  return out;
+}
