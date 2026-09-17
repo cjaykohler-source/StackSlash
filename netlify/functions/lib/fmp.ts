@@ -81,6 +81,13 @@ export interface FmpProfile {
 }
 
 /**
+ * Profile descriptions are saved to symbols.description only for profiles
+ * fetched after this went live (2026-09-17). An older profile with no stored
+ * description was never checked for one, so it must be fetched again.
+ */
+export const DESCRIPTION_CAPTURE_START = "2026-09-17T16:00:00Z";
+
+/**
  * One company profile. The free tier serves this for every symbol but
  * only one per request — `symbol=A,B` returns `[]`, so callers must loop
  * and stay inside their own rate budget.

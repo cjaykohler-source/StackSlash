@@ -66,7 +66,7 @@ export function CompanyDescription({ ticker, name }: { ticker: string | null; na
           setStatus("unavailable");
           return;
         }
-        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name!)}`);
+        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiName(name))}`);
         if (cancelled) return;
         if (!res.ok) {
           setStatus("unavailable");
@@ -105,4 +105,14 @@ export function CompanyDescription({ ticker, name }: { ticker: string | null; na
       )}
     </div>
   );
+}
+
+/**
+ * Listing names carry share-class suffixes ("SELLAS Life Sciences Group, Inc.
+ * Common Stock") that break Wikipedia's title lookup; strip them.
+ */
+function wikiName(name: string): string {
+  return name
+    .replace(/\s+(class\s+[a-z]\s+)?(common stock|ordinary shares?|american depositary shares?|depositary shares?|common shares?|units?|warrants?)\b.*$/i, "")
+    .trim();
 }
