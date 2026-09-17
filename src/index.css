@@ -2125,3 +2125,23 @@ h1 .quote-tag {
   font-size: 0.75rem;
   color: var(--text-dim);
 }
+
+/* Trigger feed Catalyst column: the trigger(s) that listed the row. */
+.trigger-feed .col-catalyst {
+  white-space: nowrap;
+}
+.catalyst-chip {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 1px 7px;
+  margin: 1px 4px 1px 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.catalyst-chip.catalyst-buy {
+  border-color: color-mix(in srgb, var(--green) 55%, var(--border));
+}
+.catalyst-chip.catalyst-sell {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--border));
+}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { triggerLabel, triggerSide } from "../lib/triggerInfo";
+import { triggerLabel, triggerSide, TRIGGER_INFO } from "../lib/triggerInfo";
 import { InfoTooltip } from "./InfoTooltip";
 import { FlagIcon, flagIconName } from "./FlagIcon";
 import { useQuotes } from "./QuoteTag";
@@ -65,14 +65,6 @@ function dayLabel(key: string): string {
     day: "numeric",
   });
 }
-
-const STATUS_INFO: Record<string, string> = {
-  pending: "One trigger fired — no second, same-direction trigger has clustered with it yet, so no dossier or alert.",
-  new: "Trigger just fired — dossier generation and alerting haven't run yet.",
-  dossier_ready: "The trigger's supporting evidence (dossier) has been assembled.",
-  alerted: "A Discord alert went out for this fire.",
-  dismissed: "This fire was manually dismissed and won't generate further downstream action.",
-};
 
 function timeOnly(iso: string): string {
   return new Date(iso).toLocaleTimeString([], {
@@ -279,6 +271,14 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         <td>
           <Link to={`/symbol/${row.ticker ?? row.symbol_id}`}>{row.ticker ?? row.symbol_id}</Link>
         </td>
+        <td className="col-catalyst">
+          {/* Why it's listed: the trigger(s) behind this row. */}
+          {(row.clusterTriggerNames.length ? row.clusterTriggerNames : row.triggerName ? [row.triggerName] : []).map((name) => (
+            <InfoTooltip key={name} underline={false} text={TRIGGER_INFO[name]?.summary ?? triggerLabel(name)}>
+              <span className={`catalyst-chip catalyst-${row.side}`}>{triggerLabel(name)}</span>
+            </InfoTooltip>
+          ))}
+        </td>
         <td className="col-flags">
           {row.signalCount >= 2 && (
             <InfoTooltip
@@ -319,15 +319,6 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         <td className={`col-num ${pctDir}`}>
           {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
         </td>
-        <td>
-          {STATUS_INFO[row.status] ? (
-            <InfoTooltip underline={false} text={STATUS_INFO[row.status]}>
-              <span className={`status status-${row.status}`}>{row.status}</span>
-            </InfoTooltip>
-          ) : (
-            <span className={`status status-${row.status}`}>{row.status}</span>
-          )}
-        </td>
       </tr>
     );
   };
@@ -339,10 +330,10 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
           <tr>
             <th>Time</th>
             <th>Symbol</th>
+            <th className="col-catalyst">Catalyst</th>
             <th className="col-flags">Flags</th>
             <th className="col-num">Price</th>
             <th className="col-num">Change</th>
-            <th>Status</th>
           </tr>
         </thead>
         <tbody>{rowsToRender.map(renderRow)}</tbody>
