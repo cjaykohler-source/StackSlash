@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 import { fetchDailyBars } from "./lib/alpaca";
+import { isRealSession } from "./lib/backfillSymbol";
 import { type Bar } from "./lib/indicators";
 import { computeFactors, computeRegime } from "./lib/dailySnapshot";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
@@ -138,7 +139,10 @@ export default async () => {
         for (const [ticker, tickerBars] of Object.entries(bars)) {
           const existing = chunkBars.get(ticker) ?? [];
           existing.push(
-            ...tickerBars.map((b) => ({
+            // Drop Alpaca's flat zero-volume placeholder bars (see
+            // isRealSession) — not real sessions, and on a thin name the
+            // price can be stale by a whole reverse-split factor.
+            ...tickerBars.filter(isRealSession).map((b) => ({
               date: b.t.slice(0, 10),
               open: b.o,
               high: b.h,

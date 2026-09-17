@@ -236,6 +236,67 @@ untouched and not worth spending on these.
 host — a second run dies at startup with a DuckDB lock error. (Separate
 from the warehouse conflict with the 20:30 ET `research-update`.)
 
+### Zero-volume placeholder bars — the real corruption source (2026-09-16)
+
+Chased down from a `#heating_up` ops alert ("split_scale_break: 539 → 541
+rows"). The diagnosis moved three times; the end of the chain is the
+useful part.
+
+**What Alpaca's IEX feed actually serves.** For a symbol that didn't trade
+on IEX in a session, the daily-bars endpoint returns a **flat placeholder
+bar** — `open = high = low = close`, `volume = 0` — and on a thin name that
+price can be **stale by a whole reverse-split factor**. HUBC (trades
+~100 shares/day on IEX) on 2026-09-14 and 09-15: OHLC all `0.3439`, volume
+`0`, sitting between a `$8.598` close and a `$6.06` close.
+
+Measured over a 120-day window of `bars_daily`:
+- **39,169 zero-volume rows across 1,470 symbols — 9.7% of all bars.**
+- **Every one is perfectly flat** (open = high = low = close).
+- **51 of the 57** `split_scale_break` rows in that window touch one.
+
+These are not sessions. They corrupt returns, RVOL denominators, moving
+averages, Bollinger inputs and MFE/MAE, and they are what the split and
+implausible-price checks keep tripping over.
+
+**Fixed on ingest:** `isRealSession()` in `lib/backfillSymbol.ts`, applied
+in both write paths (`backfillSymbolBars` and `eod-scan`'s recent-bar
+fetch). Deliberately conservative — a bar is dropped only when it is BOTH
+zero-volume AND perfectly flat, which covers every observed case.
+
+**Still to do (destructive, for the user to run):** the existing rows are
+untouched. To clear them:
+
+```sql
+delete from bars_daily
+where volume = 0 and open = high and high = low and low = close;
+```
+
+Then re-run `eod-scan` so `factor_state` recomputes on clean bars.
+
+**A repair pass that mostly did not work, recorded so it isn't retried
+blindly.** Before the above was understood, the 19 symbols with a scale
+break in the last 40 days were re-pulled through `backfill-history`
+(19,103 rows, 0 failures, 1.6 s). Result: **7 symbols genuinely fixed**
+(MPU, CPOP, NFE, NXXT, OPTT, GAUZ, GOSS — those really were mixed scales
+in our storage), **12 unchanged** (HUBC, IPDN, NRSN, CTSO, MGN, TANH, NXL,
+CHGA, GRNQ, CURX, PLAG, SION). The 12 are unchanged because a single
+consistent re-fetch reproduces the break exactly — the vendor serves it.
+Headline counts barely moved: `split_scale_break` 541 → **538**, and
+`implausible_price` rose 45,172 → **45,238**, because re-pulling restored
+more back-adjusted history (HUBC's max stored close is **$102,375,000**).
+
+**Corrected diagnosis:** the earlier theory — that `eod-scan`'s 12-day
+re-fetch window interleaves scales with older rows — is **wrong** for this
+class, and the re-pull is what disproved it. Re-pulling cannot fix a bar
+the feed itself reports.
+
+**Alert failures are now diagnosable.** `alerts.error` column added
+(migration `alerts_error_column`) and `dispatchAlert` records
+`describeError(err)` on failure. Needed because 8 alerts failed on
+2026-09-16 at 09:41 ET — instantly, so a rejected request rather than a
+429 or a network blip — and the cause could not be recovered afterwards.
+The next failure will say why.
+
 ## Open items (to-do)
 
 Keep this list current: add anything left outstanding, strike it when done.

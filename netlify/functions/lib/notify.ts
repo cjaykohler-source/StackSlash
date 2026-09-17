@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { clampEmbed, opsEmbed, type DiscordEmbed } from "./discordEmbed";
+import { describeError } from "./jobRun";
 
 /**
  * Alert delivery, kept as one abstraction so a new channel (email, SMS)
@@ -143,9 +144,13 @@ export async function dispatchAlert(
       .eq("id", alertRow.id);
     return { status: "sent" };
   } catch (err) {
+    // Record WHY. Without this a failed row carried no cause at all, so the
+    // 2026-09-15 CYPH failure and the eight on 2026-09-16 09:41 ET had to be
+    // inferred from timing alone (Discord's status + body is in the thrown
+    // message, and describeError keeps PostgrestError legible too).
     await db
       .from("alerts")
-      .update({ status: "failed" })
+      .update({ status: "failed", error: describeError(err).slice(0, 2000) })
       .eq("id", alertRow.id);
     throw err;
   }
