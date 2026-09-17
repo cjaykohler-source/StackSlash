@@ -1,0 +1,10 @@
+{
+  "name": "catalyst_8k_baseline",
+  "notes": "Catalyst alone: a band session with an 8-K accepted since the prior session's 16:00 ET. Entry at the first in-window minute at or after the filing is public, no volume condition. The baseline the catalyst + volume schema has to beat.",
+  "universe": {"price_min": 0.10, "price_max": 5.00, "min_dollar_vol_20d": 800000, "exchanges": ["NYSE", "NASDAQ", "AMEX", "ARCA", "BATS"], "include_delisted": true, "require_8k": true},
+  "window": {"start": "09:45", "end": "15:00"},
+  "entry": {"all": [{"field": "mins_since_8k", "op": ">=", "value": 0}]},
+  "first_match_only": true,
+  "exit": {"horizons_min": [15, 30, 60, 120]},
+  "cost": {"flat_pct": 0.01}
+}

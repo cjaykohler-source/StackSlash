@@ -58,6 +58,7 @@ MINUTE_DIR = DATA / "minute"
 PLAN_PARQUET = DATA / "minute_units.parquet"  # exported by load_minute_bars.py
 RUNS_DB = DATA / "schema_runs.duckdb"
 RUNS_DIR = DATA / "schema_runs"
+EDGAR_DIR = DATA / "edgar"
 
 DISCOVERY_END = "2022-01-01"  # sessions before this are for iteration
 TIERS = {"2500": 2_500, "50000": 50_000, "250000": 250_000, "1000000": 1_000_000}
@@ -131,6 +132,9 @@ FIELDS = {
     "high": "current bar high (raw)",
     "low": "current bar low (raw)",
     "volume": "current bar volume",
+    # SEC EDGAR (acceptance time, point in time)
+    "mins_since_8k": "minutes since the first 8-K accepted after the prior session's 16:00 ET (negative = filed that many minutes before 09:30; null = none, or not yet filed)",
+    "filed_8k_202": "1 if that 8-K window includes item 2.02 (results of operations) filed by now",
 }
 
 OPS = {">": ">", ">=": ">=", "<": "<", "<=": "<=", "==": "=", "!=": "<>"}
@@ -204,6 +208,7 @@ def pool_sql(u: dict, period: str) -> str:
         and prev_close_raw between {float(u.get('price_min', 0.10))} and {float(u.get('price_max', 5.00))}
         and adv20_dollar >= {float(u.get('min_dollar_vol_20d', 50_000))}
         and date_diff('day', prev_date, date) <= 7
+        {"and (symbol, date) in (select symbol, date from filings8k_sessions)" if u.get("require_8k") else ""}
     """
 
 
@@ -220,6 +225,11 @@ def sample_sessions(con, rc, schema: dict, period: str, tier: str, seed: int, li
     tier of the lineage saw. year:/all tiers take every ready session in
     scope and are not part of the exclusion chain.
     """
+    if schema.get("universe", {}).get("require_8k"):
+        con.execute("""create or replace temp table filings8k_sessions as
+            with d as (select symbol, date, lag(date) over (partition by symbol order by date) pd from wh.sip_bars_daily_raw)
+            select distinct d.symbol, d.date from filings8k f join d on d.symbol = f.symbol
+            where f.accept_et > d.pd + interval 16 hour and f.accept_et <= d.date + interval 16 hour""")
     con.execute(f"create or replace temp table pool as {pool_sql(schema.get('universe', {}), period)}")
     pool_n = con.execute("select count(*) from pool").fetchone()[0]
     loaded_minute_months(con)
@@ -415,11 +425,30 @@ select w2.symbol, w2.d, w2.ts, w2.mod,
   dc.adv20_shares, dc.adv20_dollar, dc.prior_rvol, dc.dist_sma20, dc.dist_sma50, dc.dist_sma200,
   dc.pct_of_52w_high, dc.prior_range_pct, dc.prior_close_loc, dc.prior_up_days_5,
   dc.prev_close_raw, dc.sessions_listed,
+  case when w2.mod >= fk.accept_mod then w2.mod - fk.accept_mod end as mins_since_8k,
+  case when list_bool_or(list_transform(fk.all_filings, x -> x.is202 and x.m <= w2.mod)) then 1 else 0 end as filed_8k_202,
   spy.prior_ret_1d as spy_prior_ret_1d, spy.prior_ret_5d as spy_prior_ret_5d, spy.above_sma200 as spy_above_sma200
 from w2
 join dc on dc.symbol = w2.symbol and dc.date = w2.d
 left join pm on pm.symbol = w2.symbol and pm.d = w2.d
 left join dc spy on spy.symbol = 'SPY' and spy.date = w2.d
+left join fk on fk.symbol = w2.symbol and fk.d = w2.d
+"""
+
+# First 8-K accepted in (prior session 16:00 ET, this session 16:00 ET], as a
+# minute offset from 09:30 (negative = before the open).
+FK_SQL = """
+create or replace temp table fk as
+select f.symbol, c.date as d,
+  min(date_diff('minute', c.date + interval 570 minute, f.accept_et)) as accept_mod,
+  arg_min(f.is_202, f.accept_et) as first_is_202,
+  list(struct_pack(m := date_diff('minute', c.date + interval 570 minute, f.accept_et), is202 := f.is_202)) as all_filings
+from filings8k f
+join dc c on c.symbol = f.symbol
+where c.symbol <> 'SPY' and (c.symbol, c.date) in (select symbol, date from chunk)
+  and f.accept_et > c.date - c.gap_days * interval 1 day + interval 16 hour
+  and f.accept_et <= c.date + interval 16 hour
+group by 1, 2
 """
 
 
@@ -488,6 +517,7 @@ def run_chunk(con, schema: dict, seed: int, files: list[str]) -> tuple[int, int]
     with_bars = con.execute("select count(distinct (symbol, d)) from bars").fetchone()[0]
     if not with_bars:
         return 0, 0
+    con.execute(FK_SQL)
     con.execute(FEAT_SQL)
     w = schema.get("window", {})
     lo, hi = hhmm_to_mod(w.get("start", "09:31")), hhmm_to_mod(w.get("end", "15:30"))
@@ -636,6 +666,24 @@ def per_year(run_dir: Path, con) -> None:
 # --------------------------------------------------------------------------
 # Commands
 # --------------------------------------------------------------------------
+def load_filings(con) -> None:
+    """Temp table filings8k(symbol, accept_et timestamp ET, is_202) from the EDGAR parquet."""
+    e = EDGAR_DIR
+    con.execute(f"""
+      create or replace temp table filings8k as
+      with tc as (
+        select ticker, min(cik) cik from (
+          select ticker, cik from read_parquet('{e}/edgar_tickers.parquet')
+          union select unnest(tickers) ticker, cik from read_parquet('{e}/edgar_companies.parquet')
+        ) group by ticker
+      )
+      select tc.ticker symbol, timezone('America/New_York', f.acceptance_datetime::timestamptz) accept_et,
+        regexp_matches(coalesce(f.items, ''), '(^|,)2\\.02(,|$)') is_202
+      from read_parquet('{e}/edgar_filings.parquet') f join tc on tc.cik = f.cik
+      where f.form = '8-K' and f.acceptance_datetime is not null and f.filing_date >= '2015-12-01'
+    """)
+
+
 def runs_con():
     DATA.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(RUNS_DB))
@@ -679,6 +727,7 @@ def cmd_run(args):
     con = duckdb.connect()
     con.execute(f"attach '{WAREHOUSE}' as wh (read_only)")
     con.execute("set preserve_insertion_order = false")
+    load_filings(con)
 
     if args.resume:
         # The sample is frozen at creation; recomputing it would now exclude

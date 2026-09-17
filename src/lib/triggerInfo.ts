@@ -162,6 +162,21 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
     detail:
       "Checked every 5 minutes during the session. The levels come from Settings: stop %, take-profit %, trail %, and the swing time limit.",
   },
+  bigmove_watchlist: {
+    label: "Big-Move Watchlist",
+    category: "watch",
+    categoryLabel: "Watch",
+    timing: "daily",
+    summary: "Something happened today that makes a big move tomorrow several times more likely than usual — in either direction.",
+    conditions: [
+      "At least 3 of: volume 3x+ its 20-day average; a 10%+ move on the day; a day range 2x+ its normal range (ATR); an 8-K filed since the previous session.",
+      "Priced $0.10-$5 with enough dollar volume.",
+    ],
+    detail:
+      "A watchlist for the next session, not a buy: the moves that followed were down more often than up. Stays Watch whatever its flags.",
+    evidence:
+      "Study, 2016-2026 ($800k+ floor): next-session move of 10%+ 35% (2016-21) and 43% (2022+) of the time vs 7% and 9% for a random day; still 3-9x after controlling for how volatile the stock already was. Only ~36% of those moves were up.",
+  },
   avoid_reverse_split: {
     label: "Avoid: Reverse Split",
     category: "avoid",

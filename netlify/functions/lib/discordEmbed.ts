@@ -41,6 +41,7 @@ const LABELS: Record<string, string> = {
   avoid_chase_extended: "Avoid: Don't Chase",
   earnings_release: "Earnings Release",
   avoid_reverse_split: "Avoid: Reverse Split",
+  bigmove_watchlist: "Big-Move Watchlist",
 };
 
 const SELL_TRIGGERS = new Set([
