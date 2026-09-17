@@ -206,27 +206,34 @@ export default async () => {
     // per-symbol approach backtest-triggers.ts uses.
     const today = end;
     const barsBySymbolId = new Map<number, Bar[]>();
+    // high/low for the big-move score's range expansion (Bar carries close/volume only)
+    const hlBySymbolId = new Map<number, { high: number; low: number }[]>();
     await mapWithConcurrency(symbols, 24, async (s) => {
       const rows: Bar[] = [];
+      const hl: { high: number; low: number }[] = [];
       const PAGE = 1000;
       let fromRow = 0;
       for (;;) {
         const { data, error } = await db
           .from("bars_daily")
-          .select("date, close, volume")
+          .select("date, close, volume, high, low")
           .eq("symbol_id", s.id)
           .gte("date", factorWindowStart)
           .order("date", { ascending: true })
           .range(fromRow, fromRow + PAGE - 1);
         if (error) throw error;
         if (!data?.length) break;
-        for (const r of data as { date: string; close: number; volume: number }[]) {
+        for (const r of data as { date: string; close: number; volume: number; high: number; low: number }[]) {
           rows.push({ date: r.date, close: Number(r.close), volume: Number(r.volume) });
+          hl.push({ high: Number(r.high), low: Number(r.low) });
         }
         if (data.length < PAGE) break;
         fromRow += PAGE;
       }
-      if (rows.length) barsBySymbolId.set(s.id, rows);
+      if (rows.length) {
+        barsBySymbolId.set(s.id, rows);
+        hlBySymbolId.set(s.id, hl);
+      }
     });
 
     // --- 3. Compute factor_state via the shared dailySnapshot module ---
@@ -346,6 +353,25 @@ export default async () => {
     const prevSession = spyDates[spyDates.length - 1];
     const prevPrevSession = spyDates[spyDates.length - 2];
     const earningsIds = new Set<number>();
+    // Any 8-K filed since the previous session (sec-filings-sync runs 17:30,
+    // before this scan) — one input to the big-move score.
+    const filed8kIds = new Set<number>();
+    if (prevSession) {
+      for (let from = 0; ; from += 1000) {
+        const { data: fk, error: fkErr } = await db
+          .from("sec_filings")
+          .select("accession, symbol_id")
+          .eq("form", "8-K")
+          .gt("filing_date", prevSession)
+          .lte("filing_date", today)
+          .not("symbol_id", "is", null)
+          .order("accession", { ascending: true })
+          .range(from, from + 999);
+        if (fkErr) throw fkErr;
+        for (const r of (fk as { symbol_id: number }[] | null) ?? []) filed8kIds.add(r.symbol_id);
+        if (!fk || fk.length < 1000) break;
+      }
+    }
     if (prevSession && prevPrevSession) {
       const { data: ek } = await db
         .from("sec_filings")
@@ -374,6 +400,12 @@ export default async () => {
         risk_on: regime?.risk_on ?? null,
         earnings_release: earningsIds.has(row.symbol_id as number) ? 1 : 0,
         reverse_split_window: reverseSplitIds.has(row.symbol_id as number) ? 1 : 0,
+        bigmove_score: bigMoveScore(
+          barsBySymbolId.get(row.symbol_id as number) ?? [],
+          hlBySymbolId.get(row.symbol_id as number) ?? [],
+          row.volume_ratio_20d as number | null,
+          filed8kIds.has(row.symbol_id as number),
+        ),
       };
       for (const trigger of triggers ?? []) {
         const fired = evaluateTrigger(trigger.definition as unknown as TriggerDefinition, inputs);
@@ -642,3 +674,36 @@ export default async () => {
 };
 
 // Schedule is configured in netlify.toml under [functions."eod-scan"].
+
+/**
+ * Big-move score (research/bigmove_study.py): one point each for volume >= 3x
+ * its prior 20-day average, a >= 10% close-to-close move, a day range >= 2x
+ * the prior 14-day ATR, and an 8-K filed since the previous session. At 3+,
+ * the next session moved >= 10% close-to-close 35-43% of the time vs 7-9% for
+ * a random in-band day (lift 3.3-9.4x within spread tiers, both periods) —
+ * but skewed down (~36% of those moves were up), so it is Watch, not Buy.
+ */
+function bigMoveScore(
+  bars: Bar[],
+  hl: { high: number; low: number }[],
+  volumeRatio: number | null,
+  filed8k: boolean,
+): number {
+  const n = bars.length;
+  if (n < 16 || hl.length !== n) return 0;
+  const prev = bars[n - 2].close;
+  const dayRet = prev > 0 ? bars[n - 1].close / prev - 1 : 0;
+  let trSum = 0;
+  for (let i = n - 15; i < n - 1; i++) {
+    const pc = bars[i - 1].close;
+    trSum += Math.max(hl[i].high - hl[i].low, Math.abs(hl[i].high - pc), Math.abs(hl[i].low - pc));
+  }
+  const atr = trSum / 14;
+  const rangeX = atr > 0 ? (hl[n - 1].high - hl[n - 1].low) / atr : 0;
+  return (
+    ((volumeRatio ?? 0) >= 3 ? 1 : 0) +
+    (Math.abs(dayRet) >= 0.1 ? 1 : 0) +
+    (rangeX >= 2 ? 1 : 0) +
+    (filed8k ? 1 : 0)
+  );
+}

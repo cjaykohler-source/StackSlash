@@ -336,7 +336,7 @@ const FACTOR_ORDER = [
 // Event triggers fire from a filing or corporate action that factor_state
 // doesn't carry, so they can't be evaluated here; their status is the last
 // fire, "recent" within the window the event stays relevant.
-const EVENT_WINDOW_DAYS: Record<string, number> = { earnings_release: 28, avoid_reverse_split: 30 };
+const EVENT_WINDOW_DAYS: Record<string, number> = { earnings_release: 28, avoid_reverse_split: 30, bigmove_watchlist: 3 };
 
 function factorOrder(key: string): number {
   const i = FACTOR_ORDER.indexOf(key);

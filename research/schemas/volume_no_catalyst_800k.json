@@ -1,0 +1,14 @@
+{
+  "name": "volume_no_catalyst_800k",
+  "notes": "Catalyst + volume (live trigger candidate): an 8-K accepted since the prior session's 16:00 ET, and the market is reacting - half a normal day's volume already traded and this minute's volume at least 2x the prior 20 minutes. Direction-neutral; scored with the big-move metric.",
+  "universe": {"price_min": 0.10, "price_max": 5.00, "min_dollar_vol_20d": 800000, "exchanges": ["NYSE", "NASDAQ", "AMEX", "ARCA", "BATS"], "include_delisted": true},
+  "window": {"start": "09:45", "end": "15:00"},
+  "entry": {"all": [
+    
+    {"field": "cum_vol_vs_adv20", "op": ">=", "value": 0.5},
+    {"field": "bar_vol_spike", "op": ">=", "value": 2}
+  ]},
+  "first_match_only": true,
+  "exit": {"horizons_min": [15, 30, 60, 120]},
+  "cost": {"flat_pct": 0.01}
+}
