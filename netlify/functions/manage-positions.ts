@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 import { fetchSnapshots } from "./lib/alpaca";
+import { etDateString, etWallClock } from "./lib/etTime";
 
 /**
  * Job — flip-position manager. The exit half of the quick-flip pipeline.
@@ -39,6 +40,7 @@ interface OpenPos {
   id: number;
   symbol_id: number;
   entry_ts: string | null;
+  entry_trigger_name: string | null;
   entry_date: string;
   entry_price: number | null;
   stop_price: number | null;
@@ -57,7 +59,7 @@ export default async () => {
 
     const { data, error } = await db
       .from("shadow_positions")
-      .select("id, symbol_id, entry_ts, entry_date, entry_price, stop_price, high_water, rules, symbols(ticker)")
+      .select("id, symbol_id, entry_ts, entry_trigger_name, entry_date, entry_price, stop_price, high_water, rules, symbols(ticker)")
       .eq("status", "open")
       .eq("strategy", "flip");
     if (error) throw error;
@@ -67,9 +69,16 @@ export default async () => {
     const tickers = [...new Set(positions.map((p) => p.symbols?.ticker).filter((t): t is string => !!t))];
     const snapshots = await fetchSnapshots(tickers);
 
-    const momentumExitTriggerId = (
-      await db.from("triggers").select("id").eq("name", "momentum_exit").maybeSingle()
-    ).data?.id as number | undefined;
+    // Exits post as exit_warning (the feed's Sell column); momentum_exit is
+    // only a fallback if that trigger row is ever missing.
+    const { data: exitRows } = await db
+      .from("triggers")
+      .select("id, name")
+      .in("name", ["exit_warning", "momentum_exit"]);
+    const exitIdByName = new Map(
+      ((exitRows as { id: number; name: string }[] | null) ?? []).map((r) => [r.name, r.id]),
+    );
+    const momentumExitTriggerId = exitIdByName.get("exit_warning") ?? exitIdByName.get("momentum_exit");
 
     const now = Date.now();
     let exited = 0;
@@ -117,6 +126,7 @@ export default async () => {
             symbol_id: pos.symbol_id,
             snapshot: {
               shadow_position_id: pos.id,
+              entry_trigger_name: pos.entry_trigger_name,
               strategy: "flip",
               entry_date: pos.entry_date,
               entry_price: entry,
@@ -156,9 +166,12 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// ET wall clock (the old UTC 13-21 check was an hour off all winter).
 function isLikelyMarketHours(): boolean {
-  const now = new Date();
-  const d = now.getUTCDay();
-  const h = now.getUTCHours();
-  return d >= 1 && d <= 5 && h >= 13 && h < 21;
+  const now = Date.now();
+  const today = etDateString(now);
+  const day = new Date(`${today}T12:00:00Z`).getUTCDay();
+  if (day < 1 || day > 5) return false;
+  const open = etWallClock(today, 9, 30);
+  return now >= open && now < open + 390 * 60_000;
 }

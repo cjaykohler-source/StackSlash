@@ -36,6 +36,8 @@ const LABELS: Record<string, string> = {
   vwap_reclaim: "VWAP Reclaim",
   gap_and_go: "Gap and Go",
   squeeze_release_intraday: "Squeeze Release (Intraday)",
+  exit_warning: "Exit Warning",
+  avoid_volume_blowoff: "Avoid: Volume Blow-off",
 };
 
 const SELL_TRIGGERS = new Set([
@@ -43,6 +45,8 @@ const SELL_TRIGGERS = new Set([
   "macd_bearish_cross",
   "volatility_squeeze_breakout_short",
   "momentum_exit",
+  "exit_warning",
+  "avoid_volume_blowoff",
 ]);
 
 const COLOR = { buy: 0x2ecc71, sell: 0xe74c3c, high: 0xff6b00, ops: 0xf1c40f };

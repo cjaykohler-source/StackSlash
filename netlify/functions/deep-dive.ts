@@ -53,7 +53,7 @@ export default async (req: Request) => {
   const { data: event, error } = await db
     .from("trigger_events")
     .select(
-      "id, snapshot, symbol_id, trigger_id, priority, symbols(ticker, alert_excluded, sector, industry, market_cap, is_adr, profile_synced_at), triggers(name, cooldown_minutes)",
+      "id, snapshot, symbol_id, trigger_id, priority, symbols(ticker, alert_excluded, sector, industry, market_cap, is_adr, profile_synced_at), triggers(name, cooldown_minutes, category)",
     )
     .eq("id", triggerEventId)
     .single();
@@ -78,6 +78,11 @@ export default async (req: Request) => {
   const cooldownMinutes =
     (event as unknown as { triggers: { name: string; cooldown_minutes: number } | null }).triggers
       ?.cooldown_minutes ?? 1440;
+
+  // Exit and avoid warnings are sell-side: no buy sizing on those cards.
+  const triggerCategory =
+    (event as unknown as { triggers: { category?: string | null } | null }).triggers?.category ?? null;
+  const sellSide = triggerCategory === "exit" || triggerCategory === "avoid";
 
   const snapshot = event.snapshot as Record<string, unknown>;
   const priority =
@@ -278,7 +283,7 @@ export default async (req: Request) => {
     max_risk_pct: Number(cfg?.max_risk_pct ?? 0.2),
     default_stop_pct: Number(cfg?.default_stop_pct ?? 0.12),
   };
-  const trade = currentPrice != null ? tradeSuggestion(currentPrice, riskCfg) : null;
+  const trade = currentPrice != null && !sellSide ? tradeSuggestion(currentPrice, riskCfg) : null;
 
   // Suppress the alert (keep the dossier) if earnings are imminent.
   const suppressDays = Number(cfg?.suppress_earnings_days ?? 0);
@@ -424,6 +429,21 @@ export default async (req: Request) => {
       ["Stop", `$${trade.stop.toFixed(2)} (−${Math.round(trade.stop_pct * 100)}%)`],
       ["Max loss", `$${trade.max_loss.toFixed(2)}`],
     );
+  }
+  if (triggerCategory === "exit" && snapshot.exit_reason) {
+    const EXIT_REASON: Record<string, string> = {
+      hard_stop: "Stop hit",
+      take_profit: "Take profit",
+      trail_stop: "Trailing stop",
+      time_stop: "Time limit",
+    };
+    rows.push(["Exit", EXIT_REASON[String(snapshot.exit_reason)] ?? String(snapshot.exit_reason)]);
+    if (snapshot.entry_price != null) rows.push(["Entry", `$${Number(snapshot.entry_price).toFixed(2)}`]);
+    if (snapshot.pnl_pct != null) rows.push(["P/L", pct(snapshot.pnl_pct)]);
+    if (snapshot.days_held != null) rows.push(["Held", `${snapshot.days_held}d`]);
+  }
+  if (triggerCategory === "avoid" && snapshot.volume_ratio_20d != null) {
+    rows.push(["Volume", `${Math.round(Number(snapshot.volume_ratio_20d))}x normal`]);
   }
   if (fz != null) rows.push(["Zacks", String(["", "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"][fz] ?? fz)]);
   if (fundamentals?.net_cash_to_mktcap != null) rows.push(["Net cash", `${pct(fundamentals.net_cash_to_mktcap)} of cap`]);

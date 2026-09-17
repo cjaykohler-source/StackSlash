@@ -84,11 +84,9 @@
 # run on the worker host via launchd (scripts/run-netlify-job.sh,
 # scripts/launchd/com.stackslash.<job>.plist) at the same cadence, in ET.
 
-# manage-positions: every 5 min during market hours — the exit half of the
-# flip pipeline. Walks open 'flip' shadow_positions against profit-target /
-# trailing / hard / time stops and fires a momentum_exit event on a close.
-[functions."manage-positions"]
-  schedule = "*/5 13-20 * * 1-5"
+# manage-positions: NOT scheduled here — launchd on the worker host, every
+# 5 min 09:30-16:00 ET. Every buy alert is now tracked, so it walks hundreds
+# of positions; past Netlify's ~30 s limit a retry could post an exit twice.
 
 # intraday-flip-scan: every 5 min, offset +2 min so it reads the
 # intraday_factor_state the launchd intraday-factors-scan writes on :00/:05.

@@ -5,6 +5,7 @@ import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./l
 import { filterByCooldown } from "./lib/cooldown";
 import { stageAndPromote } from "./lib/confluenceGate";
 import { etDateString, etWallClock } from "./lib/etTime";
+import { openAlertPositions } from "./lib/alertPositions";
 
 /**
  * Job B — intraday polling scan.
@@ -194,7 +195,16 @@ export default async () => {
       { source: "intraday-scan", tradeDate: today },
     );
 
-    return { rowsProcessed: candidates.length, result: { promoted: promoted.length } };
+    // Follow every buy alert with live exit timing (manage-positions).
+    const priceBySymbolId = new Map<number, number>();
+    for (const [symbolId, ticker] of tickerBySymbolId) {
+      const snap = snapshots[ticker];
+      const p = snap?.latestTrade?.p ?? snap?.dailyBar?.c ?? null;
+      if (p != null && p > 0) priceBySymbolId.set(symbolId, p);
+    }
+    const opened = await openAlertPositions(db, promoted, priceBySymbolId);
+
+    return { rowsProcessed: candidates.length, result: { promoted: promoted.length, opened } };
   });
 
   return new Response("ok");
