@@ -257,6 +257,20 @@ export default async (req: Request) => {
     ? Math.max(0, (Date.now() - Date.parse(news[0].ts)) / 3_600_000)
     : null;
 
+  // Latest share-offering filing in the last 30 days (sec-filings-sync).
+  const { data: offering } = await db
+    .from("sec_filings")
+    .select("form, filing_date")
+    .eq("symbol_id", event.symbol_id)
+    .in("form", ["S-1", "S-3", "F-1", "F-3", "424B4", "424B5"])
+    .gte("filing_date", new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10))
+    .order("filing_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const offeringDays = offering
+    ? Math.max(0, Math.floor((Date.now() - Date.parse(`${(offering as { filing_date: string }).filing_date}T12:00:00Z`)) / 86400_000))
+    : null;
+
   const flags = riskFlags({
     price: currentPrice,
     vol_percentile_252d: factors?.vol_percentile_252d ?? null,
@@ -278,6 +292,8 @@ export default async (req: Request) => {
     revenue_growth_yoy:
       fundamentals?.revenue_growth_yoy != null ? Number(fundamentals.revenue_growth_yoy) : null,
     zacks_rank: fundamentals?.zacks_rank != null ? Number(fundamentals.zacks_rank) : null,
+    offering_days: offeringDays,
+    offering_form: (offering as { form: string } | null)?.form ?? null,
   });
 
   // Buy / Watch / Sell: a watch trigger, or a buy setup carrying a red flag

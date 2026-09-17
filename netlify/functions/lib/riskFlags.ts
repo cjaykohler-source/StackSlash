@@ -7,8 +7,9 @@
  * is moving or whether the move has legs. Flags are colour-coded by what
  * they mean for the trade, never by urgency:
  *   red   — a negative: something that tends to hurt a small long
- *           position. Only four: 25x+ volume (the backtested disaster
- *           tier), nano-cap, <=2 quarters of cash, shares +50% YoY.
+ *           position. Only five: 25x+ volume (the backtested disaster
+ *           tier), a share offering filed in the last 30 days, nano-cap,
+ *           <=2 quarters of cash, shares +50% YoY.
  *   amber — neutral / two-sided: a condition to be aware of that can go
  *           either way (news, earnings of any recency, unusual volume
  *           below 25x, parabolic run, biotech / crypto-AI catalyst risk).
@@ -37,6 +38,9 @@ export interface RiskInput {
   book_equity?: number | null; // total stockholders' equity
   net_cash_to_mktcap?: number | null; // (cash − debt) ÷ market cap
   revenue_growth_yoy?: number | null; // latest quarter sales vs the year-ago quarter
+  // days since the latest share-offering filing (S-1/S-3/F-1/F-3/424B4/424B5), if within 30
+  offering_days?: number | null;
+  offering_form?: string | null;
   zacks_rank?: number | null; // 1 (strong buy) .. 5 (strong sell)
 }
 
@@ -110,6 +114,17 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
       level: "amber",
       label: `Volume ${Math.round(x.volume_ratio_20d ?? 0)}x normal`,
       note: "Unusual activity, well above normal volume. Two-sided: in backtests entries at 5-25x volume were roughly break-even; only 25x+ was reliably negative.",
+    });
+  }
+  // A share offering filed in the last 30 days. Evidence: in the 2016-2026
+  // daily study (research/daily_trigger_study.py), excluding these fires cut
+  // 2022+ losses for the oversold and MACD setups; an offering prices below
+  // market and adds supply.
+  if (typeof x.offering_days === "number" && x.offering_days >= 0 && x.offering_days <= 30) {
+    f.push({
+      level: "red",
+      label: `Offering filed ${x.offering_days === 0 ? "today" : `${x.offering_days}d ago`}${x.offering_form ? ` (${x.offering_form})` : ""}`,
+      note: "A share-offering filing (S-1 / S-3 / 424B) in the last 30 days: new shares are coming or just priced, usually below market. Filtering these out improved recent backtests.",
     });
   }
   if (x.price != null && x.price < 1) {

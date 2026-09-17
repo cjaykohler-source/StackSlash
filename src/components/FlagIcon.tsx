@@ -44,6 +44,7 @@ export function flagIconName(label: string): FlagIconName {
   if (l.startsWith("foreign adr")) return "adr";
   if (l.includes("cash left")) return "runway";
   if (l.startsWith("shares +")) return "dilution";
+  if (l.startsWith("offering filed")) return "dilution";
   if (l.startsWith("negative book value")) return "negbook";
   if (l.startsWith("biotech")) return "biotech";
   if (l.startsWith("sentiment-driven")) return "sentiment";
