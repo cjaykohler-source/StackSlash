@@ -7,7 +7,6 @@ interface ScanConfig {
   price_max: number;
   min_dollar_vol_20d: number;
   max_rsi14: number;
-  min_confluence: number;
   account_size: number;
   max_risk_pct: number;
   default_stop_pct: number;
@@ -19,7 +18,6 @@ const COLUMNS = [
   "price_max",
   "min_dollar_vol_20d",
   "max_rsi14",
-  "min_confluence",
   "account_size",
   "max_risk_pct",
   "default_stop_pct",
@@ -40,12 +38,6 @@ const FIELDS: { key: keyof ScanConfig; label: string; step: number; hint: string
     label: "Max RSI(14) for longs",
     step: 1,
     hint: "Don't enter a long that's already this overbought — short-term returns tend to reverse.",
-  },
-  {
-    key: "min_confluence",
-    label: "Signals required to alert",
-    step: 1,
-    hint: "How many distinct triggers must agree before it promotes to a dossier + alert. Sub-$3 names rarely cluster, so 1 is the practical floor there.",
   },
   { key: "account_size", label: "Account size ($)", step: 5, hint: "Drives the risk-defined sizing shown on each dossier." },
   {
@@ -69,7 +61,7 @@ const FIELDS: { key: keyof ScanConfig; label: string; step: number; hint: string
 ];
 
 /**
- * Tunable targeting band for the confluence gate (the `scan_config`
+ * Tunable targeting band for the promotion gate (the `scan_config`
  * singleton row). Starts tuned for a ~$40 account trading sub-$3 names;
  * widen the price band and lift the liquidity floor as the account grows.
  */
@@ -119,7 +111,7 @@ export function Settings() {
 
       <h2>Targeting band</h2>
       <p className="settings-intro">
-        The confluence gate only promotes a signal to a dossier + Discord alert if the symbol sits inside this band.
+        A fire only becomes a dossier + Discord alert if the symbol sits inside this band.
         Changes apply to the next scan — no redeploy.
       </p>
 
@@ -148,7 +140,7 @@ export function Settings() {
           </div>
           <p className="settings-current">
             Current band: <strong>${cfg.price_min.toFixed(2)}–${cfg.price_max.toFixed(2)}</strong>, ≥ $
-            {cfg.min_dollar_vol_20d.toLocaleString()}/day, RSI ≤ {cfg.max_rsi14}, ≥ {cfg.min_confluence} signals.
+            {cfg.min_dollar_vol_20d.toLocaleString()}/day, RSI ≤ {cfg.max_rsi14}.
           </p>
         </div>
       )}

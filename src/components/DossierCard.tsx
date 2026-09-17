@@ -76,7 +76,6 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
     trigger?: string;
     ticker?: string;
     priority?: "normal" | "high";
-    confluence?: { count: number; direction: "long" | "short"; triggers: string[] } | null;
     price?: number | null;
     risk_flags?: { level: "red" | "amber" | "green"; label: string; note: string }[];
     trade?: { stop: number; stop_pct: number; shares: number; position_cost: number; max_loss: number } | null;
@@ -97,7 +96,6 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
 
   const displayLabel = analysis.trigger ? triggerLabel(analysis.trigger) : "Unknown trigger";
   const triggerSummary = analysis.trigger ? TRIGGER_INFO[analysis.trigger]?.summary : undefined;
-  const confluence = analysis.confluence ?? null;
   const isHighPriority = analysis.priority === "high";
   const flagsList = analysis.risk_flags ?? [];
   const hasRed = flagsList.some((f) => f.level === "red");
@@ -111,19 +109,13 @@ export function DossierCard({ dossier }: { dossier: DossierCardData }) {
         <div>
           <div className="dossier-trigger-name">
             {isHighPriority && (
-              <InfoTooltip text="Three or more independent triggers fired for this symbol in the same direction within the confluence window — the strongest class of signal this scanner produces.">
+              <InfoTooltip text="Flagged high priority when it was promoted.">
                 <span className="dossier-priority-badge">HIGH PRIORITY</span>
               </InfoTooltip>
             )}
             {triggerSummary ? <InfoTooltip text={triggerSummary}>{displayLabel}</InfoTooltip> : displayLabel}
             {analysis.price != null && <span className="dossier-price"> ${analysis.price.toFixed(2)}</span>}
           </div>
-          {confluence && (
-            <div className="dossier-confluence">
-              {confluence.count} {confluence.direction} signals:{" "}
-              {confluence.triggers.map((t) => triggerLabel(t)).join(", ")}
-            </div>
-          )}
         </div>
         <div className="dossier-card-corner">
           <div className="dossier-timestamp">

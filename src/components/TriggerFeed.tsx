@@ -6,20 +6,13 @@ import { InfoTooltip } from "./InfoTooltip";
 import { FlagIcon, flagIconName } from "./FlagIcon";
 import { useQuotes } from "./QuoteTag";
 
-// The feed shows every trigger fire — single-trigger fires (still sitting
-// in pending_fires, un-clustered) alongside the confluence-gate's
-// promoted cluster events. Rows are flagged by how many distinct triggers
-// agreed: 2 gets a badge, 3+ gets the high-priority treatment. Scoped to
-// scan_config's price band (default $0.10–$3); sub-$1 gets its own flag.
+// The feed shows every trigger fire — fires still sitting in
+// pending_fires (out of band, so never promoted) alongside the promoted
+// trigger_events, one per fire since the confluence gate was removed
+// (2026-09-17). Scoped to scan_config's price band; sub-$1 gets its own flag.
 // Rows we can't price yet stay visible until a quote lands.
 const SUB_DOLLAR_FLAG_PRICE = 1;
 const DEFAULT_BAND = { price_min: 0.1, price_max: 3 };
-
-interface ConfluenceMeta {
-  count: number;
-  direction: "long" | "short";
-  triggers: { id: number; name: string | null }[];
-}
 
 interface RiskFlag {
   level: "red" | "amber" | "green";
@@ -36,8 +29,6 @@ interface FeedRow {
   symbol_id: number;
   ticker: string | null;
   triggerName: string | null;
-  signalCount: number; // 1 = lone fire / exit, 2 / 3+ = confluence cluster
-  clusterTriggerNames: string[]; // for the badge tooltip when >= 2
   priority: "normal" | "high" | null;
   status: string; // "pending" for un-promoted single fires
   riskFlags: RiskFlag[]; // from the linked dossier (promoted events only)
@@ -97,7 +88,7 @@ function timeOnly(iso: string): string {
 /**
  * Fired-trigger feed, grouped by day and updated in real time via Supabase
  * Realtime. Two sources, merged by timestamp:
- *  - `trigger_events` — the confluence gate's promoted cluster events
+ *  - `trigger_events` — promoted events (one per in-band fire)
  *    (one row per cluster) plus non-gated events like momentum_exit.
  *  - `pending_fires` (un-promoted) — single trigger fires that haven't
  *    clustered with anything.
@@ -157,7 +148,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         priority: "normal" | "high" | null;
         symbol_id: number;
         trigger_id: number;
-        snapshot: { confluence?: ConfluenceMeta | null } | null;
+        snapshot: unknown;
         symbols: { ticker: string; alert_excluded: boolean } | null;
         triggers: { name: string } | null;
         dossiers: { risk_flags: RiskFlag[] | null }[] | null;
@@ -174,16 +165,12 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
       const events: FeedRow[] = ((eventsRes.data as unknown as RawEvent[]) ?? [])
         .filter((r) => !r.symbols?.alert_excluded)
         .map((r) => {
-        const conf = r.snapshot?.confluence ?? null;
-        const names = conf?.triggers.map((t) => t.name).filter((n): n is string => !!n) ?? [];
         return {
           key: `e${r.id}`,
           ts: r.ts,
           symbol_id: r.symbol_id,
           ticker: r.symbols?.ticker ?? null,
           triggerName: r.triggers?.name ?? null,
-          signalCount: conf?.count ?? 1,
-          clusterTriggerNames: names.length ? names : r.triggers?.name ? [r.triggers.name] : [],
           priority: r.priority,
           status: r.status,
           riskFlags: (r.dossiers?.[0]?.risk_flags ?? []).map((x) => ({
@@ -191,10 +178,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
             label: x.label,
             note: x.note,
           })),
-          side:
-            conf?.direction === "short"
-              ? ("sell" as const)
-              : triggerSide(r.triggers?.name ?? null),
+          side: triggerSide(r.triggers?.name ?? null),
           firePrice: firePriceOf(r.snapshot),
           fireCount: 1,
           lastTs: r.ts,
@@ -310,7 +294,7 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
       quote.price < SUB_DOLLAR_FLAG_PRICE &&
       !row.riskFlags.some((f) => f.label.startsWith("Sub-$1"));
     const hasRed = row.riskFlags.some((f) => f.level === "red");
-    const isHigh = row.priority === "high" || row.signalCount >= 3;
+    const isHigh = row.priority === "high";
     return (
       <tr key={row.key} className={isHigh || hasRed ? "trigger-feed-row-high" : undefined}>
         <td>
@@ -326,27 +310,13 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         </td>
         <td className="col-catalyst">
           {/* Why it's listed: the trigger(s) behind this row. */}
-          {(row.clusterTriggerNames.length ? row.clusterTriggerNames : row.triggerName ? [row.triggerName] : []).map((name) => (
+          {(row.triggerName ? [row.triggerName] : []).map((name) => (
             <InfoTooltip key={name} underline={false} text={TRIGGER_INFO[name]?.summary ?? triggerLabel(name)}>
               <span className={`catalyst-chip catalyst-${row.side}`}>{triggerLabel(name)}</span>
             </InfoTooltip>
           ))}
         </td>
         <td className="col-flags">
-          {row.signalCount >= 2 && (
-            <InfoTooltip
-              underline={false}
-              text={`${row.signalCount} independent triggers agreed: ${row.clusterTriggerNames
-                .map((n) => triggerLabel(n))
-                .join(", ")}`}
-            >
-              <span
-                className={`confluence-badge${row.signalCount >= 3 ? " confluence-badge-high" : ""}`}
-              >
-                {row.signalCount}
-              </span>
-            </InfoTooltip>
-          )}
           {subDollar && (
             <InfoTooltip underline={false} text="Sub-$1 — trading under $1/share, the lowest-price tier (highest manipulation and delisting risk).">
               <span className="feed-flag feed-flag-amber">

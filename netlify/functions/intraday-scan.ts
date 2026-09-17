@@ -3,7 +3,7 @@ import { withJobRun } from "./lib/jobRun";
 import { fetchSnapshots } from "./lib/alpaca";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 import { filterByCooldown } from "./lib/cooldown";
-import { stageAndPromote } from "./lib/confluenceGate";
+import { stageAndPromote } from "./lib/promotionGate";
 import { etDateString, etWallClock } from "./lib/etTime";
 import { openAlertPositions } from "./lib/alertPositions";
 
@@ -183,7 +183,7 @@ export default async () => {
     // (dossier + alert) if it lands in a cluster of >= 2 distinct same-
     // direction triggers for the symbol within the rolling window; today's
     // eod-scan / realtime fires count toward that cluster too. Lone fires
-    // stay in pending_fires. See lib/confluenceGate.ts.
+    // stay in pending_fires. See lib/promotionGate.ts.
     const promoted = await stageAndPromote(
       db,
       coolableFires.map((f) => ({

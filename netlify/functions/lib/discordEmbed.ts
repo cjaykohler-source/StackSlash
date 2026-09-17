@@ -78,8 +78,6 @@ export interface AlertCard {
   /** Watch, not buy: a watch trigger, or a buy setup carrying a red flag. */
   watch?: boolean;
   price: number | null;
-  /** Every trigger in confluence; listed only when there are 2+. */
-  confluence: string[];
   flags: { level: string; label: string }[];
   /** Label/value rows for the aligned block (size, stop, fundamentals, score). */
   rows: [string, string][];
@@ -111,9 +109,6 @@ export function buildAlertEmbed(a: AlertCard): DiscordEmbed {
     color: a.watch && !a.highPriority ? COLOR.watch : alertColor(a.triggerName, a.highPriority),
     description: [
       a.price != null ? `**$${a.price.toFixed(2)}**` : null,
-      a.confluence.length > 1
-        ? `**${a.confluence.length} signals:** ${a.confluence.map(triggerDisplayName).join(", ")}`
-        : null,
       flags.length ? flags.map((f) => `${FLAG_ICON[f.level] ?? "⚪"} ${f.label}`).join("\n") : null,
       table,
       headline ? `📰 ${a.news?.url ? `[${headline}](${a.news.url})` : headline}${ageText}` : null,

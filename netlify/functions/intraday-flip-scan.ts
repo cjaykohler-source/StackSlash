@@ -4,7 +4,7 @@ import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./l
 import { filterByCooldown } from "./lib/cooldown";
 import { openAlertPositions } from "./lib/alertPositions";
 import { isRoundupHeadline } from "./lib/newsFilter";
-import type { ConfluenceMeta, PromotedEvent } from "./lib/confluenceGate";
+import type { PromotedEvent } from "./lib/promotionGate";
 import { etDateString, etWallClock } from "./lib/etTime";
 
 /**
@@ -178,24 +178,19 @@ export default async () => {
     for (const f of ranked) {
       const t = trigById.get(f.trigger_id);
       if (!t) continue;
-      const confluence: ConfluenceMeta = {
-        count: 1,
-        direction: t.direction === "short" ? "short" : "long",
-        tier: "normal",
-        triggers: [{ id: t.id, name: t.name }],
-      };
+      const direction = t.direction === "short" ? "short" : "long";
       const { data: ev, error } = await db
         .from("trigger_events")
         .insert({
           trigger_id: t.id,
           symbol_id: f.symbol_id,
           priority: "normal",
-          snapshot: { ...f.inputs, latest_price: f.inputs.last_price, source: "intraday-live", confluence },
+          snapshot: { ...f.inputs, latest_price: f.inputs.last_price, source: "intraday-live" },
         })
         .select("id")
         .single();
       if (error) throw error;
-      alerted.push({ id: (ev as { id: number }).id, trigger_id: t.id, symbol_id: f.symbol_id, priority: "normal", confluence });
+      alerted.push({ id: (ev as { id: number }).id, trigger_id: t.id, trigger_name: t.name, symbol_id: f.symbol_id, direction, priority: "normal" });
       const px = num(f.inputs.last_price);
       if (px > 0) priceBySymbolId.set(f.symbol_id, px);
     }

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PromotedEvent } from "./confluenceGate";
+import type { PromotedEvent } from "./promotionGate";
 
 /**
  * Tracks every promoted BUY alert as a shadow position so an exit-timing
@@ -25,7 +25,7 @@ export async function openAlertPositions(
   promoted: PromotedEvent[],
   priceBySymbolId: Map<number, number>,
 ): Promise<number> {
-  const longs = promoted.filter((ev) => ev.confluence.direction === "long");
+  const longs = promoted.filter((ev) => ev.direction === "long");
   if (!longs.length) return 0;
 
   const { data: openRows, error: openErr } = await db
@@ -72,8 +72,7 @@ export async function openAlertPositions(
     // manage-positions can never evaluate.
     if (entryPrice == null || !(entryPrice > 0)) continue;
     alreadyOpen.add(ev.symbol_id);
-    const primaryName =
-      ev.confluence.triggers.find((t) => t.id === ev.trigger_id)?.name ?? ev.confluence.triggers[0]?.name ?? "unknown";
+    const primaryName = ev.trigger_name ?? "unknown";
     const evRules = { ...rules, ...(exitRulesById.get(ev.trigger_id) ?? {}) };
     rows.push({
       symbol_id: ev.symbol_id,

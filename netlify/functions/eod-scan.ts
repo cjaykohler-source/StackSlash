@@ -6,7 +6,7 @@ import { type Bar } from "./lib/indicators";
 import { computeFactors, computeRegime } from "./lib/dailySnapshot";
 import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./lib/triggers";
 import { filterByCooldown } from "./lib/cooldown";
-import { stageAndPromote, ENTRY_TRIGGER_NAMES } from "./lib/confluenceGate";
+import { stageAndPromote, ENTRY_TRIGGER_NAMES } from "./lib/promotionGate";
 import { openFlipPositions } from "./lib/flipPositions";
 import { openAlertPositions } from "./lib/alertPositions";
 import { mapWithConcurrency } from "./lib/concurrency";
@@ -449,7 +449,7 @@ export default async () => {
     // fired for the same symbol within a rolling window — across sources,
     // so an earlier intraday or realtime fire counts toward today's
     // cluster. Lone fires stay in pending_fires and go no further. See
-    // lib/confluenceGate.ts.
+    // lib/promotionGate.ts.
     const promotedEvents = await stageAndPromote(
       db,
       coolableFires.map((f) => ({
@@ -462,39 +462,35 @@ export default async () => {
     );
 
     // --- 6. Open shadow positions for new long entries ---
-    // Every promoted long cluster opens a hypothetical position, classed
-    // by the speed of its contributing triggers (triggers.speed):
-    //  - 'flip'  — any contributing trigger is 'fast' (the Phase 3
-    //    intraday triggers). Managed by manage-positions.ts against
-    //    profit-target / trailing / hard / time stops.
-    //  - 'swing' — all contributing triggers are 'slow' (everything
-    //    enabled today). Held ~weeks; exited by step 7 (rank drop /
-    //    weekly reversal / 180d). The sim-flip-exits backtest showed the
-    //    currently-enabled longs behave this way — fast-flip stops
-    //    destroy their edge.
-    const longEvents = promotedEvents.filter((ev) => ev.confluence.direction === "long");
+    // Every promoted long event opens a hypothetical position, classed by
+    // its trigger's speed (triggers.speed):
+    //  - 'flip'  — a 'fast' trigger (the Phase 3 intraday triggers).
+    //    Managed by manage-positions.ts against profit-target / trailing /
+    //    hard / time stops.
+    //  - 'swing' — a 'slow' trigger (everything enabled today). Held
+    //    ~weeks; exited by step 7 (rank drop / weekly reversal / 180d).
+    //    The sim-flip-exits backtest showed the currently-enabled longs
+    //    behave this way — fast-flip stops destroy their edge.
+    const longEvents = promotedEvents.filter((ev) => ev.direction === "long");
 
     if (longEvents.length) {
       const { data: speedRows } = await db.from("triggers").select("id, speed");
       const speedById = new Map(
         ((speedRows as { id: number; speed: string }[] | null) ?? []).map((t) => [t.id, t.speed]),
       );
-      // Flip positions (any contributing trigger is 'fast') — usually
-      // already opened intraday by intraday-flip-scan; this covers a fast
-      // fire that only clustered at EOD. Shared helper so the exit_rules
-      // handling matches.
+      // Flip positions ('fast' triggers) — usually already opened intraday
+      // by intraday-flip-scan; this covers a fast fire that only reached
+      // the gate at EOD. Shared helper so the exit_rules handling matches.
       await openFlipPositions(db, promotedEvents, priceBySymbolId);
 
-      // Swing positions (all contributing triggers slow) — opened here.
-      const slowEvents = longEvents.filter(
-        (ev) => !ev.confluence.triggers.some((t) => speedById.get(t.id) === "fast"),
-      );
+      // Swing positions ('slow' triggers) — opened here.
+      const slowEvents = longEvents.filter((ev) => speedById.get(ev.trigger_id) !== "fast");
       // Every non-momentum buy alert gets live exit timing (stop / take
       // profit / trail / time, every 5 min via manage-positions) instead of
       // the blunt once-a-day 10-day / 25% rule in step 7. Only momentum
       // entries (both currently disabled) keep the rank-based swing exit.
       const isMomentum = (ev: (typeof slowEvents)[number]) =>
-        ev.confluence.triggers.some((t) => !!t.name && ENTRY_TRIGGER_NAMES.has(t.name));
+        !!ev.trigger_name && ENTRY_TRIGGER_NAMES.has(ev.trigger_name);
       await openAlertPositions(
         db,
         slowEvents.filter((ev) => !isMomentum(ev)),
@@ -523,10 +519,8 @@ export default async () => {
         const newPositions = [];
         for (const ev of swingEvents) {
           if (openSymbolIds.has(ev.symbol_id)) continue;
-          const names = ev.confluence.triggers.map((t) => t.name).filter((n): n is string => !!n);
-          const momentumName = names.find((n) => ENTRY_TRIGGER_NAMES.has(n));
-          const primaryName =
-            ev.confluence.triggers.find((t) => t.id === ev.trigger_id)?.name ?? names[0] ?? "unknown";
+          const primaryName = ev.trigger_name ?? "unknown";
+          const momentumName = ENTRY_TRIGGER_NAMES.has(primaryName) ? primaryName : undefined;
           const entryPrice = priceBySymbolId.get(ev.symbol_id) ?? null;
           newPositions.push({
             symbol_id: ev.symbol_id,

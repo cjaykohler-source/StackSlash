@@ -1,11 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PromotedEvent } from "./confluenceGate";
+import type { PromotedEvent } from "./promotionGate";
 
 /**
- * Opens a 'flip' shadow position for each newly-promoted long event whose
- * cluster is fast (any contributing trigger has speed='fast'). Shared by
- * intraday-flip-scan (where fast fires are promoted intraday) and eod-scan
- * (for any fast fire that only clustered at EOD).
+ * Opens a 'flip' shadow position for each newly-promoted long event from a
+ * speed='fast' trigger. Shared by intraday-flip-scan (where fast fires are
+ * promoted intraday) and eod-scan.
  *
  * Exit rules are snapshotted onto the row (`rules`) from the primary
  * trigger's `exit_rules`, falling back to scan_config's flip_* defaults —
@@ -20,10 +19,10 @@ export async function openFlipPositions(
   promoted: PromotedEvent[],
   priceBySymbolId: Map<number, number>,
 ): Promise<number> {
-  const longs = promoted.filter((ev) => ev.confluence.direction === "long");
+  const longs = promoted.filter((ev) => ev.direction === "long");
   if (!longs.length) return 0;
 
-  const triggerIds = [...new Set(longs.flatMap((ev) => ev.confluence.triggers.map((t) => t.id)))];
+  const triggerIds = [...new Set(longs.map((ev) => ev.trigger_id))];
   const { data: trigRows } = await db
     .from("triggers")
     .select("id, name, speed, exit_rules")
@@ -33,7 +32,7 @@ export async function openFlipPositions(
       []).map((t) => [t.id, t]),
   );
 
-  const flipEvents = longs.filter((ev) => ev.confluence.triggers.some((t) => trigById.get(t.id)?.speed === "fast"));
+  const flipEvents = longs.filter((ev) => trigById.get(ev.trigger_id)?.speed === "fast");
   if (!flipEvents.length) return 0;
 
   const symbolIds = flipEvents.map((ev) => ev.symbol_id);
