@@ -8,6 +8,7 @@ import { evaluateTrigger, type TriggerDefinition, type TriggerInputs } from "./l
 import { filterByCooldown } from "./lib/cooldown";
 import { stageAndPromote, ENTRY_TRIGGER_NAMES } from "./lib/confluenceGate";
 import { openFlipPositions } from "./lib/flipPositions";
+import { openAlertPositions } from "./lib/alertPositions";
 import { mapWithConcurrency } from "./lib/concurrency";
 
 /**
@@ -414,9 +415,21 @@ export default async () => {
       await openFlipPositions(db, promotedEvents, priceBySymbolId);
 
       // Swing positions (all contributing triggers slow) — opened here.
-      const swingEvents = longEvents.filter(
+      const slowEvents = longEvents.filter(
         (ev) => !ev.confluence.triggers.some((t) => speedById.get(t.id) === "fast"),
       );
+      // Every non-momentum buy alert gets live exit timing (stop / take
+      // profit / trail / time, every 5 min via manage-positions) instead of
+      // the blunt once-a-day 10-day / 25% rule in step 7. Only momentum
+      // entries (both currently disabled) keep the rank-based swing exit.
+      const isMomentum = (ev: (typeof slowEvents)[number]) =>
+        ev.confluence.triggers.some((t) => !!t.name && ENTRY_TRIGGER_NAMES.has(t.name));
+      await openAlertPositions(
+        db,
+        slowEvents.filter((ev) => !isMomentum(ev)),
+        priceBySymbolId,
+      );
+      const swingEvents = slowEvents.filter(isMomentum);
       if (swingEvents.length) {
         const { data: alreadyOpen } = await db
           .from("shadow_positions")

@@ -128,6 +128,35 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
     detail:
       "Only follows positions opened by Top Performer or New High Breakout. Both of those are currently off, so this has nothing new to follow.",
   },
+  exit_warning: {
+    label: "Exit Warning",
+    category: "exit",
+    categoryLabel: "Exit Signal",
+    timing: "exit",
+    summary: "A stock you got a buy alert on just hit its exit: stop, take profit, trailing stop, or time limit.",
+    conditions: [
+      "It got a buy alert, and since then one of these happened:",
+      "price fell 12% below the alert price (stop),",
+      "price rose 10% above it (take profit),",
+      "it rose at least 5% and then gave back 5% from its high (trailing stop), or",
+      "10 days have passed (time limit).",
+    ],
+    detail:
+      "Checked every 5 minutes during the session. The levels come from Settings: stop %, take-profit %, trail %, and the swing time limit.",
+  },
+  avoid_volume_blowoff: {
+    label: "Avoid: Volume Blow-off",
+    category: "avoid",
+    categoryLabel: "Avoid",
+    timing: "daily",
+    summary: "Trading at 25x or more its normal volume, historically the setup that goes worst.",
+    conditions: [
+      "Priced between $0.10 and $5, with at least $50k of normal daily dollar volume.",
+      "Today's volume is at least 25× its 20-day average.",
+    ],
+    detail:
+      "In backtests, stocks at 25× normal volume averaged −10% (median −16%) over the next 18 sessions, while every lower volume bucket was roughly break-even. It's a warning to stay out or get out, not a short signal.",
+  },
   bb_rsi_confluence_short: {
     label: "Overbought Pullback Setup",
     category: "technical",
@@ -277,6 +306,8 @@ const SELL_TRIGGERS = new Set([
   "bb_rsi_confluence_short",
   "macd_bearish_cross",
   "volatility_squeeze_breakout_short",
+  "exit_warning",
+  "avoid_volume_blowoff",
 ]);
 
 export function triggerSide(name: string | null): "buy" | "sell" {
