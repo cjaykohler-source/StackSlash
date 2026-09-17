@@ -72,6 +72,8 @@ export function SymbolDetail() {
   const [candles, setCandles] = useState<SessionCandles | null>(null);
   const [rangeCandles, setRangeCandles] = useState<RangeCandles | null>(null);
   const [dossiers, setDossiers] = useState<DossierRow[]>([]);
+  // Right-hand snapshot column; the charts portal their stats into it.
+  const [statsEl, setStatsEl] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
   const [symbolName, setSymbolName] = useState<string | null>(null);
@@ -184,7 +186,8 @@ export function SymbolDetail() {
         </div>
       </header>
 
-      <section>
+      <section className="chart-layout">
+        <div className="chart-main">
         {/* Chart controls: one row riding the top of the chart. */}
         <div className="chart-controls">
           <div className="range-toggle">
@@ -246,6 +249,7 @@ export function SymbolDetail() {
               prevClose={candles.prev_close}
               prevSession={candles.prev_session}
               live={!!candles.delayed}
+              statsTarget={statsEl}
             />
           )
         ) : rangeCandles?.error ? (
@@ -253,8 +257,12 @@ export function SymbolDetail() {
         ) : !rangeCandles || rangeCandles.bars.length === 0 ? (
           <p className="empty-state chart-empty-state">No trading in this range.</p>
         ) : (
-          <RangeCandleChart bars={rangeCandles.bars} timeframe={rangeCandles.timeframe} />
+          <RangeCandleChart bars={rangeCandles.bars} timeframe={rangeCandles.timeframe} statsTarget={statsEl} />
         )}
+        </div>
+        {/* Snapshot column: the chart's stats render here (portal), starting
+            level with the range buttons. */}
+        <aside className="chart-stats-col" ref={setStatsEl} aria-label="Snapshot" />
       </section>
 
       {symbolId !== null && (

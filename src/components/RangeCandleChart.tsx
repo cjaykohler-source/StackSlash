@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PRICE_H, VOL_H } from "./SessionCandleChart";
+import { PRICE_H, VOL_H, portalStats } from "./SessionCandleChart";
 
 /** One split-adjusted SIP bar from the range-candles function. */
 export interface RangeBar {
@@ -22,6 +22,8 @@ export const TIMEFRAME_LABEL: Record<RangeTimeframe, string> = {
 interface Props {
   bars: RangeBar[];
   timeframe: RangeTimeframe;
+  /** Page column to render the snapshot stats into (right side). */
+  statsTarget?: HTMLElement | null;
 }
 
 const LEFT = 8;
@@ -110,7 +112,7 @@ function niceStep(span: number, target: number): number {
  * nights, weekends and holidays leave no gaps. Linear or log price scale;
  * Auto goes log when the range spans AUTO_LOG_RATIO x or more.
  */
-export function RangeCandleChart({ bars, timeframe }: Props) {
+export function RangeCandleChart({ bars, timeframe, statsTarget = null }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<number | null>(null);
@@ -206,6 +208,7 @@ export function RangeCandleChart({ bars, timeframe }: Props) {
 
   return (
     <div className="candle-chart" ref={wrapRef}>
+      {portalStats(statsTarget,
       <div className="candle-stats">
         <select
           className="candle-interval"
@@ -218,14 +221,14 @@ export function RangeCandleChart({ bars, timeframe }: Props) {
           <option value="linear">Linear</option>
           <option value="log">Log</option>
         </select>
+        <span>Close <b>{stats.close != null ? fmtPrice(stats.close) : "—"}</b></span>
+        <span>Change <b className={stats.change == null || stats.change === 0 ? "" : stats.change > 0 ? "up" : "down"}>{stats.change != null ? fmtPct(stats.change) : "—"}</b></span>
         <span>Open <b>{stats.open != null ? fmtPrice(stats.open) : "—"}</b></span>
         <span>High <b>{stats.high != null ? fmtPrice(stats.high) : "—"}</b></span>
         <span>Low <b>{stats.low != null ? fmtPrice(stats.low) : "—"}</b></span>
-        <span>Close <b>{stats.close != null ? fmtPrice(stats.close) : "—"}</b></span>
-        <span>Change <b>{stats.change != null ? fmtPct(stats.change) : "—"}</b></span>
         <span>Volume <b>{fmtVol(stats.volume)}</b></span>
-        <span>{m.n.toLocaleString()} {TIMEFRAME_LABEL[timeframe]} candles</span>
-      </div>
+        <span>Candles <b>{m.n.toLocaleString()} × {TIMEFRAME_LABEL[timeframe]}</b></span>
+      </div>)}
       <svg width={width} height={HEIGHT} onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img"
            aria-label={`${TIMEFRAME_LABEL[timeframe]} candlestick chart with volume`}>
         {yTicks.map((v) => (
