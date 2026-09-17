@@ -290,7 +290,7 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
       "Up at least 10% from today's open.",
       "Trading above VWAP and within 2% of the day's high.",
       "Volume at least 2× normal for this time of day.",
-      "Within the first hour of the session.",
+      "Within the first hour of the session (by the clock: 15-60 minutes in, and at least 10 minutes of it traded).",
     ],
     detail:
       "The strongest intraday finding in this project: across 513 real cases these stocks did worse than a random entry, −2.3% against −1.0% over the next two hours, with the whole confidence range below random. Fires once a day per stock.",

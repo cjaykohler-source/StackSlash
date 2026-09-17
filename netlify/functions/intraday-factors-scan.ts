@@ -154,6 +154,11 @@ export default async () => {
         as_of: nowIso,
         last_price: f.last_price,
         session_bars: f.session_bars,
+        // Elapsed minutes, not traded bars: session_bars counts 1-min bars
+        // that had a trade, which on thin names runs far behind the clock
+        // (median 47 bars at 14:55 ET on 2026-09-17). Time-of-session gates
+        // like Avoid: Don't Chase's first hour must use this.
+        session_minutes: Math.max(0, Math.floor((Date.parse(nowIso) - openTs) / 60_000)),
         cum_volume: f.cum_volume,
         gap_pct: f.gap_pct,
         session_return: f.session_return,
