@@ -26,8 +26,8 @@ import { fetchIntradayBars } from "./lib/alpaca";
  * idempotent). Scheduled via netlify.toml, every 5 min during market hours.
  */
 const PRIORITY_LIQUID = 250;
-const PRIORITY_IN_BAND = 500;
-const MAX_SYMBOLS = 1200;
+const PRIORITY_IN_BAND = 1500; // the whole monitored band (~700 at the $10k floor)
+const MAX_SYMBOLS = 1800;
 const CHUNK = 25; // Alpaca's multi-symbol bars endpoint drops coverage above ~25 on many-page requests
 const UPSERT_BATCH = 5000;
 
@@ -53,7 +53,7 @@ export default async () => {
       db.from("trigger_events").select("symbol_id, symbols(ticker)").gte("ts", `${today}T00:00:00Z`),
       db.from("pending_fires").select("symbol_id, symbols(ticker)").gte("created_at", `${today}T00:00:00Z`),
       db.from("factor_state").select("as_of").order("as_of", { ascending: false }).limit(1).maybeSingle(),
-      db.from("scan_config").select("price_max, min_dollar_vol_20d").eq("id", 1).maybeSingle(),
+      db.from("scan_config").select("price_max, min_dollar_vol_20d, monitor_min_dollar_vol_20d").eq("id", 1).maybeSingle(),
     ]);
     add(tracked.data as never);
     add(events.data as never);
@@ -61,7 +61,7 @@ export default async () => {
 
     const asOf = asOfRow.data?.as_of;
     const priceMax = Number(cfgRow.data?.price_max ?? 3);
-    const minVol = Number(cfgRow.data?.min_dollar_vol_20d ?? 50000);
+    const minVol = Number(cfgRow.data?.monitor_min_dollar_vol_20d ?? cfgRow.data?.min_dollar_vol_20d ?? 10000);
 
     type FsRow = { symbol_id: number; symbols: { ticker: string; alert_excluded: boolean } | null };
     const notExcluded = (rows: FsRow[] | null) => (rows ?? []).filter((r) => r.symbols && !r.symbols.alert_excluded);

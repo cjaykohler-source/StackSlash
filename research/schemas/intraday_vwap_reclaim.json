@@ -1,0 +1,65 @@
+{
+  "name": "intraday_vwap_reclaim",
+  "notes": "Candidate live buy alert: sold off from the open, bounced 3%+ off the low, and just climbed back to 0-2% above VWAP on a minute volume spike. $10k+/day band.",
+  "universe": {
+    "price_min": 0.1,
+    "price_max": 5.0,
+    "min_dollar_vol_20d": 10000,
+    "exchanges": [
+      "NYSE",
+      "NASDAQ",
+      "AMEX",
+      "ARCA",
+      "BATS"
+    ],
+    "include_delisted": true
+  },
+  "window": {
+    "start": "09:45",
+    "end": "15:00"
+  },
+  "entry": {
+    "all": [
+      {
+        "field": "session_ret",
+        "op": "<=",
+        "value": 0
+      },
+      {
+        "field": "pct_off_lod",
+        "op": ">=",
+        "value": 0.03
+      },
+      {
+        "field": "dist_vwap",
+        "op": "between",
+        "value": [
+          0,
+          0.02
+        ]
+      },
+      {
+        "field": "bar_vol_spike",
+        "op": ">=",
+        "value": 2
+      },
+      {
+        "field": "minutes_since_open",
+        "op": ">=",
+        "value": 15
+      }
+    ]
+  },
+  "first_match_only": true,
+  "exit": {
+    "horizons_min": [
+      15,
+      30,
+      60,
+      120
+    ]
+  },
+  "cost": {
+    "flat_pct": 0.01
+  }
+}

@@ -304,13 +304,13 @@ export default async () => {
     }
 
     // --- 5. Evaluate triggers ---
-    // Deliberately excludes category='technical': those are entry-timing
-    // triggers meant to fire only in intraday-scan, only on symbols that
-    // already passed the momentum-rank candidate filter there. Evaluating
-    // them here would run them unrestricted against the whole universe,
-    // defeating that gate entirely (confirmed happening in practice —
-    // NVDA fired bb_rsi_confluence_short here at momentum_rank_pct=0.625,
-    // below intraday-scan's 0.67 candidate threshold).
+    // Includes category='technical' since 2026-09-17. Those used to run only
+    // in intraday-scan at 09:40 — but they read nothing but the prior close's
+    // factors, so they were really next-day setups dressed as intraday ones,
+    // and all fired in one burst. They belong here. The old worry (NVDA
+    // firing bb_rsi_confluence_short unrestricted) no longer applies: the
+    // confluence gate's scan_config price/liquidity band filters every
+    // promotion.
     // Also excludes category='exit': momentum_exit isn't a stateless
     // per-symbol factor check triggers.ts can evaluate — it depends on
     // shadow_positions (is there an open position, how long has it been
@@ -319,7 +319,6 @@ export default async () => {
       .from("triggers")
       .select("id, name, definition, cooldown_minutes, direction")
       .eq("enabled", true)
-      .neq("category", "technical")
       .neq("category", "exit");
     if (trigErr) throw trigErr;
     const cooldownByTriggerId = new Map((triggers ?? []).map((t) => [t.id, t.cooldown_minutes] as const));
@@ -352,7 +351,9 @@ export default async () => {
             symbol_id: row.symbol_id as number,
             // include the latest close so the confluence gate can apply
             // scan_config's price band without its own price lookup.
-            snapshot: { ...row, close: priceBySymbolId.get(row.symbol_id as number) ?? null },
+            // delivery: "digest" — after-close setups go out as one ranked
+            // next-day-targets card (eod-digest), not a card each.
+            snapshot: { ...row, close: priceBySymbolId.get(row.symbol_id as number) ?? null, delivery: "digest" },
           });
         }
       }
