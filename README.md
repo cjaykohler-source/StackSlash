@@ -132,6 +132,8 @@ derivations. Everything here was built and verified 2026-09-15 → 09-17.
     09:40 intraday scan), Trend Turning Up (`macd_bullish_cross`), Breakout
     After Quiet Period Up, **Earnings Release** (`earnings_release`: 8-K item
     2.02 filed the previous session; 20-session hold, 25% disaster stop)
+  - Watch: **Big-Move Watchlist** (`bigmove_watchlist`, added 2026-09-17:
+    big-move score >= 3 — see "The trigger redesign" below)
   - Sell/avoid: Breakout After Quiet Period Down, **Avoid: Volume Blow-off**
     (≥25x), **Avoid: Reverse Split** (ex-date last 4 weeks / next 30 days,
     Alpaca corporate actions; once per 30 days)
@@ -149,7 +151,10 @@ derivations. Everything here was built and verified 2026-09-15 → 09-17.
   one row per stock+trigger+session. Symbol page: right-hand snapshot column
   (price stats, then the factor snapshot incl. 1w/1m/3m/6m/1y average
   volume, values under labels) running down the page; trigger status grouped
-  Buy / Watch / Avoid / Exit and evaluated live for fast triggers; dossiers
+  Buy / Watch / Avoid / Exit and evaluated live for fast triggers (event
+  triggers — `earnings_release`, `avoid_reverse_split`, `bigmove_watchlist` —
+  show their last fire inside its window instead, since `factor_state` has no
+  field to evaluate); dossiers
   (no news links) with older sessions folded; company description from FMP
   (`symbols.description`, band-first sync, on-demand `company-profile`) →
   Wikipedia fallback; sector-roundup headlines filtered everywhere.
@@ -172,28 +177,93 @@ sealed holdout.
 
 ### Verify next session
 
-- `scan_config` floors are 800000 / 2500000; then
+Checked 2026-09-17 ~13:30 ET (mid-session, so the evening jobs had not run):
+
+- Live engine **healthy**: every job in `job_runs` ok; Heavy Volume Breakout
+  14 fires, 14 Discord cards sent, no `alerts.error`; `intraday-scan` last
+  ran 14:30 UTC (unscheduled, as intended). Seven Watch positions opened
+  before the 12:04 ET Buy/Watch/Sell commit and were all cancelled
+  `watch_not_buy`; none since. **Nothing broken.**
+- **Avoid: Don't Chase fired 0 times.** `intraday_factor_state` keeps only
+  the latest snapshot, so the first hour could not be replayed. Suspect:
+  `session_bars` counts IEX 1-min bars that traded, not minutes elapsed, so
+  the 15-60 gate may never open on thin names. Worth an explicit check.
+
+Still to verify (they had not run yet):
+
+- `scan_config` floors are 800000 / 2500000 (the one-shot ran 16:01); then
   `launchctl unload ~/Library/LaunchAgents/com.stackslash.set-sip-floors-once.plist`.
-- Tonight's first SIP `eod-scan` (17:45): `job_runs` ok, `factor_state`
-  `avg_volume_*` populated, sane fire counts; `eod-digest` (18:10)
-  `rows_processed > 0` and one Discord card; `earnings_release` /
+- Tonight's first SIP `eod-scan` (17:45) — also the **first run of the
+  bigmove_watchlist code**, which has only been type-checked: `job_runs` ok,
+  `factor_state` `avg_volume_*` populated, sane fire counts, and
+  `bigmove_watchlist` fires (expect ~2-12/day at the $2.5M floor);
+  `eod-digest` (18:10) `rows_processed > 0`, one Discord card with the new
+  Big-Move Watchlist names under Watch; `earnings_release` /
   `avoid_reverse_split` fires plausible.
 - `data-integrity-check` (19:45): counts move after the SIP reload and
   placeholder delete — a regression card may be benign; check before acting.
-- Live engine: Heavy Volume Breakout / Don't Chase counts; no tracked
-  positions for Watch; `alerts.error` explains any failed card.
 - `refresh-spread-estimates` (Sun) and `weekly-bars-scan` (Mon) on SIP bars.
+
+### The trigger redesign (2026-09-17, afternoon)
+
+**Big-move watchlist — built and live** (`bigmove_watchlist`, category
+`watch`, after close). One point each for: volume >= 3x the prior 20-day
+average, a >= 10% close-to-close move, a day range >= 2x the prior 14-day
+ATR, and an 8-K filed since the previous session. Fires at **3+**.
+
+`research/bigmove_study.py` (SIP daily + EDGAR acceptance times, $800k
+floor, next session vs a random in-band day):
+
+| | 2016-21 | 2022+ |
+|---|---|---|
+| random in-band day moves >= 10% | 6.7% | 9.3% |
+| score >= 3 | **35.4%** (5.3x) | **42.8%** (4.6x) |
+| score >= 2 | 27.6% (4.1x) | 34.8% (3.8x) |
+| score >= 3, touches +/-20% intraday | 26.5% (7.6x) | 36.4% (7.7x) |
+
+Volatile names move more on any day, so the study also cuts the lift within
+estimated-spread tiers: score >= 3 still runs **3.3-9.4x** its tier's base
+rate in both periods. Only ~36% of those moves are up and 1/5-day net
+returns are negative, so this is **Watch, never Buy** — a next-session
+watchlist, not a setup.
+
+**Spread / liquidity tiers.** Dollar-volume tiers barely move next-session
+outcomes (10%+ move 5.5-8.7% in 2016-21 across every tier from <$250k to
+>=$10M); the floors are a tradability choice, not an edge. The daily
+high/low/close spread estimate (Abdi-Ranaldo) is really a volatility proxy:
+its top tier (>= 4%) has the highest big-move rates **and** the worst net
+returns (-6.4% / -7.5% at 1 day). Nothing here argues for moving the floors.
+
+**Catalyst + volume (live) — tested, do not build.** `schema_lab.py` gained
+point-in-time 8-K fields (`mins_since_8k`, `filed_8k_202`) and a
+`universe.require_8k` pool filter. Minute-level runs, entry from 09:45,
+2016-21 discovery (~12k sessions each), 10%+ move by the close, gross:
+
+| schema | n | >= 10% by close | touches +/-10% | net by close |
+|---|---|---|---|---|
+| `random_session_0945` (control) | 11,979 | 4.0% | 9.5% | -0.96% |
+| `volume_no_catalyst_800k` | 6,100 | **3.4%** | 7.3% | -0.92% |
+| `catalyst_8k_baseline` (8-K, no volume rule) | 12,057 | **8.5%** | 19.6% | -1.11% |
+| `catalyst_8k_volume` (8-K + volume) | 7,556 | 7.8% | 16.5% | -1.03% |
+| `catalyst_8k_volume`, 2022+ holdout | 1,488 | 10.0% | 19.3% | -0.80% |
+
+The 8-K is the whole signal (~2x a random session); the volume conditions
+**subtract** and drop ~38% of sessions, and intraday volume alone is *worse*
+than a random session. Net returns are ~-1% everywhere: attention, not a
+trade. The 8-K already counts toward the after-close score, so the most this
+justifies is a Watch note ("8-K filed today") on names already listed.
 
 ### Open decisions / next steps
 
-- `scan_config.min_confluence = 1` (the confluence gate is off).
-- Trigger redesign remaining: **big-move watchlist** (after close) and a
-  **catalyst + volume** live trigger (score with the big-move metric);
-  **spread / liquidity tier** study; decide the fate of Oversold Bounce,
-  Trend Turning Up and both Quiet Period breakouts (no edge after costs).
-- Symbol page trigger status evaluates event triggers (`earnings_release`,
-  `avoid_reverse_split`) against `factor_state`, so they always read "Not
-  now"; show their last fire instead.
+- **Decision for the user: `scan_config.min_confluence = 1`** (gate off) —
+  every lone fire promotes while the UI still shows "N signals" badges.
+  Turn the gate on (2) or remove it and the badges?
+- **Recommended, not done** (20-day net, 2016-21 / 2022+; random day +1.8% /
+  -3.2%): disable **Trend Turning Up** (-0.1% / -3.3%, indistinguishable from
+  random) and both **Quiet Period** breakouts (up: n=160, tail-driven; down:
+  never studied); disable or demote to Watch **Oversold Bounce** (-1.0% /
+  -2.6%). If all go, Targets holds only Earnings Release — which is the
+  honest state of the evidence.
 - Code fallbacks for the dollar-volume floors (50000 / 10000) in several
   functions are still IEX-scale (used only if scan_config is unreadable).
 - IBKR on hold (paid bundles not started).
