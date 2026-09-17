@@ -224,15 +224,30 @@ export const TRIGGER_INFO: Record<string, TriggerInfo> = {
     category: "intraday",
     categoryLabel: "Intraday",
     timing: "intraday",
-    summary: "Volume is running far above normal and price just broke out of its opening range.",
+    summary: "Volume is running well above normal for the time of day and price just broke out of its opening range.",
     conditions: [
-      "Volume so far is at least 3× normal for this time of day.",
-      "Price broke above the first 15 minutes' high.",
+      "Volume so far is at least 2× normal for this time of day.",
+      "Price is above the first 15 minutes' high.",
       "Trading above VWAP.",
-      "At least 20 minutes into the session, and within 3% of the day's high.",
+      "Within 2% of the day's high, and at least 20 minutes into the session.",
     ],
-    offReason:
-      "Tested on 8,049 real breakouts in this price band: the average trade returns exactly the round-trip cost, so the gross move is about zero. Only 16% are winners after 15 minutes, and every year from 2016 to 2021 loses money. Demanding much heavier volume made it worse, not better.",
+    detail:
+      "Checked live every 5 minutes across every $0.10–$5 stock trading $10k+ a day; fires at most once an hour per stock. Tested on 8,049 real breakouts: roughly break-even before costs and a little better than a random entry by the close, so treat it as where the action is right now, not a proven edge. Every alert is followed by an Exit Warning.",
+  },
+  avoid_chase_extended: {
+    label: "Avoid: Don't Chase",
+    category: "avoid",
+    categoryLabel: "Avoid",
+    timing: "intraday",
+    summary: "Already up 10%+ in the first hour and pinned at the high — historically a bad moment to buy.",
+    conditions: [
+      "Up at least 10% from today's open.",
+      "Trading above VWAP and within 2% of the day's high.",
+      "Volume at least 2× normal for this time of day.",
+      "Within the first hour of the session.",
+    ],
+    detail:
+      "The strongest intraday finding in this project: across 513 real cases these stocks did worse than a random entry, −2.3% against −1.0% over the next two hours, with the whole confidence range below random. Fires once a day per stock.",
   },
   vwap_reclaim: {
     label: "VWAP Reclaim",
@@ -308,6 +323,7 @@ const SELL_TRIGGERS = new Set([
   "volatility_squeeze_breakout_short",
   "exit_warning",
   "avoid_volume_blowoff",
+  "avoid_chase_extended",
 ]);
 
 export function triggerSide(name: string | null): "buy" | "sell" {

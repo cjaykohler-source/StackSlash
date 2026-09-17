@@ -38,6 +38,7 @@ const LABELS: Record<string, string> = {
   squeeze_release_intraday: "Squeeze Release (Intraday)",
   exit_warning: "Exit Warning",
   avoid_volume_blowoff: "Avoid: Volume Blow-off",
+  avoid_chase_extended: "Avoid: Don't Chase",
 };
 
 const SELL_TRIGGERS = new Set([
@@ -47,6 +48,7 @@ const SELL_TRIGGERS = new Set([
   "momentum_exit",
   "exit_warning",
   "avoid_volume_blowoff",
+  "avoid_chase_extended",
 ]);
 
 const COLOR = { buy: 0x2ecc71, sell: 0xe74c3c, high: 0xff6b00, ops: 0xf1c40f };

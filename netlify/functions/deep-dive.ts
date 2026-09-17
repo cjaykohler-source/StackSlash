@@ -454,6 +454,11 @@ export default async (req: Request) => {
   if (triggerCategory === "avoid" && snapshot.volume_ratio_20d != null) {
     rows.push(["Volume", `${Math.round(Number(snapshot.volume_ratio_20d))}x normal`]);
   }
+  // Live intraday alerts carry session factors: show the move and the volume.
+  if (snapshot.source === "intraday-live") {
+    if (snapshot.session_return != null) rows.push(["Today", pct(snapshot.session_return)]);
+    if (snapshot.rvol != null) rows.push(["Rel vol", `${Number(snapshot.rvol).toFixed(1)}x`]);
+  }
   if (fz != null) rows.push(["Zacks", String(["", "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"][fz] ?? fz)]);
   if (fundamentals?.net_cash_to_mktcap != null) rows.push(["Net cash", `${pct(fundamentals.net_cash_to_mktcap)} of cap`]);
   if (fundamentals?.revenue_growth_yoy != null) rows.push(["Rev YoY", pct(fundamentals.revenue_growth_yoy)]);
