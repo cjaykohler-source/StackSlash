@@ -941,6 +941,18 @@ body {
   stroke: var(--text-dim);
   stroke-dasharray: 3 3;
 }
+/* One-month average volume at the candle size: dotted, amber so it reads
+   apart from the green/red bars and the dashed grey crosshair. */
+.cc-vol-avg {
+  fill: none;
+  stroke: #f5b942;
+  stroke-width: 1.5;
+  stroke-dasharray: 1.5 3;
+  stroke-linecap: round;
+}
+.cc-vol-avg-label {
+  fill: #f5b942;
+}
 .cc-cross-label {
   fill: var(--text);
   font-weight: 600;
@@ -963,6 +975,9 @@ body {
 }
 .cc-key-prev::before {
   border-top: 2px dashed var(--text-dim);
+}
+.cc-key-vol-avg::before {
+  border-top: 2px dotted #f5b942;
 }
 .cc-legend-note {
   margin-left: auto;

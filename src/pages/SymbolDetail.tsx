@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { etDateString } from "../lib/marketTime";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
@@ -11,6 +11,7 @@ import { SessionCandleChart, type Candle, type PrevSession } from "../components
 import { RangeCandleChart, TIMEFRAME_LABEL, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
 import { BrandHomeLink } from "../components/BrandHomeLink";
 import { TrackButton } from "../components/TrackButton";
+import { loadDailyVolumes, volumeBaseline, type DailyVolume } from "../lib/dailyVolume";
 
 type Range = "session" | "week" | "month" | "year" | "18mo" | "5y" | "since2016";
 
@@ -62,8 +63,11 @@ interface RangeCandles {
  * Every range is candles from the consolidated tape (SIP), fetched on
  * demand and not stored: Session is one day's 1-minute bars
  * (session-candles, raw prices); Week through Since 2016 are 30-min,
- * daily, weekly or monthly split-adjusted bars (range-candles). Nothing
- * here reads production bars_daily/bars_intraday, which are IEX-only.
+ * daily, weekly or monthly split-adjusted bars (range-candles). The one
+ * thing read from bars_daily is its daily volume, for the charts' dotted
+ * one-month-average line: bars_daily has been the consolidated tape too
+ * since the 2026-09-17 SIP reload, so the scales match. bars_intraday
+ * (IEX) is not used here.
  */
 export function SymbolDetail() {
   const { ticker } = useParams<{ ticker: string }>();
@@ -80,6 +84,9 @@ export function SymbolDetail() {
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
   const [symbolName, setSymbolName] = useState<string | null>(null);
+  // Daily volumes for the charts' average-volume line; loaded once per symbol.
+  const [dailyVolumes, setDailyVolumes] = useState<DailyVolume[]>([]);
+  const baseline = useMemo(() => (dailyVolumes.length ? volumeBaseline(dailyVolumes) : null), [dailyVolumes]);
   // Only the latest chart request may set state (fast range clicks).
   const chartReq = useRef(0);
   // Poll the live quote every 30s (matches the quotes function's edge cache).
@@ -140,6 +147,10 @@ export function SymbolDetail() {
       if (!symbol || cancelled) return;
       setSymbolId(symbol.id);
       setSymbolName(symbol.name);
+      setDailyVolumes([]);
+      loadDailyVolumes(symbol.id).then((rows) => {
+        if (!cancelled) setDailyVolumes(rows);
+      });
       await loadDossiers(symbol.id);
     }
     init();
@@ -259,6 +270,14 @@ export function SymbolDetail() {
               prevSession={candles.prev_session}
               live={!!candles.delayed}
               statsTarget={statsEl}
+              avgDailyVolume={
+                baseline
+                  ? baseline.advBefore(
+                      candles.session_date ??
+                        new Date(Date.parse(candles.bars[0].t)).toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+                    )
+                  : null
+              }
             />
           )
         ) : rangeCandles?.error ? (
@@ -266,7 +285,12 @@ export function SymbolDetail() {
         ) : !rangeCandles || rangeCandles.bars.length === 0 ? (
           <p className="empty-state chart-empty-state">No trading in this range.</p>
         ) : (
-          <RangeCandleChart bars={rangeCandles.bars} timeframe={rangeCandles.timeframe} statsTarget={statsEl} />
+          <RangeCandleChart
+            bars={rangeCandles.bars}
+            timeframe={rangeCandles.timeframe}
+            statsTarget={statsEl}
+            baseline={baseline}
+          />
         )}
         </div>
       </section>

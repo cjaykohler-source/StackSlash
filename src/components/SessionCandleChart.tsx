@@ -32,6 +32,12 @@ interface Props {
   live?: boolean;
   /** Page column to render the snapshot stats into (right side). */
   statsTarget?: HTMLElement | null;
+  /**
+   * Average daily volume over the month before this session (see
+   * lib/dailyVolume.ts). Drawn as a dotted line at its per-candle share, so
+   * each volume bar reads as above or below a normal pace.
+   */
+  avgDailyVolume?: number | null;
 }
 
 const LEFT = 8;
@@ -97,7 +103,14 @@ function niceStep(span: number, target: number): number {
  * Plain SVG rather than recharts: recharts has no candlestick, and a
  * session is at most ~960 bars, so direct drawing stays light.
  */
-export function SessionCandleChart({ bars, prevClose, prevSession = null, live = false, statsTarget = null }: Props) {
+export function SessionCandleChart({
+  bars,
+  prevClose,
+  prevSession = null,
+  live = false,
+  statsTarget = null,
+  avgDailyVolume = null,
+}: Props) {
   const height = HEIGHT;
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
@@ -203,7 +216,13 @@ export function SessionCandleChart({ bars, prevClose, prevSession = null, live =
     lo -= pad;
     hi += pad;
     const py = (p: number) => TOP + ((hi - p) / (hi - lo)) * priceH;
-    const maxV = Math.max(1, ...pts.map((p) => p.v));
+    // The month's average daily volume spread evenly over the 390-minute
+    // session, at this candle size. Real intraday volume is U-shaped (heavy
+    // at the open and close), so mid-day bars sitting under this line is
+    // normal; it's the pace a flat day would run at, as asked for.
+    const avgPerCandle = avgDailyVolume != null && avgDailyVolume > 0 ? (avgDailyVolume * k) / SESSION_MINUTES : null;
+    // Keep the line on the pane even when every bar is below it.
+    const maxV = Math.max(1, ...pts.map((p) => p.v), avgPerCandle != null ? avgPerCandle * 1.1 : 0);
 
     // Running session VWAP over the regular session. Bar vwap falls back to
     // the close; a vendor-garbage vwap far outside the bar's range is ignored.
@@ -231,11 +250,11 @@ export function SessionCandleChart({ bars, prevClose, prevSession = null, live =
       minutesTraded: raw.length,
     };
 
-    return { pts, k, auto, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi };
-  }, [bars, prevClose, width, choice, live]);
+    return { pts, k, auto, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi, avgPerCandle };
+  }, [bars, prevClose, width, choice, live, avgDailyVolume]);
 
   if (!bars.length) return null;
-  const { pts, k, auto, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats } = m;
+  const { pts, k, auto, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats, avgPerCandle } = m;
   if (!pts.length) {
     return <p className="empty-state chart-empty-state">No regular-session trades this day (extended hours only).</p>;
   }
@@ -339,6 +358,17 @@ export function SessionCandleChart({ bars, prevClose, prevSession = null, live =
           );
         })}
 
+        {/* one-month average volume, per candle */}
+        {avgPerCandle != null && (
+          <g>
+            <line x1={LEFT} x2={width - RIGHT} y1={volBase - (avgPerCandle / maxV) * volH}
+                  y2={volBase - (avgPerCandle / maxV) * volH} className="cc-vol-avg" />
+            <text x={width - RIGHT + 6} y={volBase - (avgPerCandle / maxV) * volH + 4} className="cc-label cc-vol-avg-label">
+              {fmtVol(avgPerCandle)}
+            </text>
+          </g>
+        )}
+
         {/* candles */}
         {pts.map((p, i) => {
           const up = p.c >= p.o;
@@ -369,6 +399,11 @@ export function SessionCandleChart({ bars, prevClose, prevSession = null, live =
       </svg>
       <div className="candle-legend">
         <span className="cc-key cc-key-vwap">VWAP (regular session)</span>
+        {avgPerCandle != null && (
+          <span className="cc-key cc-key-vol-avg" title="Average daily volume over the prior 21 sessions, spread evenly across the 390-minute session at this candle size.">
+            avg volume per {k}-min, last month
+          </span>
+        )}
         {prevClose != null && <span className="cc-key cc-key-prev">prior close {fmtPrice(prevClose)}</span>}
         <span className="cc-legend-note">regular session 9:30a–4:00p ET</span>
       </div>
@@ -378,7 +413,11 @@ export function SessionCandleChart({ bars, prevClose, prevSession = null, live =
           <div>O {fmtPrice(hp.o)} · H {fmtPrice(hp.h)}</div>
           <div>L {fmtPrice(hp.l)} · C {fmtPrice(hp.c)}</div>
           <div>vs prev close {change(hp.c)}</div>
-          <div>Vol {fmtVol(hp.v)}{hp.n != null ? ` · ${hp.n.toLocaleString()} trades` : ""}</div>
+          <div>
+            Vol {fmtVol(hp.v)}
+            {avgPerCandle != null ? ` · ${(hp.v / avgPerCandle).toFixed(1)}× avg` : ""}
+            {hp.n != null ? ` · ${hp.n.toLocaleString()} trades` : ""}
+          </div>
           {vwap[hover] != null && <div>VWAP {fmtPrice(vwap[hover]!)}</div>}
         </div>
       )}
