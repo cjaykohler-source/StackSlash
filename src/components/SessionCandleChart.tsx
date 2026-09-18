@@ -33,11 +33,13 @@ interface Props {
   /** Page column to render the snapshot stats into (right side). */
   statsTarget?: HTMLElement | null;
   /**
-   * Average daily volume over the month before this session (see
-   * lib/dailyVolume.ts). Drawn as a dotted line at its per-candle share, so
-   * each volume bar reads as above or below a normal pace.
+   * Typical (median) daily volume over the 20 sessions before this one (see
+   * lib/volumeBaseline.ts). Drawn as a dotted line at its per-candle share,
+   * so each volume bar reads as above or below a normal pace.
    */
-  avgDailyVolume?: number | null;
+  typicalDailyVolume?: number | null;
+  /** Controls row element to render the candle-interval picker into. */
+  controlsTarget?: HTMLElement | null;
 }
 
 const LEFT = 8;
@@ -109,7 +111,8 @@ export function SessionCandleChart({
   prevSession = null,
   live = false,
   statsTarget = null,
-  avgDailyVolume = null,
+  typicalDailyVolume = null,
+  controlsTarget = null,
 }: Props) {
   const height = HEIGHT;
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -216,11 +219,13 @@ export function SessionCandleChart({
     lo -= pad;
     hi += pad;
     const py = (p: number) => TOP + ((hi - p) / (hi - lo)) * priceH;
-    // The month's average daily volume spread evenly over the 390-minute
-    // session, at this candle size. Real intraday volume is U-shaped (heavy
-    // at the open and close), so mid-day bars sitting under this line is
-    // normal; it's the pace a flat day would run at, as asked for.
-    const avgPerCandle = avgDailyVolume != null && avgDailyVolume > 0 ? (avgDailyVolume * k) / SESSION_MINUTES : null;
+    // The typical day spread evenly over the 390-minute session, at this
+    // candle size. Real intraday volume is U-shaped (heavy at the open and
+    // close), so mid-day bars sitting under this line is normal; it's the
+    // pace a flat day would run at. (Daily volume includes extended hours,
+    // so this runs a few percent above a pure regular-session pace.)
+    const avgPerCandle =
+      typicalDailyVolume != null && typicalDailyVolume > 0 ? (typicalDailyVolume * k) / SESSION_MINUTES : null;
     // Keep the line on the pane even when every bar is below it.
     const maxV = Math.max(1, ...pts.map((p) => p.v), avgPerCandle != null ? avgPerCandle * 1.1 : 0);
 
@@ -251,7 +256,7 @@ export function SessionCandleChart({
     };
 
     return { pts, k, auto, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi, avgPerCandle };
-  }, [bars, prevClose, width, choice, live, avgDailyVolume]);
+  }, [bars, prevClose, width, choice, live, typicalDailyVolume]);
 
   if (!bars.length) return null;
   const { pts, k, auto, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats, avgPerCandle } = m;
@@ -293,27 +298,32 @@ export function SessionCandleChart({
       ? `Prior session ${prevSession.date}${prevSession.through_minute < 390 ? ` (through the same time of day)` : ""}: ${v}`
       : undefined;
 
+  const intervalPicker = (
+    <select
+      className="candle-interval"
+      value={choice}
+      onChange={(e) => {
+        setHover(null);
+        setChoice(e.target.value === "auto" ? "auto" : (Number(e.target.value) as Interval));
+      }}
+      title={`Candle size. Auto picks the finest interval where at least ${AUTO_MIN_COVERAGE * 100}% of slots traded and the session fits in ${AUTO_MAX_CANDLES} candles or fewer. Here: ${Math.round(auto.coverage * 100)}% of ${auto.k}-min slots traded.`}
+      aria-label="Candle interval"
+    >
+      <option value="auto">Auto ({auto.k}m)</option>
+      {INTERVALS.map((iv) => (
+        <option key={iv} value={iv}>
+          {iv}m
+        </option>
+      ))}
+    </select>
+  );
+
   return (
     <div className="candle-chart" ref={wrapRef}>
+      {/* Candle size sits in the page's controls row, right of the range buttons. */}
+      {controlsTarget ? createPortal(intervalPicker, controlsTarget) : intervalPicker}
       {portalStats(statsTarget,
       <div className="candle-stats">
-        <select
-          className="candle-interval"
-          value={choice}
-          onChange={(e) => {
-            setHover(null);
-            setChoice(e.target.value === "auto" ? "auto" : (Number(e.target.value) as Interval));
-          }}
-          title={`Auto picks the finest interval where at least ${AUTO_MIN_COVERAGE * 100}% of slots traded and the session fits in ${AUTO_MAX_CANDLES} candles or fewer. Here: ${Math.round(auto.coverage * 100)}% of ${auto.k}-min slots traded.`}
-          aria-label="Candle interval"
-        >
-          <option value="auto">Auto ({auto.k}m)</option>
-          {INTERVALS.map((iv) => (
-            <option key={iv} value={iv}>
-              {iv}m
-            </option>
-          ))}
-        </select>
         {/* Green = better than the prior session, red = worse: prices vs the
             prior close, activity vs the prior session (same time of day
             while this one is live). */}
@@ -400,8 +410,8 @@ export function SessionCandleChart({
       <div className="candle-legend">
         <span className="cc-key cc-key-vwap">VWAP (regular session)</span>
         {avgPerCandle != null && (
-          <span className="cc-key cc-key-vol-avg" title="Average daily volume over the prior 21 sessions, spread evenly across the 390-minute session at this candle size.">
-            avg volume per {k}-min, last month
+          <span className="cc-key cc-key-vol-avg" title="Median daily volume over the prior 20 sessions, spread evenly across the 390-minute session at this candle size. The median, so one spike day can't inflate it.">
+            typical volume per {k}-min, prior 20 sessions
           </span>
         )}
         {prevClose != null && <span className="cc-key cc-key-prev">prior close {fmtPrice(prevClose)}</span>}
@@ -415,7 +425,7 @@ export function SessionCandleChart({
           <div>vs prev close {change(hp.c)}</div>
           <div>
             Vol {fmtVol(hp.v)}
-            {avgPerCandle != null ? ` · ${(hp.v / avgPerCandle).toFixed(1)}× avg` : ""}
+            {avgPerCandle != null ? ` · ${(hp.v / avgPerCandle).toFixed(1)}× typical` : ""}
             {hp.n != null ? ` · ${hp.n.toLocaleString()} trades` : ""}
           </div>
           {vwap[hover] != null && <div>VWAP {fmtPrice(vwap[hover]!)}</div>}

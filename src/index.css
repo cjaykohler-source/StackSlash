@@ -2259,3 +2259,139 @@ h1 .quote-tag {
   font-size: 0.75rem;
   white-space: nowrap;
 }
+
+/* Candle-size picker, riding the controls row right of "Since 2016". Sized
+   like the range buttons it sits beside. */
+.interval-slot:empty {
+  display: none;
+}
+.interval-slot .candle-interval {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* Chart and the volume meter side by side; the meter column is a little
+   narrower than the 210px metrics column and starts level with the candle
+   pane (the chart's 10px top inset). */
+.chart-with-meter {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.chart-body {
+  flex: 1;
+  min-width: 0;
+}
+.volume-meter {
+  flex: 0 0 180px;
+  width: 180px;
+  margin-top: 10px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.volume-meter-head {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  box-sizing: border-box;
+}
+.volume-meter-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+}
+.volume-meter-mult {
+  font-size: 1.35rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.volume-meter-sub,
+.volume-meter-foot {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.volume-meter-svg {
+  flex: 1;
+  overflow: visible;
+}
+.volume-meter-foot {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  line-height: 1.3;
+}
+.vm-track {
+  fill: color-mix(in srgb, var(--border) 45%, transparent);
+}
+.vm-fill.under {
+  fill: var(--text-dim);
+  fill-opacity: 0.55;
+}
+.vm-fill.over {
+  fill: var(--brand-green);
+  fill-opacity: 0.75;
+}
+.vm-fill.warm {
+  fill: #f5b942;
+  fill-opacity: 0.85;
+}
+.vm-fill.hot {
+  fill: var(--red);
+  fill-opacity: 0.85;
+}
+.vm-overflow {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vm-line {
+  stroke: var(--text-dim);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.vm-line-1x {
+  stroke: #f5b942;
+  stroke-width: 1.5;
+  stroke-dasharray: 1.5 3;
+  stroke-linecap: round;
+}
+.vm-label {
+  fill: var(--text-dim);
+  font-size: 11px;
+}
+.vm-label-1x {
+  fill: #f5b942;
+  font-weight: 600;
+}
+.volume-meter-mult.under {
+  color: var(--text-dim);
+}
+.volume-meter-mult.over {
+  color: var(--brand-green);
+}
+.volume-meter-mult.warm {
+  color: #f5b942;
+}
+.volume-meter-mult.hot {
+  color: var(--red);
+}
+@media (max-width: 900px) {
+  .chart-with-meter {
+    flex-direction: column;
+  }
+  .volume-meter {
+    width: 100%;
+    flex-basis: auto;
+    height: auto !important;
+  }
+}

@@ -1,7 +1,7 @@
 import { supabase } from "./supabaseClient";
 import type { DailyVolume } from "./volumeBaseline";
 
-export { ADV_WINDOW, volumeBaseline, type DailyVolume, type VolumeBaseline } from "./volumeBaseline";
+export { BASELINE_SESSIONS, volumeBaseline, type DailyVolume, type VolumeBaseline } from "./volumeBaseline";
 
 /**
  * Every daily volume stored for a symbol, oldest first. bars_daily is the

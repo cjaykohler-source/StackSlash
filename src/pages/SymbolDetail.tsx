@@ -11,16 +11,16 @@ import { SessionCandleChart, type Candle, type PrevSession } from "../components
 import { RangeCandleChart, TIMEFRAME_LABEL, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
 import { BrandHomeLink } from "../components/BrandHomeLink";
 import { TrackButton } from "../components/TrackButton";
+import { VolumeMeter } from "../components/VolumeMeter";
 import { loadDailyVolumes, volumeBaseline, type DailyVolume } from "../lib/dailyVolume";
 
-type Range = "session" | "week" | "month" | "year" | "18mo" | "5y" | "since2016";
+type Range = "session" | "week" | "month" | "year" | "5y" | "since2016";
 
 const RANGE_OPTIONS: { key: Range; label: string }[] = [
   { key: "session", label: "Session" },
   { key: "week", label: "Week" },
   { key: "month", label: "Month" },
   { key: "year", label: "Year" },
-  { key: "18mo", label: "18 Months" },
   { key: "5y", label: "5 Years" },
   { key: "since2016", label: "Since 2016" },
 ];
@@ -84,6 +84,10 @@ export function SymbolDetail() {
   const [loading, setLoading] = useState(false);
   const [symbolId, setSymbolId] = useState<number | null>(null);
   const [symbolName, setSymbolName] = useState<string | null>(null);
+  // Controls-row slot the Session chart renders its candle-size picker into.
+  const [intervalEl, setIntervalEl] = useState<HTMLElement | null>(null);
+  // The latest session, for the volume meter while a longer range is shown.
+  const [latestSession, setLatestSession] = useState<SessionCandles | null>(null);
   // Daily volumes for the charts' average-volume line; loaded once per symbol.
   const [dailyVolumes, setDailyVolumes] = useState<DailyVolume[]>([]);
   const baseline = useMemo(() => (dailyVolumes.length ? volumeBaseline(dailyVolumes) : null), [dailyVolumes]);
@@ -159,6 +163,29 @@ export function SymbolDetail() {
     };
   }, [ticker, loadDossiers]);
 
+  // The meter always measures a session: the selected one on the Session
+  // view, and the most recent one on every longer range. Refreshed each
+  // minute while that session is still trading.
+  useEffect(() => {
+    if (!ticker || range === "session") return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(`/.netlify/functions/session-candles?symbol=${encodeURIComponent(ticker)}`, { cache: "no-cache" });
+        const body = (await res.json()) as SessionCandles;
+        if (!cancelled) setLatestSession(body);
+      } catch {
+        /* the meter just stays empty */
+      }
+    };
+    load();
+    const id = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [ticker, range]);
+
   // The chart needs only the ticker (the functions fetch from Alpaca), so it
   // loads in parallel with the symbol lookup above.
   useEffect(() => {
@@ -182,6 +209,23 @@ export function SymbolDetail() {
     : null;
   const currentDossiers = dossiers.filter((d) => etDateString(Date.parse(d.ts)) === newestSession);
   const olderDossiers = dossiers.filter((d) => etDateString(Date.parse(d.ts)) !== newestSession);
+
+  // Volume meter: whichever session is in view, against the typical day
+  // before it.
+  const meterSource = range === "session" ? candles : latestSession;
+  const meter = (() => {
+    const bars = meterSource?.bars ?? [];
+    if (!bars.length) return { volume: null, typical: null, date: meterSource?.session_date ?? null, live: false };
+    const date =
+      meterSource?.session_date ??
+      new Date(Date.parse(bars[0].t)).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    return {
+      volume: bars.reduce((sum, b) => sum + b.v, 0),
+      typical: baseline ? baseline.typicalBefore(date) : null,
+      date,
+      live: !!meterSource?.delayed,
+    };
+  })();
 
   return (
     <div className="page">
@@ -221,6 +265,8 @@ export function SymbolDetail() {
               </button>
             ))}
           </div>
+          {/* Candle size (Session view only; longer ranges pick their own). */}
+          <div className="interval-slot" ref={setIntervalEl} />
           {range === "session" && (
             <div className="session-picker">
               <button
@@ -254,6 +300,8 @@ export function SymbolDetail() {
               : `SIP consolidated tape, ${rangeCandles ? TIMEFRAME_LABEL[rangeCandles.timeframe] : ""} bars, split-adjusted`}
           </span>
         </div>
+        <div className="chart-with-meter">
+        <div className="chart-body">
         {loading ? (
           <p className="empty-state chart-empty-state">Loading…</p>
         ) : range === "session" ? (
@@ -270,14 +318,8 @@ export function SymbolDetail() {
               prevSession={candles.prev_session}
               live={!!candles.delayed}
               statsTarget={statsEl}
-              avgDailyVolume={
-                baseline
-                  ? baseline.advBefore(
-                      candles.session_date ??
-                        new Date(Date.parse(candles.bars[0].t)).toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
-                    )
-                  : null
-              }
+              controlsTarget={intervalEl}
+              typicalDailyVolume={meter.typical}
             />
           )
         ) : rangeCandles?.error ? (
@@ -292,6 +334,9 @@ export function SymbolDetail() {
             baseline={baseline}
           />
         )}
+        </div>
+        <VolumeMeter volume={meter.volume} typical={meter.typical} sessionDate={meter.date} live={meter.live} />
+        </div>
         </div>
       </section>
 
