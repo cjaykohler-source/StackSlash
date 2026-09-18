@@ -76,6 +76,13 @@ function dayLabel(key: string): string {
   });
 }
 
+/** "3:22" — hour and minute only, for the compact re-fire note. */
+function hourMinute(iso: string): string {
+  return new Date(iso)
+    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
+    .replace(/\s?[AP]M$/i, "");
+}
+
 function timeOnly(iso: string): string {
   return new Date(iso).toLocaleTimeString([], {
     hour: "2-digit",
@@ -300,8 +307,11 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
         <td>
           {timeOnly(row.ts)}
           {row.fireCount > 1 && (
-            <span className="feed-refire" title="Fired again later this session; Fired at is the first fire.">
-              {" "}×{row.fireCount} · last {timeOnly(row.lastTs)}
+            <span
+              className="feed-refire"
+              title={`Fired ${row.fireCount} times this session; last at ${timeOnly(row.lastTs)}. Fired at is the first fire.`}
+            >
+              {" "}×{row.fireCount} - {hourMinute(row.lastTs)}
             </span>
           )}
         </td>
