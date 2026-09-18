@@ -11,8 +11,15 @@ interface Props {
   live: boolean;
 }
 
-/** Top of the scale, in multiples of a typical day. */
-const MAX_X = 4;
+/**
+ * Top of the scale, in multiples of a typical day: 0-4x normally, 0-8x
+ * once the session reaches 4x (so a heavy day still shows how far past 4x
+ * it has run), and pinned at the top past 8x.
+ */
+const BASE_MAX = 4;
+const WIDE_MAX = 8;
+const BASE_LINES = [1, 2, 3, 4];
+const WIDE_LINES = [1, 2, 4, 6, 8];
 const HEADER_H = 58;
 const FOOTER_H = 28;
 const TRACK_TOP = 8;
@@ -26,8 +33,9 @@ const fmtVol = (v: number) =>
  * the candle pane. The scale runs 0 to 4x the typical (median) day of the
  * prior 20 sessions; 1x sits a quarter of the way up, so crossing it means
  * a full normal day has already traded, and the bar keeps climbing through
- * 2x/3x/4x. Past 4x it pins to the top and the label carries the real
- * multiple — the scale never moves, so the lines always mean the same thing.
+ * 2x/3x/4x. At 4x the scale doubles to 0-8x (lines at 1/2/4/6/8x) so the
+ * bar has room to keep growing; past 8x it pins to the top and the label
+ * carries the real multiple.
  *
  * Volume is the whole session including extended hours, which is how the
  * daily bars it is compared with are built (SNAP 09-17: 49.70M daily vs
@@ -37,9 +45,11 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
   const trackH = PRICE_H - HEADER_H - FOOTER_H - TRACK_TOP;
   const ready = volume != null && typical != null && typical > 0;
   const x = ready ? volume! / typical! : 0;
-  const shown = Math.min(x, MAX_X);
-  const fillH = (shown / MAX_X) * trackH;
-  const yOf = (mult: number) => TRACK_TOP + trackH - (mult / MAX_X) * trackH;
+  const maxX = x >= BASE_MAX ? WIDE_MAX : BASE_MAX;
+  const lines = maxX === WIDE_MAX ? WIDE_LINES : BASE_LINES;
+  const shown = Math.min(x, maxX);
+  const fillH = (shown / maxX) * trackH;
+  const yOf = (mult: number) => TRACK_TOP + trackH - (mult / maxX) * trackH;
   const tone = x >= 3 ? "hot" : x >= 2 ? "warm" : x >= 1 ? "over" : "under";
   const dateLabel = sessionDate
     ? new Date(`${sessionDate}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" })
@@ -70,10 +80,10 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
           <rect x={0} y={TRACK_TOP + trackH - fillH} width={BAR_W} height={fillH} rx={4} className={`vm-fill ${tone}`} />
         )}
         {/* past the top of the scale: a cap marker; the header has the real figure */}
-        {ready && x > MAX_X && <path d={`M4,${TRACK_TOP + 10} L${BAR_W / 2},${TRACK_TOP + 2} L${BAR_W - 4},${TRACK_TOP + 10}`} className="vm-overflow" />}
+        {ready && x > maxX && <path d={`M4,${TRACK_TOP + 10} L${BAR_W / 2},${TRACK_TOP + 2} L${BAR_W - 4},${TRACK_TOP + 10}`} className="vm-overflow" />}
 
-        {/* 1x-4x lines; 1x is the one that matters most */}
-        {[1, 2, 3, 4].map((m) => (
+        {/* scale lines; 1x is the one that matters most */}
+        {lines.map((m) => (
           <g key={m}>
             <line x1={0} x2={BAR_W + 8} y1={yOf(m)} y2={yOf(m)} className={m === 1 ? "vm-line vm-line-1x" : "vm-line"} />
             <text x={BAR_W + 12} y={yOf(m) + 4} className={m === 1 ? "vm-label vm-label-1x" : "vm-label"}>
@@ -85,6 +95,7 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
 
       <div className="volume-meter-foot" style={{ height: FOOTER_H }}>
         {dateLabel ? `${dateLabel}${live ? " · so far" : ""}` : ""}
+        {maxX === WIDE_MAX && <span> · 0–8× scale</span>}
         {typical != null && <span> · median of prior 20 sessions</span>}
       </div>
     </div>
