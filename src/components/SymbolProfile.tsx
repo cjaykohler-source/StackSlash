@@ -235,30 +235,44 @@ export function SymbolProfile({
     return <p className="empty-state">No factor data yet for this symbol — it may not have been through a scan yet.</p>;
   }
 
-  const snapshotFields = Object.entries(factorState)
-    .filter(([key, value]) => !HIDDEN_FIELDS.has(key) && key !== "as_of" && value !== null)
-    .sort(([a], [b]) => factorOrder(a) - factorOrder(b));
+  const snapshotFields = Object.entries(factorState).filter(
+    ([key, value]) => !HIDDEN_FIELDS.has(key) && key !== "as_of" && value !== null,
+  );
+  const byKey = new Map(snapshotFields);
+  const grouped = FACTOR_GROUPS.map((g) => ({
+    title: g.title,
+    fields: g.keys.filter((k) => byKey.has(k)).map((k) => [k, byKey.get(k)] as const),
+  }));
+  // Anything no group claims (earnings / fundamentals fields) still shows, last.
+  const claimed = new Set(FACTOR_GROUPS.flatMap((g) => g.keys));
+  const rest = snapshotFields.filter(([k]) => !claimed.has(k));
+  if (rest.length) grouped.push({ title: "Other", fields: rest });
 
   const factorSnapshot = (
     <div className="factor-snapshot">
-      <h3 className="profile-subheading">
-        Factor snapshot <span className="profile-asof">as of {factorState.as_of}</span>
-      </h3>
-      <div className="dossier-metrics">
-        {snapshotFields.map(([key, value]) => {
-          const meta = FIELD_META[key];
-          const label = meta?.label ?? humanize(key);
-          const formatted = formatField(key, value);
-          return (
-            <div className="dossier-metric" key={key}>
-              <span className="dossier-metric-label">
-                {meta?.description ? <InfoTooltip text={meta.description}>{label}</InfoTooltip> : label}
-              </span>
-              <span className="dossier-metric-value">{formatted}</span>
+      <h3 className="profile-subheading">Factor snapshot</h3>
+      {grouped
+        .filter((g) => g.fields.length)
+        .map((g) => (
+          <div className="factor-group" key={g.title}>
+            <h4 className="factor-group-title">{g.title}</h4>
+            <div className="dossier-metrics">
+              {g.fields.map(([key, value]) => {
+                const meta = FIELD_META[key];
+                const label = meta?.label ?? humanize(key);
+                const formatted = formatField(key, value);
+                return (
+                  <div className="dossier-metric" key={key}>
+                    <span className="dossier-metric-label">
+                      {meta?.description ? <InfoTooltip text={meta.description}>{label}</InfoTooltip> : label}
+                    </span>
+                    <span className="dossier-metric-value">{formatted}</span>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          </div>
+        ))}
     </div>
   );
 
@@ -301,36 +315,21 @@ export function SymbolProfile({
   );
 }
 
-// Top-to-bottom order for the factor snapshot column: returns (short to
-// long), their ranks, trend, oscillators, then volume and volatility.
-// Anything not listed (e.g. earnings fields) follows in its original order.
-const FACTOR_ORDER = [
-  "ret_1w",
-  "ret_1m",
-  "roc_20d",
-  "ret_6m",
-  "ret_12m_ex1m",
-  "ret_1w_rank_pct",
-  "roc_20d_rank_pct",
-  "momentum_rank_pct",
-  "dist_sma200",
-  "dist_ema20",
-  "is_20d_high",
-  "macd_cross",
-  "rsi14",
-  "rsi2",
-  "bb_pctb",
-  "bb_width",
-  "bb_width_percentile_126d",
-  "volume_ratio_20d",
-  "avg_volume_1w",
-  "avg_volume_1m",
-  "avg_volume_3m",
-  "avg_volume_6m",
-  "avg_volume_1y",
-  "dollar_vol_20d",
-  "realized_vol_20d",
-  "vol_percentile_252d",
+// The factor snapshot column, in groups, top to bottom: volume first (it's
+// what the meter beside the chart is about), then price performance, how it
+// ranks against the universe, trend, oscillators and volatility. Within a
+// group, short horizons before long. Fields no group names (earnings /
+// fundamentals) land in a trailing "Other" group.
+const FACTOR_GROUPS: { title: string; keys: string[] }[] = [
+  {
+    title: "Volume",
+    keys: ["volume_ratio_20d", "avg_volume_1w", "avg_volume_1m", "avg_volume_3m", "avg_volume_6m", "avg_volume_1y", "dollar_vol_20d"],
+  },
+  { title: "Returns", keys: ["ret_1w", "ret_1m", "roc_20d", "ret_6m", "ret_12m_ex1m"] },
+  { title: "Rank vs universe", keys: ["ret_1w_rank_pct", "roc_20d_rank_pct", "momentum_rank_pct"] },
+  { title: "Trend", keys: ["dist_ema20", "dist_sma200", "is_20d_high", "macd_cross"] },
+  { title: "Oscillators", keys: ["rsi2", "rsi14", "bb_pctb"] },
+  { title: "Volatility", keys: ["realized_vol_20d", "vol_percentile_252d", "bb_width", "bb_width_percentile_126d"] },
 ];
 
 // Event triggers fire from a filing or corporate action that factor_state
@@ -338,10 +337,6 @@ const FACTOR_ORDER = [
 // fire, "recent" within the window the event stays relevant.
 const EVENT_WINDOW_DAYS: Record<string, number> = { earnings_release: 28, avoid_reverse_split: 30, bigmove_watchlist: 3 };
 
-function factorOrder(key: string): number {
-  const i = FACTOR_ORDER.indexOf(key);
-  return i === -1 ? FACTOR_ORDER.length : i;
-}
 
 /** One trigger in the symbol page's Trigger status list. */
 function TriggerStatusRow({ row }: { row: ProfileTrigger }) {
