@@ -5,9 +5,8 @@ import { supabase } from "../lib/supabaseClient";
 /**
  * Jump straight to any symbol's page. If it's already tracked, this is
  * just a fast client-side lookup + navigate. If it isn't, it calls
- * onboard-symbol (validate against Alpaca, backfill history, run a real
- * eod-scan so the new symbol gets correctly cross-sectional-ranked
- * factors) before navigating — synchronous with a single honest status
+ * onboard-symbol (validate against Alpaca, backfill history; factors
+ * arrive with the nightly eod-scan) before navigating — synchronous with a single honest status
  * message, not fake step-by-step progress, since the backend call
  * doesn't stream real progress.
  */
