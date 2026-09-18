@@ -65,7 +65,10 @@ body {
   scrollbar-width: none;
   margin-bottom: 10px;
 }
-.chart-controls .range-toggle,
+.chart-controls .range-toggle {
+  margin: 0;
+  flex-wrap: nowrap;
+}
 .chart-controls .session-picker {
   /* Session date controls ride the right end of the row, above the chart's
      right edge (the feed note that used to hold that spot is gone). */
