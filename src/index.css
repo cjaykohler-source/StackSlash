@@ -67,11 +67,10 @@ body {
 }
 .chart-controls .range-toggle,
 .chart-controls .session-picker {
-  margin: 0;
+  /* Session date controls ride the right end of the row, above the chart's
+     right edge (the feed note that used to hold that spot is gone). */
+  margin: 0 0 0 auto;
   flex-wrap: nowrap;
-}
-.chart-controls .session-picker-note {
-  margin-left: auto;
 }
 .symbol-company-name {
   color: var(--text-dim);
