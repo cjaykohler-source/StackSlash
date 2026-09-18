@@ -67,18 +67,22 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
     : null;
 
   return (
-    <div className="volume-meter" style={{ height: PRICE_H }} aria-label="Session volume versus a typical day">
+    <div
+      className="volume-meter"
+      style={{ height: PRICE_H }}
+      aria-label="Session volume versus a typical day"
+      title={`${dateLabel ?? "Session"}${live ? " so far" : ""}: volume against the median day of the prior 20 sessions (1×).`}
+    >
       <div className="volume-meter-head">
-        <span className="volume-meter-title">Volume vs typical</span>
+        <span className="volume-meter-title">Volume</span>
         {ready ? (
           <>
             <b className={`volume-meter-mult ${tone}`}>{x.toFixed(x >= 10 ? 0 : 1)}×</b>
-            <span className="volume-meter-sub">
-              {fmtVol(volume!)} of {fmtVol(typical!)}
-            </span>
+            <span className="volume-meter-sub">{fmtVol(volume!)}</span>
+            <span className="volume-meter-sub">of {fmtVol(typical!)}</span>
           </>
         ) : (
-          <span className="volume-meter-sub">{typical == null ? "Under 15 sessions of history" : "No volume yet"}</span>
+          <span className="volume-meter-sub">{typical == null ? "Too new" : "No volume"}</span>
         )}
       </div>
 
@@ -99,19 +103,14 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
           <g key={m}>
             <line x1={0} x2={BAR_W + 8} y1={yOf(m)} y2={yOf(m)} className={m === 1 ? "vm-line vm-line-1x" : "vm-line"} />
             <text x={BAR_W + 12} y={yOf(m) + 4} className={m === 1 ? "vm-label vm-label-1x" : "vm-label"}>
-              {m === 1 ? "1× typical day" : `${m}×`}
+              {m}×
             </text>
           </g>
         ))}
       </svg>
       </div>
 
-      {/* One fact per line, so nothing wraps mid-phrase or starts with a dot. */}
-      <div className="volume-meter-foot">
-        {dateLabel && <div>{`${dateLabel}${live ? " · so far" : ""}`}</div>}
-        {typical != null && <div title="Median daily volume of the 20 sessions before this one">vs 20-session median</div>}
-        {maxX === WIDE_MAX && <div>scale widened to 0–8×</div>}
-      </div>
+      {maxX === WIDE_MAX && <div className="volume-meter-foot">0–8× scale</div>}
     </div>
   );
 }
