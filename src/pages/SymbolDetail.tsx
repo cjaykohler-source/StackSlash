@@ -337,7 +337,8 @@ function SymbolQuote({ quote }: { quote: Quote | undefined }) {
       <span className="symbol-quote-price">${price.toFixed(2)}</span>
       <span className="symbol-quote-change">
         {arrow} {abs >= 0 ? "+" : "−"}${Math.abs(abs).toFixed(2)} ({pctRounded > 0 ? "+" : ""}
-        {pctRounded.toFixed(2)}%) <span className="symbol-quote-today">today</span>
+        {pctRounded.toFixed(2)}%){" "}
+        <span className="symbol-quote-today">{quote.delayed ? "today · tape, ~15m behind" : "today"}</span>
       </span>
     </div>
   );

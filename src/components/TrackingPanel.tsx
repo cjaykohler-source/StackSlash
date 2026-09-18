@@ -76,6 +76,9 @@ function TrackedCard({
   // hasn't printed on IEX yet today), the card shows that session and
   // labels it — rather than silently looking like "today".
   const [sessionLabel, setSessionLabel] = useState<string | null>(null);
+  // Today's line came from the consolidated tape, ~15 min behind, because
+  // this symbol has no real-time IEX prints today.
+  const [delayed, setDelayed] = useState(false);
   const cancelledRef = useRef(false);
 
   useEffect(() => {
@@ -109,6 +112,7 @@ function TrackedCard({
       if (todayRows.length) {
         setIntraday(true);
         setSessionLabel(null);
+        setDelayed(false);
         setSeries(fromIntradayRows(todayRows));
         return;
       }
@@ -117,17 +121,20 @@ function TrackedCard({
       //    intraday-bars-scan's priority set. Ask session-bars, which pulls
       //    the most recent session on demand.
       let onDemand: { ts: string; price: number }[] = [];
+      let onDemandDelayed = false;
       try {
         const res = await fetch(`/.netlify/functions/session-bars?symbol=${encodeURIComponent(tracked.ticker)}`);
-        const body = (await res.json()) as { bars?: { ts: string; price: number }[] };
+        const body = (await res.json()) as { bars?: { ts: string; price: number }[]; delayed?: boolean };
         if (cancelledRef.current) return;
         onDemand = body.bars ?? [];
+        onDemandDelayed = body.delayed === true;
       } catch {
         /* fall through */
       }
       if (onDemand.length && dayOf(onDemand[onDemand.length - 1].ts) === todayET) {
         setIntraday(true);
         setSessionLabel(null);
+        setDelayed(onDemandDelayed);
         setSeries(fromIntradayRows(onDemand.filter((b) => dayOf(b.ts) === todayET)));
         return;
       }
@@ -138,6 +145,7 @@ function TrackedCard({
       if (priorSource.length >= 2) {
         const targetDay = dayOf(priorSource[priorSource.length - 1].ts);
         setIntraday(true);
+        setDelayed(false);
         setSessionLabel(new Date(`${targetDay}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" }));
         setSeries(fromIntradayRows(priorSource.filter((r) => dayOf(r.ts) === targetDay)));
         return;
@@ -154,6 +162,7 @@ function TrackedCard({
       const drows = (daily as { date: string; close: number }[] | null) ?? [];
       setIntraday(false);
       setSessionLabel(null);
+      setDelayed(false);
       setSeries(drows.reverse().map((r) => ({ t: new Date(`${r.date}T00:00:00Z`).getTime(), price: Number(r.close) })));
     }
 
@@ -257,6 +266,11 @@ function TrackedCard({
             {!intraday && <span className="tracked-chart-tag">~30d daily</span>}
             {intraday && sessionLabel && (
               <span className="tracked-chart-tag">{sessionLabel} session</span>
+            )}
+            {intraday && !sessionLabel && delayed && (
+              <span className="tracked-chart-tag" title="Consolidated tape, ~15 minutes behind — this stock has no real-time (IEX) prints today.">
+                tape · ~15m behind
+              </span>
             )}
           </>
         )}
