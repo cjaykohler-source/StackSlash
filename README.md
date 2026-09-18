@@ -388,6 +388,9 @@ Findings worth keeping:
 | `manage-positions` (Exit Warnings) | launchd | every 5 min, 09:30–16:00 ET |
 | `record-fire-outcomes` | launchd | 19:10 ET weekdays |
 | `sec-filings-sync` | launchd | 07:30, 17:30 and **22:30** ET weekdays |
+| `sec-balance-sheet-sync` → `balance_sheet` (SEC XBRL companyfacts, `scripts/sec_balance_sheet_sync.py`) | launchd (`scripts/run-python-job.sh`) | 23:00 ET weekdays (~2 h) |
+| `finra-short-interest-sync` → `short_interest` (`scripts/finra_short_interest_sync.py`; skips settlements already loaded) | launchd | 07:15 ET weekdays |
+| `ib-short-availability` → `short_availability` (IBKR shortable shares, delayed feed, `worker/src/ibShortAvailability.ts`; needs IB Gateway on :4001) | launchd (`scripts/run-ib-short-availability.sh`) | 09:45 and 15:15 ET weekdays (~25 min) |
 | `refresh-window-stats` | Supabase pg_cron | 23:00 UTC weekdays |
 | `weekly-bars-scan` | pg_cron | Mon 06:00 UTC |
 | `refresh-spread-estimates` | pg_cron | Sun 07:00 UTC |
