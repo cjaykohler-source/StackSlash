@@ -1337,6 +1337,12 @@ h1 .quote-tag {
 .tracking-row {
   grid-template-columns: auto 1fr auto auto auto;
 }
+.tracking-ticker-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
 .spotlight-toggle,
 .tracking-row-remove {
   background: none;

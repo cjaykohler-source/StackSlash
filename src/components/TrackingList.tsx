@@ -75,23 +75,25 @@ export function TrackingList() {
                 >
                   <SpotlightIcon on={t.spotlight} />
                 </button>
-                <Link to={`/symbol/${t.ticker}`} className="top-movers-ticker">
-                  {t.ticker}
-                </Link>
-                <span className="top-movers-price">{q ? `$${q.price.toFixed(2)}` : "—"}</span>
-                <span className={`top-movers-pct ${dir}`}>
-                  {pct == null ? "" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
+                {/* One grid cell: the ticker, then how old its quote is. */}
+                <span className="tracking-ticker-cell">
+                  <Link to={`/symbol/${t.ticker}`} className="top-movers-ticker">
+                    {t.ticker}
+                  </Link>
                   {q?.delayed && (
                     <span className="quote-delayed" title="Consolidated tape, ~15 minutes behind — no real-time (IEX) prints today.">
-                      {" "}15m
+                      15m
                     </span>
                   )}
                   {q?.stale && (
                     <span className="quote-delayed" title="No trade on any feed today — this is the last session's close.">
-                      {" "}
                       {sessionLabel(q.asOf)}
                     </span>
                   )}
+                </span>
+                <span className="top-movers-price">{q ? `$${q.price.toFixed(2)}` : "—"}</span>
+                <span className={`top-movers-pct ${dir}`}>
+                  {pct == null ? "" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
                 </span>
                 <button
                   type="button"
