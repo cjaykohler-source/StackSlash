@@ -91,10 +91,11 @@ below for the full derivation, every number, and every bug found along
 the way — worth reading before changing any trigger or exit logic,
 so the next attempt doesn't re-discover the same dead ends.
 
-## Current state — handoff (2026-09-17)
+## Current state — handoff (2026-09-18)
 
 Read this, then "The alert pipeline audit (2026-09-16)" below for the
-derivations. Everything here was built and verified 2026-09-15 → 09-17.
+derivations. Everything here was built and verified 2026-09-15 → 09-18;
+"Session 2026-09-18" below lists what changed in the last session.
 
 ### What the system does now
 
@@ -103,11 +104,24 @@ derivations. Everything here was built and verified 2026-09-15 → 09-17.
   warehouse 2026-09-17). Intraday 1-min bars stay IEX (real-time; free SIP
   is 15-min delayed). IEX carried only ~1.7% of band volume (SIP/IEX median
   58.7x), so every pre-09-17 volume number was distorted.
+- **Real-time prices are IEX, with a delayed-tape fallback** (2026-09-18).
+  IEX sees little of this universe: a thin name can have **no IEX print all
+  session**, or one early print and then nothing, while the tape trades. In
+  that state an IEX snapshot serves the *previous* session's daily bar (MOB
+  showed +0.2% "today" while the tape had it -6%). During a session,
+  `quotes` and `session-bars` treat a symbol as stale when its snapshot isn't
+  from today **or its last IEX trade is over 20 minutes old**, and fall back
+  to SIP bars clamped ~15 minutes back (`fetchDelayedSipToday` /
+  `fetchDelayedSipMinutesToday` in `lib/alpaca.ts`). A SIP *snapshot* is
+  refused on this plan (403); clamped-end SIP bars are allowed. Tape bars
+  are **never** written to `bars_intraday` (the IEX series the factor layer
+  reads). No trade on either feed → the last close, marked stale with its
+  date. The UI shows three states: live · **15m** (tape) · **Sep 17**
+  (last close).
 - **Liquidity floors (scan_config, SIP scale):** live monitoring
   `monitor_min_dollar_vol_20d` **$800k/day** (~700 names), alerting
-  `min_dollar_vol_20d` **$2.5M/day**. Applied 2026-09-17 16:01 ET by the
-  one-shot launchd job `com.stackslash.set-sip-floors-once`
-  (`scripts/set-sip-floors-once.sh`, date-guarded) — verify, then unload it.
+  `min_dollar_vol_20d` **$2.5M/day**. Applied 2026-09-17 16:01 ET and
+  verified; the one-shot launchd job is unloaded.
 - **Buy / Watch / Sell — one rule everywhere** (feed, symbol page, Discord,
   digest, position tracking):
   - **Watch** = a `watch`-category trigger, or any buy setup whose dossier
@@ -119,11 +133,14 @@ derivations. Everything here was built and verified 2026-09-15 → 09-17.
   of cash, shares +50% YoY. News and earnings are always amber.
 - **Live intraday (launchd, every 5 min, 09:35–16:00 ET):**
   `intraday-flip-scan` is the live alert engine. It evaluates enabled
-  `speed='fast'` triggers on `intraday_factor_state`, bypasses the
-  confluence gate (per-trigger cooldown instead), ranks by RVOL and caps at
-  `scan_config.intraday_alert_cap` (10) per scan.
+  `speed='fast'` triggers on `intraday_factor_state` (per-trigger cooldown),
+  ranks by RVOL and caps at `scan_config.intraday_alert_cap` (10) per scan.
+  Everything else promotes through `lib/promotionGate.ts`: one
+  `trigger_event` per in-band pending fire (the confluence gate is gone).
   - **Heavy Volume Breakout** (`rvol_breakout`, category `watch`)
-  - **Avoid: Don't Chase** (`avoid_chase_extended`, first hour)
+  - **Avoid: Don't Chase** (`avoid_chase_extended`, first hour by the
+    clock: `session_minutes` 15-60, `session_bars` >= 10). First real fires
+    09-18 at 09:57 and 10:07 ET.
 - **After close:** `eod-scan` (17:45 ET, launchd) evaluates the daily
   triggers, tags every event `delivery=digest` (deep-dive builds the dossier,
   sends no card); `eod-digest` (18:10 ET) posts one ranked card: **Targets**
@@ -141,22 +158,36 @@ derivations. Everything here was built and verified 2026-09-15 → 09-17.
   take profit, 5% trail armed at +5%, 10-day limit — **overridden by a
   trigger's own `exit_rules`**. Positions whose entry turns out Watch are
   cancelled.
-- **SEC:** `sec-filings-sync` (launchd 07:30 / 17:30 ET) loads EDGAR's daily
+- **SEC:** `sec-filings-sync` (launchd 07:30 / 17:30 / 22:30 ET) loads EDGAR's daily
   form index into `sec_filings` (offering forms, 8-K with `items` from the
   submissions API for band companies, SC 13D/13G). Requires
-  `SEC_USER_AGENT` in the host `.env` (SEC fair-access policy).
-- **Site:** trigger feed = Time · Symbol · **Catalyst** · Flags · **Fired at**
-  (static fire price) · Price · **Change since the fire**, three sections,
-  one row per stock+trigger+session. Symbol page: right-hand snapshot column
-  (price stats, then the factor snapshot incl. 1w/1m/3m/6m/1y average
-  volume, values under labels) running down the page; trigger status grouped
-  Buy / Watch / Avoid / Exit and evaluated live for fast triggers (event
-  triggers — `earnings_release`, `avoid_reverse_split`, `bigmove_watchlist` —
-  show their last fire inside its window instead, since `factor_state` has no
-  field to evaluate); dossiers
-  (no news links) with older sessions folded; company description from FMP
-  (`symbols.description`, band-first sync, on-demand `company-profile`) →
-  Wikipedia fallback; sector-roundup headlines filtered everywhere.
+  `SEC_USER_AGENT` in the host `.env` (SEC fair-access policy). EDGAR posts
+  a session's daily index later in the evening, so the **22:30** run is the
+  one that lands that day's filings; the 17:30 run can only see the prior
+  day's (the big-move score's 8-K input depends on this).
+- **Site — dashboard:** Spotlight chart grid (only `tracked_symbols` with
+  `spotlight = true`) · trigger feed (Time · Symbol · Catalyst · Flags ·
+  Fired at · Price · Change; Buy / Watch / Sell sections share a fixed
+  colgroup so columns line up; a re-fire reads "x2 - 1:57") · sidebar:
+  **Tracking** column (nearest the feed, ~295px: add box, rows with a
+  spotlight toggle and x, quote-age tag beside the ticker) then Top gainers
+  stacked over Top losers.
+- **Site — symbol page:** title line with price, change and a **Track /
+  Tracking** button. Controls row: ranges (Session · Week · Month · Year ·
+  5 Years · Since 2016), the candle-size picker (Session only), and the
+  date controls at the right. Chart, then a **volume meter** column (96px,
+  523px tall, top level with the metrics column): session volume vs the
+  median day of the prior 20 sessions, 0-4x scale widening to 0-8x at 4x,
+  pinned past 8x. The volume pane has a dotted **typical-volume-per-candle**
+  line (same median; flat on Session, rolling and stepped on longer ranges).
+  Right column: price stats, then the factor snapshot in groups (Volume,
+  Returns, Rank vs universe, Trend, Oscillators, Volatility, Other).
+  Trigger status grouped Buy / Watch / Avoid / Exit (event triggers show
+  their last fire). Dossiers with older sessions folded; company description
+  from FMP → Wikipedia fallback.
+- **Symbol search:** an unknown ticker returns a 404 (no `job_runs` row) and
+  suggests a one-edit near-miss the universe already carries, same length
+  first (APPL → AAPL, not APP).
 - **Data cleanup done:** zero-volume flat placeholder bars (9.7% of rows)
   deleted and filtered on ingest (`isRealSession`); all trigger events /
   alerts / dossiers / fire_outcomes before 2026-09-17 10:35 ET deleted
@@ -174,40 +205,23 @@ derivations. Everything here was built and verified 2026-09-15 → 09-17.
 **Caveat:** 2022+ was examined repeatedly this week; treat it as seen, not a
 sealed holdout.
 
-### Verify next session
+### Verify next session (Monday 2026-09-21)
 
-Checked 2026-09-17 ~13:30 ET (mid-session, so the evening jobs had not run):
-
-- Live engine **healthy**: every job in `job_runs` ok; Heavy Volume Breakout
-  14 fires, 14 Discord cards sent, no `alerts.error`; `intraday-scan` last
-  ran 14:30 UTC (unscheduled, as intended). Seven Watch positions opened
-  before the 12:04 ET Buy/Watch/Sell commit and were all cancelled
-  `watch_not_buy`; none since. **Nothing broken.**
-- **Avoid: Don't Chase fired 0 times — found and fixed.** Its "first hour"
-  gate was `session_bars` 15-60, and `session_bars` counts IEX 1-min bars
-  that *traded*, not minutes elapsed: at 14:55 ET on 09-17 the median band
-  name had 47 bars and **233 of 644 were still inside the 15-60 window**, five
-  hours into the session. So the trigger was never restricted to the first
-  hour (where the -2.3% result came from) and thin names stayed eligible all
-  day. `intraday_factor_state` now carries **`session_minutes`** (elapsed
-  minutes since 09:30 ET at `as_of`) and the trigger gates on it, keeping
-  `session_bars >= 10` as a liquidity floor. **Verify it fires tomorrow**
-  during 09:45-10:30.
-
-Still to verify (they had not run yet):
-
-- `scan_config` floors are 800000 / 2500000 (the one-shot ran 16:01); then
-  `launchctl unload ~/Library/LaunchAgents/com.stackslash.set-sip-floors-once.plist`.
-- Tonight's first SIP `eod-scan` (17:45) — also the **first run of the
-  bigmove_watchlist code**, which has only been type-checked: `job_runs` ok,
-  `factor_state` `avg_volume_*` populated, sane fire counts, and
-  `bigmove_watchlist` fires (expect ~2-12/day at the $2.5M floor);
-  `eod-digest` (18:10) `rows_processed > 0`, one Discord card with the new
-  Big-Move Watchlist names under Watch; `earnings_release` /
-  `avoid_reverse_split` fires plausible.
-- `data-integrity-check` (19:45): counts move after the SIP reload and
-  placeholder delete — a regression card may be benign; check before acting.
-- `refresh-spread-estimates` (Sun) and `weekly-bars-scan` (Mon) on SIP bars.
+- **Evening SEC sync:** `job_runs` shows `sec-filings-sync` at 22:30 ET on
+  09-18, and `sec_filings` has **09-18** filings before Monday's 17:45
+  `eod-scan` — then check that `bigmove_watchlist` fires include some with
+  the 8-K point (it was permanently 0 before this run existed).
+- **Weekend jobs on SIP bars:** `refresh-spread-estimates` (Sun 07:00 UTC)
+  and `weekly-bars-scan` (Mon 06:00 UTC) in `job_runs`.
+- **Watch never opens a position:** after Monday's `eod-scan`, no open
+  `shadow_positions` with `entry_trigger_name = 'bigmove_watchlist'`.
+- **Delayed-tape fallback under load:** `quotes` with ~40 tickers during
+  the session responds without 429s (it can add one SIP bars call per poll
+  for the stale subset).
+- **Stale `running` rows:** only `fundamentals-sync` should still leak one
+  (it is invoked twice each morning; the second hangs). Anything else
+  appearing is new.
+- **Don't Chase:** a normal handful of fires, all 09:45-10:30 ET.
 
 ### The trigger redesign (2026-09-17, afternoon)
 
@@ -291,23 +305,72 @@ avoid_volume_blowoff 5. What it turned up, all now fixed:
   as `watch_not_buy`: its dossier carries two red flags (~2.0 quarters of
   cash, shares +56% YoY). Buy / Watch / Sell working end to end.
 
+### Session 2026-09-18 — what changed
+
+Ops and data (see "Overnight health check" above for the details):
+- `eod-scan` no longer opens positions for watch triggers (Big-Move
+  Watchlist had opened six); third `sec-filings-sync` run at 22:30 ET;
+  `scan_config.min_confluence` dropped; 628 stale `running` job rows swept.
+- Delayed-tape fallback for real-time prices (see "What the system does
+  now"), including the stale-single-print case (FBDT: one 313-share IEX
+  print at 10:00 ET vs 128 tape bars).
+- `onboard-symbol`: validates before opening a job row; 404 + near-miss
+  suggestion.
+
+Site (all verified on the live site by measuring the rendered page):
+- Track button; Tracking column + Spotlight grid (`tracked_symbols.spotlight`,
+  with an authenticated UPDATE policy the table lacked); tracked cards show
+  today whenever there is any print today, else a labelled prior session.
+- Symbol page: volume meter, typical-volume line, controls-row moves, no
+  18 Months, grouped factor snapshot, removed the "SIP consolidated tape…"
+  note.
+- Feed: aligned columns, compact re-fire note, 19% Time column.
+
+Findings worth keeping:
+- **Median, not mean, for volume baselines.** FBDT's 75.9M-share day on
+  09-15 was 71% of its 20-day mean and inflated the line ~4x; the median is
+  `lib/volumeBaseline.ts` (pure, testable) — `lib/dailyVolume.ts` loads it.
+- **Daily volume includes extended hours** (SNAP 09-17: 49.70M daily =
+  49.70M across all minute bars vs 45.90M regular-only). The meter sums the
+  whole session to compare like with like; the per-candle dotted line on the
+  regular-session chart therefore reads a few percent high.
+- **A pre-market print is not the open.** FBDT's tape series started at
+  04:00 ET; measured from there it looked -6%, from the official open it was
+  +0.4%. Daily-bar `o` is the right basis for "% today".
+
 ### Open decisions / next steps
 
-- **Done 2026-09-17: the confluence gate is gone.**
-  `lib/confluenceGate.ts` → **`lib/promotionGate.ts`**: every in-band
-  pending fire now promotes to its own `trigger_event`. Removed with it —
-  cluster merging and the `snapshot.confluence` blob, the high-priority
-  escalation tier, `PRIMARY_RANK`, the feed's "N signals" badges, the
-  dossier confluence line, the Discord "N signals" line, the daily report's
-  Confluence section, and the Settings field. What still filters is the
-  `scan_config` band (price, 20-day dollar volume, RSI ceiling for longs)
-  plus `alert_excluded`. The HTTP endpoint keeps the file name
-  `confluence-gate.ts` so the worker's deployed `CONFLUENCE_GATE_URL`
-  resolves. `scan_config.min_confluence` was **dropped 2026-09-18**.
-- **Done 2026-09-17:** Oversold Bounce, Trend Turning Up and both Quiet
-  Period breakouts **disabled** (see "Trigger disposition"). Targets now holds
-  only Earnings Release. Watch tonight's digest: Targets may be empty, which
-  is correct rather than broken.
+- **Short interest — researched, not built.** FINRA's public API
+  (`api.finra.org/data/group/otcMarket/name/consolidatedShortInterest`,
+  POST, no key; sorting needs `settlementDate` as an EQUAL filter) returned
+  the 08-31 settlement for 22,569 symbols, with shares short, prior, %
+  change, ADV and days to cover. Published twice a month, ~1-2 weeks after
+  settlement. Proposed: a twice-monthly sync into `short_interest`, shown as
+  "Short interest X% of shares outstanding · N days to cover · as of <date>",
+  **amber** (not a negative on its own). Awaiting the user's go-ahead.
+- **Float:** FMP's `shares-float` and `short-interest` returned "Limit
+  Reach" on 09-18 (the free daily quota was spent), so it is unknown whether
+  they are on the free tier — retry early in a day. Fallback denominator:
+  shares outstanding (already in `fundamentals`). Do **not** use FINRA's daily
+  Reg SHO short-*volume* files as short interest (~40-50% of all volume
+  prints as short on a normal day).
+- **Balance sheet:** production `fundamentals` has cash, total debt, book
+  equity, shares, burn/runway (in-band coverage: equity 97%, cash 86%,
+  runway 60%, **debt 46%**, median row 80 days old). The full XBRL line items
+  (total assets/liabilities, current ratio) exist only in the research
+  warehouse (`research/data/edgar/edgar_facts.parquet`). Waiting on what the
+  user wants it for (a symbol-page panel vs a new flag).
+- **Robinhood MCP** is attached but needs the user to authorize it
+  (claude.ai connector settings or `/mcp`). Read-only; never call its tools
+  without explicit per-action approval.
+- `fundamentals-sync` is invoked twice each morning and the second
+  invocation leaves a `running` row.
+- Two console errors (401, 500) on the dashboard's first load could not be
+  traced: no non-2xx in Supabase edge logs, every Netlify function call 200,
+  nothing captured by hooking fetch/XHR. Possibly the browser pane itself.
+- Meter compares a *partial* live session with a *full* typical day by
+  design (it keeps growing); a time-of-day baseline would be a different
+  feature.
 - Code fallbacks for the dollar-volume floors (50000 / 10000) in several
   functions are still IEX-scale (used only if scan_config is unreadable).
 - IBKR on hold (paid bundles not started).
@@ -1501,11 +1564,14 @@ in 5 years across the whole ~5,000-symbol universe — they are not
 | `volatility_squeeze_breakout_long` | breakout | slow | long | ❌ 09-17 | Quiet Period Up. n=160 in the SIP study and tail-driven; +6.8% 20d (2016-21) does not survive −4.0% (2022+) |
 | `volatility_squeeze_breakout_short` | breakout | slow | short | ❌ 09-17 | Quiet Period Down. Never studied on SIP data; 29 fires in three days, median price $9.76, **one** in-band promotion — it was the only sell trigger and produced nothing |
 | `bigmove_watchlist` | watch | slow | long | ✅ | Big-Move Watchlist, added 09-17: next-session 10%+ move 3-9x a random day in both periods; Watch, never Buy |
-| `earnings_surprise_drift` | earnings | slow | long | ✅ (inert) | needs a paid estimates feed FMP's free tier doesn't have |
+| `earnings_surprise_drift` | earnings | slow | long | ❌ (disabled 2026-09-16) | needs a paid estimates feed FMP's free tier doesn't have |
 | `realtime_outlier_zscore` | outlier | slow | long | ✅ | tick-level, no backtest possible; live-confirmation-scored only |
 | `momentum_exit` | exit | slow | long | ✅ | the swing exit path (rank-drop/weekly-reversal/180d for momentum entries; time+disaster stop for others) |
-| `catalyst_momentum` | intraday | fast | long | ✅ | gross PF 1.32/n=49 was best of 8 variants; **net PF 0.779** on the cost model (1.10 only at a one-tick spread) — no edge |
-| `rvol_breakout` | intraday | fast | long | ❌ | PF 0.72 once RVOL was correctly calibrated |
+| `catalyst_momentum` | intraday | fast | long | ❌ | gross PF 1.32/n=49 was best of 8 variants; **net PF 0.779** on the cost model (1.10 only at a one-tick spread) — no edge |
+| `rvol_breakout` | watch | fast | long | ✅ | Heavy Volume Breakout. Re-enabled 2026-09-16 as **Watch** (not a buy): minute test ~break-even before costs, slightly better than a random entry by the close. PF 0.72 once RVOL was correctly calibrated (as a buy) |
+| `avoid_chase_extended` | avoid | fast | long | ✅ | Avoid: Don't Chase, first hour by the clock (`session_minutes` 15-60). Minute test, 513 cases: −2.3% vs −1.0% random over 2 h |
+| `avoid_volume_blowoff`, `avoid_reverse_split` | avoid | slow | long | ✅ | 25x+ volume (median −16% over 18 sessions); reverse split (−17% to −22% over 20 sessions, both periods) |
+| `earnings_release` | catalyst | slow | long | ✅ | the only Buy: 8-K 2.02 beats a random day in both periods (no red flags: +4.2% / +0.4% 20d vs random +1.8% / −3.2%) |
 | `vwap_reclaim` | intraday | fast | long | ❌ | PF 0.80 — catches falling knives |
 | `gap_and_go` | intraday | fast | long | ❌ | n=41, inconclusive |
 | `squeeze_release_intraday` | intraday | fast | long | ❌ | not sim-validated yet (needs a daily factor join the sim doesn't wire up) |
