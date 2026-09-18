@@ -60,6 +60,13 @@ interface Point {
   price: number;
 }
 
+/** Regular US session, roughly: weekday 09:30-16:05 ET. */
+function isSessionLive(): boolean {
+  const now = new Date();
+  const utcHM = now.getUTCHours() * 100 + now.getUTCMinutes();
+  return now.getUTCDay() >= 1 && now.getUTCDay() <= 5 && utcHM >= 1330 && utcHM < 2005;
+}
+
 function TrackedCard({
   tracked,
   quote,
@@ -107,9 +114,14 @@ function TrackedCard({
       const dayOf = (ts: string) => etDateString(new Date(ts));
       const todayRows = rows.filter((r) => dayOf(r.ts) === todayET);
 
-      // 1. Any print today: show today. One bar plus the live quote still
-      //    draws a line; one bar alone shows "waiting for today's prints".
-      if (todayRows.length) {
+      // 1. Today's stored (IEX) bars, but only while they're actually
+      //    current. One early print and then silence is not "today": FBDT
+      //    traded 313 shares at 10:00 ET on 2026-09-18 and nothing more on
+      //    IEX, while the tape had it 6% lower — a flat line pretending to
+      //    be the session. Sparse or stalled falls through to the tape.
+      const lastStored = todayRows.length ? Date.parse(todayRows[todayRows.length - 1].ts) : 0;
+      const storedIsCurrent = todayRows.length >= 2 && Date.now() - lastStored < 20 * 60_000;
+      if (todayRows.length && (storedIsCurrent || !isSessionLive())) {
         setIntraday(true);
         setSessionLabel(null);
         setDelayed(false);

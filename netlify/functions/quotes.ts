@@ -70,6 +70,10 @@ export default async (req: Request) => {
   const utcHM = now.getUTCHours() * 100 + now.getUTCMinutes();
   const sessionLive = now.getUTCDay() >= 1 && now.getUTCDay() <= 5 && utcHM >= 1330 && utcHM < 2000;
   const stale: string[] = [];
+  // Long enough that a normally-quiet name isn't chased on every poll,
+  // short enough that a stalled IEX view can't sit wrong for long. The
+  // tape itself is ~15 min behind, so anything under that is pointless.
+  const STALE_TRADE_MS = 20 * 60_000;
   const staleSnapshot = new Map<string, { price: number; changePct: number; asOf: string }>();
   let anyOk = false;
   const results = await Promise.allSettled(chunks.map((c) => fetchSnapshots(c)));
@@ -80,7 +84,13 @@ export default async (req: Request) => {
       const open = snap.dailyBar?.o;
       const price = snap.latestTrade?.p ?? snap.dailyBar?.c ?? null;
       const barDay = snap.dailyBar?.t?.slice(0, 10) ?? null;
-      if (sessionLive && barDay !== todayEt) {
+      // "Today" is not enough: a single early IEX print (FBDT traded 313
+      // shares at 10:00 ET on 2026-09-18) makes the snapshot look current
+      // while the tape runs away from it — that one showed 0.0% against a
+      // real -6%. A quote whose last trade is older than STALE_TRADE_MS
+      // counts as stale too.
+      const tradeAgeMs = snap.latestTrade?.t ? Date.now() - Date.parse(snap.latestTrade.t) : Infinity;
+      if (sessionLive && (barDay !== todayEt || tradeAgeMs > STALE_TRADE_MS)) {
         stale.push(sym);
         // Keep the last session as a fallback-of-the-fallback: a name that
         // has not traded on any feed today (halted, or simply nothing yet)
