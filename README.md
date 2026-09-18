@@ -258,6 +258,39 @@ than a random session. Net returns are ~-1% everywhere: attention, not a
 trade. The 8-K already counts toward the after-close score, so the most this
 justifies is a Watch note ("8-K filed today") on names already listed.
 
+### Overnight health check (2026-09-18)
+
+First full night on SIP data, and it held: `eod-scan` ok in 198s over 4,974
+factor rows, `eod-digest` sent one card (22 lines), `research-update` added
+12,538 daily bars and 1.85M minute bars for 09-17, the live engine sent 23
+Heavy Volume Breakout alerts with no `alerts.error`, and the floors read
+800k / 2.5M (the one-shot job is unloaded). First `bigmove_watchlist` fires:
+**6**, alongside earnings_release 1, avoid_reverse_split 11,
+avoid_volume_blowoff 5. What it turned up, all now fixed:
+
+- **A watch trigger opened tracked positions.** eod-scan's position step
+  filtered on trigger *speed* only, so Big-Move Watchlist opened six shadow
+  positions; `manage-positions` would have cancelled them as
+  `watch_not_buy` at the next open. Now filtered where the position is
+  created, and the six were cancelled by hand.
+- **`sec_filings` ran a day behind.** EDGAR publishes a session's daily
+  index after 17:30 ET, so the pre-scan run always missed that day's
+  filings and the big-move score's 8-K input was permanently 0. A **22:30
+  ET** run was added (see the job table).
+- **628 stale `running` rows in `job_runs`** were swept to `failed`. Nearly
+  all were historical (251 on 09-14, 169 on 09-08, from the Netlify-timeout
+  era); the only recurring leak left is `fundamentals-sync`, which is
+  invoked twice each morning and leaves the second row hanging.
+- Integrity-check regressions were benign: `implausible_price` +1,190 is
+  split-adjusted reverse-split history (SXTC at $57M/share) plus BRK.A,
+  only 12 rows since 2026-09-01; `stale_active_symbol` 5 → 11 is active
+  symbols with no recent bars. The classes that matter improved sharply on
+  SIP data: `bar_gap_over_7d` 3,841 → 2,364, gap30 323 → 111,
+  `split_scale_break` 541 → **71**.
+- **ABAT** (the one earnings_release buy) was correctly cancelled at 09:30
+  as `watch_not_buy`: its dossier carries two red flags (~2.0 quarters of
+  cash, shares +56% YoY). Buy / Watch / Sell working end to end.
+
 ### Open decisions / next steps
 
 - **Done 2026-09-17: the confluence gate is gone.**
@@ -270,8 +303,7 @@ justifies is a Watch note ("8-K filed today") on names already listed.
   `scan_config` band (price, 20-day dollar volume, RSI ceiling for longs)
   plus `alert_excluded`. The HTTP endpoint keeps the file name
   `confluence-gate.ts` so the worker's deployed `CONFLUENCE_GATE_URL`
-  resolves. `scan_config.min_confluence` is unread and commented
-  DEPRECATED — drop the column once a day or two has passed.
+  resolves. `scan_config.min_confluence` was **dropped 2026-09-18**.
 - **Done 2026-09-17:** Oversold Bounce, Trend Turning Up and both Quiet
   Period breakouts **disabled** (see "Trigger disposition"). Targets now holds
   only Earnings Release. Watch tonight's digest: Targets may be empty, which
@@ -292,7 +324,7 @@ justifies is a Watch note ("8-K filed today") on names already listed.
 | `intraday-flip-scan` (live alert engine) | launchd | every 5 min (+2), 09:35–16:00 ET |
 | `manage-positions` (Exit Warnings) | launchd | every 5 min, 09:30–16:00 ET |
 | `record-fire-outcomes` | launchd | 19:10 ET weekdays |
-| `sec-filings-sync` | launchd | 07:30 and 17:30 ET weekdays |
+| `sec-filings-sync` | launchd | 07:30, 17:30 and **22:30** ET weekdays |
 | `refresh-window-stats` | Supabase pg_cron | 23:00 UTC weekdays |
 | `weekly-bars-scan` | pg_cron | Mon 06:00 UTC |
 | `refresh-spread-estimates` | pg_cron | Sun 07:00 UTC |
@@ -1491,8 +1523,8 @@ the change. Targets now holds only Earnings Release — the honest state of the
 evidence, not a gap to fill.
 
 `scan_config` (current): `price_min/max` 0.10–5.00, `min_dollar_vol_20d`
-2.5M (SIP scale), `max_rsi14` 85 (`min_confluence` is deprecated and
-unread since the gate was removed 2026-09-17), `account_size` 40, `max_risk_pct` 0.20,
+2.5M (SIP scale), `max_rsi14` 85 (`min_confluence` was dropped
+2026-09-18, with the confluence gate), `account_size` 40, `max_risk_pct` 0.20,
 `default_stop_pct` 0.12, `score_horizon_days` 3, `flip_profit_target_pct`
 0.06, `flip_trail_pct` 0.03, `flip_time_stop_days` 2, `swing_time_stop_days`
 10, `swing_disaster_stop_pct` 0.25.
