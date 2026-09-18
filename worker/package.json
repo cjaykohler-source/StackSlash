@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@stoqey/ib": "^1.6.10",
     "@supabase/supabase-js": "^2.45.4",
     "ws": "^8.18.0"
   },

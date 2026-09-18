@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.sec-balance-sheet-sync</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/scripts/run-python-job.sh</string>
+        <string>sec-balance-sheet-sync</string>
+        <string>scripts/sec_balance_sheet_sync.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+    <!-- local time; the host is on America/New_York -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-sec-balance-sheet-sync/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-sec-balance-sheet-sync/launchd.err.log</string>
+</dict>
+</plist>
