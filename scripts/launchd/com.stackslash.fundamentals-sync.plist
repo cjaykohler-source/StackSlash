@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.fundamentals-sync</string>
+    <!-- FMP earnings calendar + company profiles; was a Netlify scheduled
+         function that timed out and ran twice per slot. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/scripts/run-netlify-job.sh</string>
+        <string>fundamentals-sync</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+    <!-- 02:00 and 17:00 local (America/New_York), every day -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-fundamentals-sync/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-fundamentals-sync/launchd.err.log</string>
+</dict>
+</plist>
