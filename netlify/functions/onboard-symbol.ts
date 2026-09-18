@@ -164,17 +164,25 @@ async function nearestKnownTicker(
       .order("ticker", { ascending: true })
       .range(from, to),
   );
-  let best: string | null = null;
+  // A same-length match (one wrong or swapped character, like APPL -> AAPL)
+  // is much more likely to be the intended ticker than one that adds or
+  // drops a character (APPL -> APP, a different company entirely), so rank
+  // those first and only fall back to length changes. Alphabetical inside a
+  // tier keeps the answer stable.
+  let sameLength: string | null = null;
+  let otherLength: string | null = null;
   for (const row of rows) {
     const cand = row.ticker;
     if (cand === ticker) return null; // it exists after all; no suggestion needed
     if (Math.abs(cand.length - n) > 1) continue;
-    if (editDistanceWithin1(ticker, cand)) {
-      // Prefer the shortest match, then alphabetical, so the answer is stable.
-      if (best === null || cand.length < best.length || (cand.length === best.length && cand < best)) best = cand;
+    if (!editDistanceWithin1(ticker, cand)) continue;
+    if (cand.length === n) {
+      if (sameLength === null || cand < sameLength) sameLength = cand;
+    } else if (otherLength === null || cand < otherLength) {
+      otherLength = cand;
     }
   }
-  return best;
+  return sameLength ?? otherLength;
 }
 
 /** True when a and b are at most one edit apart (Damerau: swap counts as one). */
