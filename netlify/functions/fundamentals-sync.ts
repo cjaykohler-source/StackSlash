@@ -17,8 +17,8 @@ import { fetchEarningsCalendarRecent, fetchProfile, DESCRIPTION_CAPTURE_START } 
  *     over a couple of weeks; deep-dive.ts fills any gap on demand for a
  *     symbol that actually fires before the sweep reaches it.
  *
- * Scheduled via netlify.toml (06:00 + 21:00 UTC). Also accepts a manual
- * POST for a one-off run.
+ * Runs on the worker host via launchd (02:00 + 17:00 ET,
+ * scripts/run-netlify-job.sh). Also accepts a manual POST for a one-off run.
  */
 const PROFILE_MAX_PER_RUN = 90; // one FMP call each
 const PROFILE_STALE_DAYS = 45;

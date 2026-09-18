@@ -338,6 +338,44 @@ Findings worth keeping:
   04:00 ET; measured from there it looked -6%, from the official open it was
   +0.4%. Daily-bar `o` is the right basis for "% today".
 
+### Session 2026-09-18 (evening) — added
+
+- **New tables, filled from free sources by host jobs** (PR #162):
+  `balance_sheet` (SEC XBRL, 4,720 / 5,003 symbols; 274 report no USD
+  figures, e.g. TURB in EUR), `short_interest` (FINRA, 12 settlements
+  2026-03-13 → 08-31, ~4.9k symbols each), `short_availability` (IBKR
+  shortable shares + borrow tier on the free delayed feed, 4,992 / 5,003).
+  Not shown on the site yet. launchd plists are in `scripts/launchd/` and
+  must be loaded (see "Needs the user" below).
+- **onboard-symbol no longer runs eod-scan in-process** (PR #161): the
+  ~200 s scan could never finish inside a synchronous Netlify function, so
+  every valid onboarding left two `running` rows (SWRD 09-17, TURB 09-18).
+  New symbols get factors from the nightly eod-scan.
+- **fundamentals-sync moved to launchd** (02:00 / 17:00 ET): Netlify's
+  ~30 s cut-off ran it twice per slot, which also doubled its FMP calls —
+  the likely reason the free daily quota was already spent on 09-18.
+- **IBKR:** gateway is on the **live** login, port 4001, Read-Only API on.
+  Real-time still returns 10089 on every exchange although both bundles
+  are active, the API acknowledgement is signed and the user is
+  Non-Professional — IB-side; re-probe Monday, ticket if still failing.
+  IB silently stops sending ticks after ~135 symbols at 90 lines x 4 s;
+  45 x 12 s works.
+- **Robinhood MCP** works from a Claude session only (float, L2, SEC
+  facts, consolidated quotes); host jobs cannot call it. Never trade.
+- `research-update` runs fine (log `~/Library/Logs/stackslash-research-update`)
+  but writes no `job_runs` row — check its log, not job_runs.
+
+**Needs the user:** load the launchd jobs; decide on the symbol-page
+panel (balance sheet + short interest + borrow, amber); IB support ticket
+if Monday's probe still fails.
+
+**Add to Monday's verify list:** first scheduled runs of the four new
+launchd jobs (one `job_runs` row each, no `running` leftovers); a single
+`fundamentals-sync` per slot; FMP `shares-float` / `short-interest` tried
+before 02:00 ET's run or right after a quota reset; IB real-time re-probe;
+whether TURB / SWRD get a `factor_state` row (SWRD had none after 09-17's
+scan: 7 bars of history).
+
 ### Open decisions / next steps
 
 - **Short interest — researched, not built.** FINRA's public API
@@ -394,7 +432,8 @@ Findings worth keeping:
 | `refresh-window-stats` | Supabase pg_cron | 23:00 UTC weekdays |
 | `weekly-bars-scan` | pg_cron | Mon 06:00 UTC |
 | `refresh-spread-estimates` | pg_cron | Sun 07:00 UTC |
-| `news-scan`, `fundamentals-sync`, prunes, `refresh-intraday-volume-profile` | Netlify scheduled functions | see `netlify.toml` |
+| `fundamentals-sync` (FMP) | launchd | 02:00 and 17:00 ET daily |
+| `news-scan`, prunes, `refresh-intraday-volume-profile` | Netlify scheduled functions | see `netlify.toml` |
 | `intraday-scan` | not scheduled (its trigger moved to eod-scan) | — |
 
 Every job writes `job_runs`; check it (status, duplicates, `running` rows
