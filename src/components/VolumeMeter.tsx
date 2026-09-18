@@ -109,7 +109,7 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
       {/* One fact per line, so nothing wraps mid-phrase or starts with a dot. */}
       <div className="volume-meter-foot">
         {dateLabel && <div>{`${dateLabel}${live ? " · so far" : ""}`}</div>}
-        {typical != null && <div>vs median of prior 20 sessions</div>}
+        {typical != null && <div title="Median daily volume of the 20 sessions before this one">vs 20-session median</div>}
         {maxX === WIDE_MAX && <div>scale widened to 0–8×</div>}
       </div>
     </div>
