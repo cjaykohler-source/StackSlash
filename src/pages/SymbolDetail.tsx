@@ -8,7 +8,7 @@ import { CompanyDescription } from "../components/CompanyDescription";
 import { useQuotes, sessionLabel, type Quote } from "../components/QuoteTag";
 import { SymbolNews } from "../components/SymbolNews";
 import { SessionCandleChart, type Candle, type PrevSession } from "../components/SessionCandleChart";
-import { RangeCandleChart, TIMEFRAME_LABEL, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
+import { RangeCandleChart, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
 import { BrandHomeLink } from "../components/BrandHomeLink";
 import { TrackButton } from "../components/TrackButton";
 import { VolumeMeter } from "../components/VolumeMeter";
@@ -252,6 +252,11 @@ export function SymbolDetail() {
       <div className="symbol-body-main">
       <section>
         <div className="chart-main">
+        {/* Controls + chart on the left, the volume meter on the right; the
+            meter's top sits level with the controls row, which is where the
+            metrics column starts too. */}
+        <div className="chart-with-meter">
+        <div className="chart-body">
         {/* Chart controls: one row riding the top of the chart. */}
         <div className="chart-controls">
           <div className="range-toggle">
@@ -294,14 +299,7 @@ export function SymbolDetail() {
               </button>
             </div>
           )}
-          <span className="session-picker-note">
-            {range === "session"
-              ? `SIP consolidated tape, 1-min bars${candles?.delayed ? " · in progress, 15-min delayed" : ""}`
-              : `SIP consolidated tape, ${rangeCandles ? TIMEFRAME_LABEL[rangeCandles.timeframe] : ""} bars, split-adjusted`}
-          </span>
         </div>
-        <div className="chart-with-meter">
-        <div className="chart-body">
         {loading ? (
           <p className="empty-state chart-empty-state">Loading…</p>
         ) : range === "session" ? (
