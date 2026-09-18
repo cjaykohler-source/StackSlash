@@ -1120,13 +1120,17 @@ body {
   table-layout: fixed;
 }
 .trigger-feed col.col-time {
-  width: 15%;
+  /* Wide enough for "12:52:01 PM ×4 - 1:57" on one line. */
+  width: 19%;
+}
+.trigger-feed td:first-child {
+  white-space: nowrap;
 }
 .trigger-feed col.col-symbol {
   width: 9%;
 }
 .trigger-feed col.col-catalyst {
-  width: 24%;
+  width: 20%;
 }
 .trigger-feed col.col-flags {
   width: 16%;
