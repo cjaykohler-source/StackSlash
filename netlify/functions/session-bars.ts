@@ -57,9 +57,17 @@ export default async (req: Request) => {
     .order("ts", { ascending: true })
     .limit(1000);
   const existingRows = (existing as { ts: string; price: number }[] | null) ?? [];
+  const STALE_BAR_MS = 20 * 60_000;
+  const todayStored = existingRows.filter((b) => b.ts.slice(0, 10) === todayStr);
+  // A thin name's IEX series can be one early print and then nothing for
+  // hours while the tape keeps trading, so "has bars today" isn't the same
+  // as "is current". Treat a sparse or stalled today as no today at all.
+  const storedIsCurrent =
+    todayStored.length >= 2 &&
+    Date.now() - Date.parse(todayStored[todayStored.length - 1].ts) < STALE_BAR_MS;
   if (existingRows.length >= 2) {
     const lastDay = existingRows[existingRows.length - 1].ts.slice(0, 10);
-    if (lastDay === todayStr || !marketOpen) {
+    if ((lastDay === todayStr && (storedIsCurrent || !marketOpen)) || (!marketOpen && lastDay !== todayStr)) {
       return json({
         symbol: ticker,
         session_date: lastDay,
@@ -91,10 +99,12 @@ export default async (req: Request) => {
 
   // A running session with no IEX print today: ask the tape instead of
   // handing back yesterday labelled as the latest session.
-  if (marketOpen && (!bars.length || sessionDateOf(bars) !== todayStr)) {
+  const iexToday = bars.filter((b) => b.t.slice(0, 10) === todayStr);
+  if (marketOpen && (iexToday.length < 2 || !storedIsCurrent)) {
     try {
       const sip = await fetchDelayedSipMinutesToday(ticker);
-      if (sip.length) {
+      // Only worth swapping in if the tape actually sees more than IEX did.
+      if (sip.length > iexToday.length) {
         return json({
           symbol: ticker,
           session_date: todayStr,
