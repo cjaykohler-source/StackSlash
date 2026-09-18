@@ -26,9 +26,9 @@ interface Props {
   /** Page column to render the snapshot stats into (right side). */
   statsTarget?: HTMLElement | null;
   /**
-   * Trailing one-month average daily volume (lib/dailyVolume.ts), drawn as a
-   * dotted line at each candle's size, so every volume bar reads as above or
-   * below the month before it.
+   * Typical (median) daily volume over the prior 20 sessions
+   * (lib/volumeBaseline.ts), drawn as a dotted line at each candle's size, so
+   * every volume bar reads as above or below a normal pace.
    */
   baseline?: VolumeBaseline | null;
 }
@@ -37,27 +37,27 @@ const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T12:00:00Z`) 
 const etDate = (ms: number) => new Date(ms).toLocaleDateString("en-CA", { timeZone: ET });
 
 /**
- * What a normal candle of this size would trade: the average daily volume
- * over the 21 sessions before it, times the sessions (or share of one) the
+ * What a normal candle of this size would trade: the typical (median) day
+ * over the 20 sessions before it, times the sessions (or share of one) the
  * candle covers. Rolling rather than one flat line, since over a year or
- * more a single average would be wrong for most of the chart.
+ * more a single figure would be wrong for most of the chart.
  */
 function expectedVolume(b: VolumeBaseline, ms: number, tf: RangeTimeframe): number | null {
   const day = new Date(ms).toISOString().slice(0, 10); // daily+ bars are stamped midnight ET
   switch (tf) {
     case "30Min": {
-      const adv = b.advBefore(etDate(ms));
+      const adv = b.typicalBefore(etDate(ms));
       return adv == null ? null : (adv * 30) / 390;
     }
     case "1Day":
-      return b.advBefore(day);
+      return b.typicalBefore(day);
     case "1Week": {
-      const adv = b.advBefore(day);
+      const adv = b.typicalBefore(day);
       const n = b.sessionsIn(day, addDays(day, 7));
       return adv == null ? null : adv * (n || 5);
     }
     case "1Month": {
-      const adv = b.advBefore(day);
+      const adv = b.typicalBefore(day);
       const next = new Date(Date.UTC(new Date(ms).getUTCFullYear(), new Date(ms).getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
       const n = b.sessionsIn(day, next);
       return adv == null ? null : adv * (n || 21);
@@ -326,8 +326,8 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline
       </svg>
       <div className="candle-legend">
         {hasAvg && (
-          <span className="cc-key cc-key-vol-avg" title="Average daily volume over the 21 sessions before each candle, times the sessions the candle covers.">
-            avg volume per candle, prior month
+          <span className="cc-key cc-key-vol-avg" title="Median daily volume over the 20 sessions before each candle, times the sessions the candle covers. The median, so one spike day can't inflate it.">
+            typical volume per candle, prior 20 sessions
           </span>
         )}
         <span className="cc-legend-note">
@@ -343,7 +343,7 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline
           {prevClose != null && <div>vs prior candle {fmtPct(hp.c / prevClose - 1)}</div>}
           <div>
             Vol {fmtVol(hp.v)}
-            {expected[hover] != null ? ` · ${(hp.v / expected[hover]!).toFixed(1)}× avg` : ""}
+            {expected[hover] != null ? ` · ${(hp.v / expected[hover]!).toFixed(1)}× typical` : ""}
           </div>
         </div>
       )}
