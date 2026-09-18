@@ -3,23 +3,17 @@ import { withJobRun } from "./lib/jobRun";
 import { validateSymbol } from "./lib/alpaca";
 import { backfillSymbolBars, backfillLatestIntradaySession } from "./lib/backfillSymbol";
 import { fetchAllPaginated } from "./lib/fetchAllPaginated";
-import runEodScan from "./eod-scan";
 
 /**
  * On-demand symbol onboarding — HTTP-triggered from the dashboard's
  * search box when a user looks up a ticker not yet in `symbols`.
  *
- * Deliberately does NOT evaluate the new symbol's triggers in isolation:
- * momentum_rank_entry, roc_20d_rank_pct, and ret_1w_rank_pct are
- * cross-sectional percentile ranks computed relative to the whole active
- * universe for that day — ranking one symbol alone would be meaningless
- * (1 of 1 is always the 100th percentile), the same class of bug this
- * project already found and fixed once for the old 8-symbol universe's
- * unreachable momentum thresholds. So after backfilling history, this
- * calls the real eod-scan directly (in-process, no HTTP hop — its
- * default export is a plain callable async function) so the new symbol
- * gets correctly-ranked factors and real trigger evaluation through the
- * exact same pipeline as every other symbol, not a parallel shortcut.
+ * Backfills history and the latest intraday session, then stops. Factors
+ * and trigger evaluation come from the nightly eod-scan, which covers every
+ * active symbol. It used to call eod-scan in-process, but a full-universe
+ * scan takes ~200 s and this is a synchronous Netlify function (~30 s), so
+ * both job_runs rows were killed and left `running` (SWRD 09-17, TURB
+ * 09-18); run mid-session it would also score a half-formed daily bar.
  */
 export default async (req: Request) => {
   if (req.method !== "POST") {
@@ -55,21 +49,14 @@ export default async (req: Request) => {
     });
   }
 
-  // Guard against overlapping eod-scan runs — nothing else in this
-  // codebase prevented two from executing concurrently, and a single
-  // retried onboarding request produced exactly that (confirmed via
-  // job_runs during this feature's own testing): two eod-scan calls
-  // racing on the same bars_daily/factor_state upserts and, worse, both
-  // potentially inserting duplicate trigger_events/dossiers/alerts for
-  // the same real fires. Time-windowed (not just "any running row")
-  // so a genuinely stuck/killed run from a past crash can't permanently
-  // block onboarding forever — 3 minutes is comfortably above eod-scan's
-  // real duration at full universe scale, even generously.
+  // One onboarding at a time: a retried request would otherwise backfill
+  // the same symbol twice. Time-windowed so a killed run can't block
+  // onboarding forever.
   const guardCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
   const { data: inFlight, error: inFlightErr } = await db
     .from("job_runs")
     .select("job_name, started_at")
-    .in("job_name", ["eod-scan", "onboard-symbol"])
+    .eq("job_name", "onboard-symbol")
     .eq("status", "running")
     .gte("started_at", guardCutoff)
     .limit(1)
@@ -77,7 +64,7 @@ export default async (req: Request) => {
   if (inFlightErr) throw inFlightErr;
   if (inFlight) {
     return new Response(
-      JSON.stringify({ error: "A scan is already in progress — try again in a minute." }),
+      JSON.stringify({ error: "An onboarding is already in progress — try again in a minute." }),
       { status: 409, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -117,11 +104,6 @@ export default async (req: Request) => {
       // until the next scheduled intraday-bars-scan run during market
       // hours — see the function's own comment.
       await backfillLatestIntradaySession(db, inserted.id, ticker);
-
-      // Real eod-scan run across the whole active universe (now including
-      // this symbol) — see the module comment for why this isn't scoped to
-      // just the new symbol.
-      await runEodScan();
 
       return { rowsProcessed: rowsBackfilled, result: { ticker, rowsBackfilled } };
     });
