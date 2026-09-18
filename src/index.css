@@ -829,6 +829,20 @@ body {
   margin: 0 0 6px;
   font-size: 0.82rem;
 }
+/* Groups inside the snapshot: a small caps title and a divider between. */
+.chart-stats-col .factor-group + .factor-group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.factor-group-title {
+  margin: 0 0 2px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
 .chart-stats-col .factor-snapshot .dossier-metrics {
   display: flex;
   flex-direction: column;
