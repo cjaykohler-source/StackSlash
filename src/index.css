@@ -2273,7 +2273,7 @@ h1 .quote-tag {
 
 /* Chart and the volume meter side by side; the meter column is a little
    narrower than the 210px metrics column and starts level with the candle
-   pane (the chart's 10px top inset). */
+   pane: the chart box's 10px padding + 1px border + the SVG's 10px inset. */
 .chart-with-meter {
   display: flex;
   gap: 12px;
@@ -2286,7 +2286,7 @@ h1 .quote-tag {
 .volume-meter {
   flex: 0 0 180px;
   width: 180px;
-  margin-top: 10px;
+  margin-top: 21px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
