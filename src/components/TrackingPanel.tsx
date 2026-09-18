@@ -85,7 +85,12 @@ function TrackedCard({
       rows.map((r) => ({ t: new Date(r.ts).getTime(), price: Number(r.price) }));
 
     async function loadSeries() {
-      // Most recent session's 1-min bars from bars_intraday.
+      // Today first, always. A thin name with a single print today used to
+      // fail a `>= 2 bars` test and fall through to the prior session (or
+      // the 30-day daily line), so two cards side by side could be showing
+      // different days with only a small tag to say so. Now the only reason
+      // to show another day is having no print today at all.
+      const todayET = etDateString(Date.now());
       const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from("bars_intraday")
@@ -95,51 +100,50 @@ function TrackedCard({
         .order("ts", { ascending: false })
         .limit(500);
       if (cancelledRef.current) return;
-      let rows = ((data as { ts: string; price: number }[] | null) ?? []).reverse();
-      // Keep just one ET session: today's if we have any of it, otherwise
-      // the most recent prior session (dated by ET, not the UTC calendar —
-      // after-hours bars run past midnight UTC).
-      if (rows.length) {
-        const todayET = etDateString(Date.now());
-        const hasToday = rows.some((r) => etDateString(new Date(r.ts)) === todayET);
-        const targetDay = hasToday ? todayET : etDateString(new Date(rows[rows.length - 1].ts));
-        rows = rows.filter((r) => etDateString(new Date(r.ts)) === targetDay);
-        setSessionLabel(
-          targetDay === todayET
-            ? null
-            : new Date(`${targetDay}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" }),
-        );
-      }
-      if (rows.length >= 2) {
+      const rows = ((data as { ts: string; price: number }[] | null) ?? []).reverse();
+      const dayOf = (ts: string) => etDateString(new Date(ts));
+      const todayRows = rows.filter((r) => dayOf(r.ts) === todayET);
+
+      // 1. Any print today: show today. One bar plus the live quote still
+      //    draws a line; one bar alone shows "waiting for today's prints".
+      if (todayRows.length) {
         setIntraday(true);
-        setSeries(fromIntradayRows(rows));
+        setSessionLabel(null);
+        setSeries(fromIntradayRows(todayRows));
         return;
       }
 
-      // Not in intraday-bars-scan's priority set — pull the most recent
-      // session on demand (session-bars stores it, so this is one-time).
+      // 2. Nothing stored for today — this symbol may just not be in
+      //    intraday-bars-scan's priority set. Ask session-bars, which pulls
+      //    the most recent session on demand.
+      let onDemand: { ts: string; price: number }[] = [];
       try {
         const res = await fetch(`/.netlify/functions/session-bars?symbol=${encodeURIComponent(tracked.ticker)}`);
         const body = (await res.json()) as { bars?: { ts: string; price: number }[] };
         if (cancelledRef.current) return;
-        if ((body.bars?.length ?? 0) >= 2) {
-          const b = body.bars!;
-          const todayET = etDateString(Date.now());
-          const barDay = etDateString(new Date(b[b.length - 1].ts));
-          setSessionLabel(
-            barDay === todayET
-              ? null
-              : new Date(`${barDay}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" }),
-          );
-          setIntraday(true);
-          setSeries(fromIntradayRows(b));
-          return;
-        }
+        onDemand = body.bars ?? [];
       } catch {
-        /* fall through to daily */
+        /* fall through */
+      }
+      if (onDemand.length && dayOf(onDemand[onDemand.length - 1].ts) === todayET) {
+        setIntraday(true);
+        setSessionLabel(null);
+        setSeries(fromIntradayRows(onDemand.filter((b) => dayOf(b.ts) === todayET)));
+        return;
       }
 
-      // Truly no intraday data (delisted / no IEX prints) — daily line.
+      // 3. No print today anywhere: the most recent prior session, labelled
+      //    with its date so it can't be mistaken for today.
+      const priorSource = rows.length >= 2 ? rows : onDemand.length >= 2 ? onDemand : [];
+      if (priorSource.length >= 2) {
+        const targetDay = dayOf(priorSource[priorSource.length - 1].ts);
+        setIntraday(true);
+        setSessionLabel(new Date(`${targetDay}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" }));
+        setSeries(fromIntradayRows(priorSource.filter((r) => dayOf(r.ts) === targetDay)));
+        return;
+      }
+
+      // 4. Truly no intraday data (delisted / no IEX prints) — daily line.
       const { data: daily } = await supabase
         .from("bars_daily")
         .select("date, close")
@@ -152,6 +156,7 @@ function TrackedCard({
       setSessionLabel(null);
       setSeries(drows.reverse().map((r) => ({ t: new Date(`${r.date}T00:00:00Z`).getTime(), price: Number(r.close) })));
     }
+
     loadSeries();
     const id = setInterval(loadSeries, SERIES_MS);
     return () => {
@@ -166,7 +171,16 @@ function TrackedCard({
   // price onto yesterday's bars just draws a spike to nowhere.
   const showingToday = intraday && sessionLabel === null;
   const points = [...series];
-  if (showingToday && quote && (points.length === 0 || quote.price !== points[points.length - 1].price)) {
+  // Append even when the price is unchanged, as long as time has moved on:
+  // a thin name whose only print is the open should still draw a flat line
+  // to now, not sit on "waiting for prints" next to fuller cards.
+  if (
+    showingToday &&
+    quote &&
+    (points.length === 0 ||
+      quote.price !== points[points.length - 1].price ||
+      Date.now() - points[points.length - 1].t > 60_000)
+  ) {
     points.push({ t: Date.now(), price: quote.price });
   }
 
