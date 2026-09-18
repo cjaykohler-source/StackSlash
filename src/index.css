@@ -149,9 +149,14 @@ body {
 .symbol-title-line .symbol-quote {
   margin: 0;
 }
-/* Track / Tracking toggle, riding the title line after the price. */
+/* Track / Tracking toggle, riding the title line after the price. The line
+   is baseline-aligned around a much taller price, so centring the button
+   floats it above the change text it sits beside; sit it on the baseline
+   instead and nudge it down by its own padding. */
 .track-button {
-  align-self: center;
+  align-self: baseline;
+  position: relative;
+  top: 2px;
   background: none;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1079,6 +1084,24 @@ body {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
+  /* Fixed layout + the colgroup below: every section's columns land on the
+     same x positions, whatever each one's content happens to be. */
+  table-layout: fixed;
+}
+.trigger-feed col.col-time {
+  width: 15%;
+}
+.trigger-feed col.col-symbol {
+  width: 9%;
+}
+.trigger-feed col.col-catalyst {
+  width: 24%;
+}
+.trigger-feed col.col-flags {
+  width: 16%;
+}
+.trigger-feed col.col-num {
+  width: 12%;
 }
 .trigger-feed th {
   text-align: left;

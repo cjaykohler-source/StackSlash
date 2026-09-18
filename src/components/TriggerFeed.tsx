@@ -350,6 +350,18 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
   const table = (rowsToRender: FeedRow[]) => (
     <div className="trigger-feed-scroll">
       <table className="trigger-feed">
+        {/* Each side (Buy / Watch / Sell) is its own table, so without a
+            fixed layout they size their columns independently and the
+            sections don't line up down the page. */}
+        <colgroup>
+          <col className="col-time" />
+          <col className="col-symbol" />
+          <col className="col-catalyst" />
+          <col className="col-flags" />
+          <col className="col-num" />
+          <col className="col-num" />
+          <col className="col-num" />
+        </colgroup>
         <thead>
           <tr>
             <th>Time</th>
