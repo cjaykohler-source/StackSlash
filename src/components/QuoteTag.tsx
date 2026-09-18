@@ -5,6 +5,16 @@ export interface Quote {
   changePct: number; // fraction, measured from today's open
   /** from the consolidated tape, ~15 min behind: IEX had no print today */
   delayed?: boolean;
+  /** no trade today on any feed — price/change are the session in `asOf` */
+  stale?: boolean;
+  /** YYYY-MM-DD of the session this quote describes, when not today */
+  asOf?: string;
+}
+
+/** "Sep 17" from a YYYY-MM-DD session date. */
+export function sessionLabel(asOf: string | undefined): string {
+  if (!asOf) return "";
+  return new Date(`${asOf}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 /**
@@ -57,6 +67,12 @@ export function QuoteTag({ quote }: { quote: Quote | undefined }) {
     <span className={`quote-tag ${dir}`}>
       ${price.toFixed(2)} <span className="quote-tag-sep">|</span> {pctText}
       {quote.delayed && <span className="quote-delayed" title="Consolidated tape, ~15 minutes behind — this stock has no real-time (IEX) prints today."> 15m</span>}
+      {quote.stale && (
+        <span className="quote-delayed" title="No trade on any feed today — this is the last session's close.">
+          {" "}
+          {sessionLabel(quote.asOf)}
+        </span>
+      )}
     </span>
   );
 }
