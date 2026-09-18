@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { withJobRun } from "./lib/jobRun";
 import { validateSymbol } from "./lib/alpaca";
 import { backfillSymbolBars, backfillLatestIntradaySession } from "./lib/backfillSymbol";
+import { fetchAllPaginated } from "./lib/fetchAllPaginated";
 import runEodScan from "./eod-scan";
 
 /**
@@ -81,13 +82,24 @@ export default async (req: Request) => {
     );
   }
 
+  // Validate BEFORE opening a job_run. A ticker that doesn't exist is a
+  // typo, not a job failure: logging it as one filled job_runs with error
+  // rows that look identical to a real breakage (628 stale/failed rows were
+  // swept on 2026-09-18, and this was part of the noise).
+  const asset = await validateSymbol(ticker);
+  if (!asset.valid) {
+    const suggestion = await nearestKnownTicker(db, ticker);
+    return new Response(
+      JSON.stringify({
+        error: `${ticker} isn't a valid, currently-tradable US equity symbol.`,
+        ...(suggestion ? { suggestion } : {}),
+      }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   try {
     const result = await withJobRun(db, "onboard-symbol", async () => {
-      const asset = await validateSymbol(ticker);
-      if (!asset.valid) {
-        throw new Error(`${ticker} isn't a valid, currently-tradable US equity symbol.`);
-      }
-
       const { data: inserted, error: insertErr } = await db
         .from("symbols")
         .upsert({ ticker, name: asset.name, active: true }, { onConflict: "ticker" })
@@ -118,12 +130,81 @@ export default async (req: Request) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    // withJobRun already logged this to job_runs — surface a clean 400
-    // to the caller (a bad/untradable ticker is a client error, not a
-    // server one) rather than letting it bubble into a generic 500.
+    // withJobRun already logged this to job_runs — surface a clean 400 to
+    // the caller. By here the ticker is known-good, so anything that fails
+    // is a real backfill/scan problem worth having in job_runs.
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
   }
 };
+
+
+/**
+ * The closest ticker we already carry, for a typo like APPL -> AAPL.
+ * One edit away (a swapped, wrong, missing or extra character) and the
+ * same first letter, which is what makes a suggestion feel right rather
+ * than random. Null when nothing is close enough.
+ */
+async function nearestKnownTicker(
+  db: ReturnType<typeof getSupabaseAdmin>,
+  ticker: string,
+): Promise<string | null> {
+  const n = ticker.length;
+  if (n < 2) return null;
+  // Same first letter and a length within one keeps this to a few hundred
+  // rows; paginated because an unranged select silently caps at 1,000.
+  const rows = await fetchAllPaginated<{ ticker: string }>((from, to) =>
+    db
+      .from("symbols")
+      .select("ticker")
+      .eq("active", true)
+      .like("ticker", `${ticker[0]}%`)
+      .order("ticker", { ascending: true })
+      .range(from, to),
+  );
+  let best: string | null = null;
+  for (const row of rows) {
+    const cand = row.ticker;
+    if (cand === ticker) return null; // it exists after all; no suggestion needed
+    if (Math.abs(cand.length - n) > 1) continue;
+    if (editDistanceWithin1(ticker, cand)) {
+      // Prefer the shortest match, then alphabetical, so the answer is stable.
+      if (best === null || cand.length < best.length || (cand.length === best.length && cand < best)) best = cand;
+    }
+  }
+  return best;
+}
+
+/** True when a and b are at most one edit apart (Damerau: swap counts as one). */
+function editDistanceWithin1(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  if (a.length === b.length) {
+    const diffs: number[] = [];
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diffs.push(i);
+    if (diffs.length === 1) return true; // one substitution
+    // one transposition of adjacent characters (APPL vs AAPL)
+    if (diffs.length === 2 && diffs[1] === diffs[0] + 1) {
+      return a[diffs[0]] === b[diffs[1]] && a[diffs[1]] === b[diffs[0]];
+    }
+    return false;
+  }
+  // one insertion or deletion
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  let i = 0;
+  let j = 0;
+  let skipped = false;
+  while (i < short.length && j < long.length) {
+    if (short[i] === long[j]) {
+      i++;
+      j++;
+      continue;
+    }
+    if (skipped) return false;
+    skipped = true;
+    j++;
+  }
+  return true;
+}

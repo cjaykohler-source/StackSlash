@@ -16,12 +16,15 @@ export function SymbolSearch() {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A near-miss the backend recognised (APPL -> AAPL), offered as one click.
+  const [suggestion, setSuggestion] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent, override?: string) {
     e.preventDefault();
-    const ticker = query.trim().toUpperCase();
+    const ticker = (override ?? query).trim().toUpperCase();
     if (!ticker || busy) return;
     setError(null);
+    setSuggestion(null);
 
     const { data: existing } = await supabase
       .from("symbols")
@@ -44,6 +47,7 @@ export function SymbolSearch() {
       const body = await res.json();
       if (!res.ok) {
         setError(body.error ?? `Couldn't add ${ticker}.`);
+        setSuggestion(typeof body.suggestion === "string" ? body.suggestion : null);
         setBusy(false);
         return;
       }
@@ -71,7 +75,28 @@ export function SymbolSearch() {
           Adding {query.trim().toUpperCase()}… backfilling history and running the scan, this can take a bit.
         </p>
       )}
-      {error && <p className="symbol-search-error">{error}</p>}
+      {error && (
+        <p className="symbol-search-error">
+          {error}
+          {suggestion && (
+            <>
+              {" "}
+              Did you mean{" "}
+              <button
+                type="button"
+                className="symbol-search-suggestion"
+                onClick={(e) => {
+                  setQuery(suggestion);
+                  handleSubmit(e, suggestion);
+                }}
+              >
+                {suggestion}
+              </button>
+              ?
+            </>
+          )}
+        </p>
+      )}
     </form>
   );
 }

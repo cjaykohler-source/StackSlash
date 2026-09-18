@@ -268,6 +268,16 @@ body {
   max-width: 320px;
   z-index: 1;
 }
+.symbol-search-suggestion {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
 .symbol-search-status {
   color: var(--text-dim);
 }
