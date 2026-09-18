@@ -2287,9 +2287,9 @@ h1 .quote-tag {
   color: var(--text-dim);
 }
 
-/* Controls + chart and the volume meter side by side; the meter column is a
-   little narrower than the 210px metrics column and its top is level with
-   the controls row, where the metrics column starts. */
+/* Controls + chart and the volume meter side by side; the meter column is as
+   narrow as its content allows and its top is level with the controls row,
+   where the metrics column starts. */
 .chart-with-meter {
   display: flex;
   gap: 12px;
@@ -2300,12 +2300,14 @@ h1 .quote-tag {
   min-width: 0;
 }
 .volume-meter {
-  flex: 0 0 180px;
-  width: 180px;
+  /* As narrow as its content allows with a safe margin: the widest thing
+     left is the bar plus its scale labels (~62px) or a label like "37.33M". */
+  flex: 0 0 96px;
+  width: 96px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: 10px 12px;
+  padding: 10px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
