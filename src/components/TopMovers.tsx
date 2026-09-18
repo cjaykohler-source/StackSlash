@@ -15,8 +15,8 @@ const REFRESH_MS = 5 * 60_000; // matches intraday-bars-scan's 5-min cadence
 const TOP_N = 35;
 
 /**
- * Live dashboard sidebar: the day's 35 biggest gainers and 35 biggest
- * losers (stacked in the first column) beside the Tracking column. The
+ * Live dashboard sidebar: the Tracking column nearest the feed, then the
+ * day's 35 biggest gainers and 35 biggest losers stacked to its right. The
  * movers are measured across the tracked universe, % measured from today's open (same
  * basis as the per-symbol quote tags). Data comes straight from the
  * `top_movers()` Postgres function over `bars_intraday` — no Alpaca call —
@@ -75,8 +75,9 @@ export function TopMovers() {
       {asOf !== null && (
         <p className="top-movers-asof">as of {etTimeLabel(asOf)}</p>
       )}
-      {/* Gainers and losers stack in the first column; the second is the
-          Tracking column (it used to hold the losers). */}
+      {/* Tracking sits next to the feed; gainers and losers stack to its
+          right, in the column the losers used to share with the gainers. */}
+      <TrackingList />
       <div className="top-movers-stack">
         {!failedMovers && (
           <>
@@ -85,7 +86,6 @@ export function TopMovers() {
           </>
         )}
       </div>
-      <TrackingList />
     </aside>
   );
 }
