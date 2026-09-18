@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { PRICE_H } from "./SessionCandleChart";
 
 interface Props {
@@ -20,8 +21,6 @@ const BASE_MAX = 4;
 const WIDE_MAX = 8;
 const BASE_LINES = [1, 2, 3, 4];
 const WIDE_LINES = [1, 2, 4, 6, 8];
-const HEADER_H = 58;
-const FOOTER_H = 28;
 const TRACK_TOP = 8;
 const BAR_W = 34;
 
@@ -42,7 +41,19 @@ const fmtVol = (v: number) =>
  * 49.70M across all minute bars, 45.90M regular-only).
  */
 export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
-  const trackH = PRICE_H - HEADER_H - FOOTER_H - TRACK_TOP;
+  // The track takes whatever height the header and footer leave, measured
+  // rather than assumed: a fixed footer allowance overflowed the box as soon
+  // as its text wrapped to a second line.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [areaH, setAreaH] = useState(400);
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setAreaH(Math.max(120, Math.floor(entry.contentRect.height))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const trackH = areaH - TRACK_TOP - 2;
   const ready = volume != null && typical != null && typical > 0;
   const x = ready ? volume! / typical! : 0;
   const maxX = x >= BASE_MAX ? WIDE_MAX : BASE_MAX;
@@ -57,7 +68,7 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
 
   return (
     <div className="volume-meter" style={{ height: PRICE_H }} aria-label="Session volume versus a typical day">
-      <div className="volume-meter-head" style={{ height: HEADER_H }}>
+      <div className="volume-meter-head">
         <span className="volume-meter-title">Volume vs typical</span>
         {ready ? (
           <>
@@ -71,7 +82,8 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
         )}
       </div>
 
-      <svg width="100%" height={trackH + TRACK_TOP + 2} className="volume-meter-svg" role="img"
+      <div className="volume-meter-track" ref={trackRef}>
+      <svg width="100%" height={areaH} className="volume-meter-svg" role="img"
            aria-label={ready ? `${x.toFixed(1)} times a typical day` : "No reading"}>
         {/* track */}
         <rect x={0} y={TRACK_TOP} width={BAR_W} height={trackH} rx={4} className="vm-track" />
@@ -92,11 +104,13 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
           </g>
         ))}
       </svg>
+      </div>
 
-      <div className="volume-meter-foot" style={{ height: FOOTER_H }}>
-        {dateLabel ? `${dateLabel}${live ? " · so far" : ""}` : ""}
-        {maxX === WIDE_MAX && <span> · 0–8× scale</span>}
-        {typical != null && <span> · median of prior 20 sessions</span>}
+      {/* One fact per line, so nothing wraps mid-phrase or starts with a dot. */}
+      <div className="volume-meter-foot">
+        {dateLabel && <div>{`${dateLabel}${live ? " · so far" : ""}`}</div>}
+        {typical != null && <div>vs median of prior 20 sessions</div>}
+        {maxX === WIDE_MAX && <div>scale widened to 0–8×</div>}
       </div>
     </div>
   );
