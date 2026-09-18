@@ -184,6 +184,62 @@ export async function fetchIntradayBarsRange(
   return fetchBars(symbols, "1Min", start, end, pageToken);
 }
 
+/**
+ * Today's consolidated-tape (SIP) open and latest price for a batch of
+ * symbols, delayed ~15 minutes — the fallback for names the real-time IEX
+ * feed cannot see.
+ *
+ * IEX carries a tiny share of this universe's volume (median SIP/IEX 58.7x
+ * on the 2026-09-17 reload), and for a thin sub-$5 name it is routinely
+ * ZERO for a whole session: on 2026-09-18 both MOB and DFSC had no IEX
+ * print at all by 10:30 ET while the tape had them 6% and 2% down on real
+ * volume. An IEX snapshot in that state reports the PREVIOUS session's
+ * daily bar, so a stale price and yesterday's move get shown as "today".
+ *
+ * The free plan refuses SIP data newer than 15 minutes (a SIP *snapshot*
+ * is refused outright), but SIP bars with a clamped `end` are allowed —
+ * which is what this uses. Returns nothing for a symbol that genuinely has
+ * not traded today.
+ */
+export async function fetchDelayedSipToday(
+  symbols: string[],
+): Promise<Record<string, { open: number; price: number; asOf: string }>> {
+  if (!symbols.length) return {};
+  // ET session date; the daily bar's own timestamp is midnight ET (04:00Z).
+  const todayEt = new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10);
+  const out: Record<string, { open: number; price: number; asOf: string }> = {};
+  const CHUNK = 100;
+  for (let i = 0; i < symbols.length; i += CHUNK) {
+    const chunk = symbols.slice(i, i + CHUNK);
+    const { bars } = await fetchBars(chunk, "1Day", todayEt, new Date().toISOString(), undefined, "sip");
+    for (const [sym, rows] of Object.entries(bars)) {
+      const bar = rows?.[rows.length - 1];
+      if (!bar || bar.t.slice(0, 10) !== todayEt || !(bar.o > 0)) continue;
+      out[sym] = { open: bar.o, price: bar.c, asOf: bar.t };
+    }
+  }
+  return out;
+}
+
+/**
+ * Today's SIP 1-minute bars for ONE symbol, delayed ~15 minutes. Same
+ * reason as fetchDelayedSipToday: it is the only view of a thin name's
+ * actual session. NOT written to bars_intraday — that table is the IEX
+ * real-time series the factor and trigger layers read, and mixing feeds
+ * into it would repeat the volume distortion the SIP reload just fixed.
+ */
+export async function fetchDelayedSipMinutesToday(symbol: string): Promise<{ t: string; c: number }[]> {
+  const todayEt = new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10);
+  const rows: { t: string; c: number }[] = [];
+  let pageToken: string | undefined;
+  do {
+    const res = await fetchBars([symbol], "1Min", todayEt, new Date().toISOString(), pageToken, "sip");
+    for (const b of res.bars[symbol] ?? []) if (b.t.slice(0, 10) === todayEt) rows.push({ t: b.t, c: b.c });
+    pageToken = res.nextPageToken ?? undefined;
+  } while (pageToken);
+  return rows;
+}
+
 export interface SipBar extends DailyBar {
   vw?: number; // bar VWAP
   n?: number; // trade count

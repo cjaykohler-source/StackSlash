@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
-import { fetchIntradayBarsRange } from "./lib/alpaca";
+import { fetchIntradayBarsRange, fetchDelayedSipMinutesToday } from "./lib/alpaca";
 
 /**
  * On-demand: fetch the most recent trading session's 1-minute bars for a
@@ -14,7 +14,15 @@ import { fetchIntradayBarsRange } from "./lib/alpaca";
  * they've somehow fallen behind.
  *
  *   GET /.netlify/functions/session-bars?symbol=AAPL
- *   -> { symbol, session_date, bars: [{ ts, price }] }   (bars: [] if none)
+ *   -> { symbol, session_date, bars: [{ ts, price }], delayed? }
+ *      (bars: [] if none)
+ *
+ * IEX-only names: if a session is running and IEX has nothing for today,
+ * it falls back to the consolidated tape delayed ~15 minutes and sets
+ * `delayed: true`. Those bars are returned but NOT stored — bars_intraday
+ * is the IEX real-time series the factor and trigger layers read, and
+ * mixing feeds into it would repeat the volume distortion the 2026-09-17
+ * SIP reload just fixed.
  */
 export default async (req: Request) => {
   const json = (body: unknown, status = 200) =>
@@ -78,9 +86,30 @@ export default async (req: Request) => {
     return json({ error: err instanceof Error ? err.message : "fetch failed" }, 502);
   }
 
+  const sessionDateOf = (rows: { t: string }[]) =>
+    rows.reduce((mx, b) => (b.t.slice(0, 10) > mx ? b.t.slice(0, 10) : mx), "");
+
+  // A running session with no IEX print today: ask the tape instead of
+  // handing back yesterday labelled as the latest session.
+  if (marketOpen && (!bars.length || sessionDateOf(bars) !== todayStr)) {
+    try {
+      const sip = await fetchDelayedSipMinutesToday(ticker);
+      if (sip.length) {
+        return json({
+          symbol: ticker,
+          session_date: todayStr,
+          delayed: true,
+          bars: sip.map((b) => ({ ts: b.t, price: b.c })),
+        });
+      }
+    } catch {
+      /* fall through to whatever IEX had */
+    }
+  }
+
   if (!bars.length) return json({ symbol: ticker, session_date: null, bars: [] });
 
-  const sessionDate = bars.reduce((mx, b) => (b.t.slice(0, 10) > mx ? b.t.slice(0, 10) : mx), "");
+  const sessionDate = sessionDateOf(bars);
   const sessionBars = bars.filter((b) => b.t.slice(0, 10) === sessionDate);
 
   const rows = sessionBars.map((b) => ({ symbol_id: symbolId, ts: b.t, price: b.c, volume: b.v }));

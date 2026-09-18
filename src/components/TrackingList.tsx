@@ -81,6 +81,11 @@ export function TrackingList() {
                 <span className="top-movers-price">{q ? `$${q.price.toFixed(2)}` : "—"}</span>
                 <span className={`top-movers-pct ${dir}`}>
                   {pct == null ? "" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
+                  {q?.delayed && (
+                    <span className="quote-delayed" title="Consolidated tape, ~15 minutes behind — no real-time (IEX) prints today.">
+                      {" "}15m
+                    </span>
+                  )}
                 </span>
                 <button
                   type="button"

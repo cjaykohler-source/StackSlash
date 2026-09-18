@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 export interface Quote {
   price: number;
   changePct: number; // fraction, measured from today's open
+  /** from the consolidated tape, ~15 min behind: IEX had no print today */
+  delayed?: boolean;
 }
 
 /**
@@ -54,6 +56,7 @@ export function QuoteTag({ quote }: { quote: Quote | undefined }) {
   return (
     <span className={`quote-tag ${dir}`}>
       ${price.toFixed(2)} <span className="quote-tag-sep">|</span> {pctText}
+      {quote.delayed && <span className="quote-delayed" title="Consolidated tape, ~15 minutes behind — this stock has no real-time (IEX) prints today."> 15m</span>}
     </span>
   );
 }

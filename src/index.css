@@ -1184,6 +1184,12 @@ body {
   font-weight: 400;
   margin: 0 1px;
 }
+.quote-delayed {
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--text-dim);
+  vertical-align: baseline;
+}
 h1 .quote-tag {
   font-size: 0.55em;
   vertical-align: middle;

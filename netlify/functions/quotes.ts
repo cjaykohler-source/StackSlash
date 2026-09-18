@@ -1,4 +1,4 @@
-import { fetchSnapshots } from "./lib/alpaca";
+import { fetchSnapshots, fetchDelayedSipToday } from "./lib/alpaca";
 
 /**
  * Live-ish price + intraday change for a batch of tickers, for the UI.
@@ -10,6 +10,15 @@ import { fetchSnapshots } from "./lib/alpaca";
  * `dailyBar.o`), i.e. the same "since the open" delta a broker app shows
  * during the session. Outside market hours the snapshot's dailyBar is
  * the last session's, so this reports that session's open->close move.
+ *
+ * Snapshots are IEX (the only real-time feed this plan has). For a thin
+ * name IEX can see nothing all session while the tape trades: the
+ * snapshot then serves the PREVIOUS session's daily bar, and reporting
+ * that as "today" is not a rounding error — on 2026-09-18 it showed MOB
+ * at +0.2% while the tape had it at -6%. So during a session, any symbol
+ * whose snapshot is not from today falls back to the consolidated tape,
+ * delayed ~15 minutes, and comes back marked `delayed: true` for the UI
+ * to label. A symbol that really has not traded today is simply absent.
  *
  * Alpaca snapshots, fetched in chunks of 120 (the feed can ask for 300+
  * tickers at once). Cached 30s at the edge so a dashboard refresh doesn't
@@ -42,7 +51,17 @@ export default async (req: Request) => {
   const chunks: string[][] = [];
   for (let i = 0; i < symbols.length; i += CHUNK) chunks.push(symbols.slice(i, i + CHUNK));
 
-  const out: Record<string, { price: number; changePct: number }> = {};
+  const out: Record<string, { price: number; changePct: number; delayed?: boolean }> = {};
+  // ET session date (the daily bar's timestamp is midnight ET = 04:00Z).
+  const todayEt = new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10);
+  // Only chase the tape while a session is actually running. Outside
+  // market hours every snapshot is legitimately the last session's, and
+  // that open->close move is what the UI should show — there is no
+  // "today" to be missing.
+  const now = new Date();
+  const utcHM = now.getUTCHours() * 100 + now.getUTCMinutes();
+  const sessionLive = now.getUTCDay() >= 1 && now.getUTCDay() <= 5 && utcHM >= 1330 && utcHM < 2000;
+  const stale: string[] = [];
   let anyOk = false;
   const results = await Promise.allSettled(chunks.map((c) => fetchSnapshots(c)));
   for (const res of results) {
@@ -51,9 +70,26 @@ export default async (req: Request) => {
     for (const [sym, snap] of Object.entries(res.value)) {
       const open = snap.dailyBar?.o;
       const price = snap.latestTrade?.p ?? snap.dailyBar?.c ?? null;
+      const barDay = snap.dailyBar?.t?.slice(0, 10) ?? null;
+      if (sessionLive && barDay !== todayEt) {
+        stale.push(sym);
+        continue;
+      }
       if (open && price && open > 0) out[sym] = { price, changePct: (price - open) / open };
     }
   }
   if (!anyOk) return json({ error: "all snapshot chunks failed" }, 502);
+
+  // Anything IEX has no session for today: ask the tape.
+  if (stale.length) {
+    try {
+      const sip = await fetchDelayedSipToday(stale);
+      for (const [sym, bar] of Object.entries(sip)) {
+        out[sym] = { price: bar.price, changePct: (bar.price - bar.open) / bar.open, delayed: true };
+      }
+    } catch {
+      /* tape unavailable — better to show nothing than yesterday as today */
+    }
+  }
   return json(out);
 };
