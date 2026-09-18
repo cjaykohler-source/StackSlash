@@ -474,17 +474,35 @@ export default async () => {
     const longEvents = promotedEvents.filter((ev) => ev.direction === "long");
 
     if (longEvents.length) {
-      const { data: speedRows } = await db.from("triggers").select("id, speed");
+      const { data: speedRows } = await db.from("triggers").select("id, speed, category");
       const speedById = new Map(
         ((speedRows as { id: number; speed: string }[] | null) ?? []).map((t) => [t.id, t.speed]),
+      );
+      // Buy / Watch / Sell: a watch-category trigger is not a buy, so it
+      // opens no tracked position and gets no Exit Warning. Without this,
+      // Big-Move Watchlist opened six positions on 2026-09-17 that
+      // manage-positions then had to cancel as 'watch_not_buy' at the next
+      // open — the same rule, applied a session late. (A buy setup whose
+      // dossier turns out red-flagged is still caught there: the flags only
+      // exist after deep-dive runs.)
+      const watchTriggerIds = new Set(
+        ((speedRows as { id: number; category: string | null }[] | null) ?? [])
+          .filter((t) => t.category === "watch")
+          .map((t) => t.id),
       );
       // Flip positions ('fast' triggers) — usually already opened intraday
       // by intraday-flip-scan; this covers a fast fire that only reached
       // the gate at EOD. Shared helper so the exit_rules handling matches.
-      await openFlipPositions(db, promotedEvents, priceBySymbolId);
+      await openFlipPositions(
+        db,
+        promotedEvents.filter((ev) => !watchTriggerIds.has(ev.trigger_id)),
+        priceBySymbolId,
+      );
 
       // Swing positions ('slow' triggers) — opened here.
-      const slowEvents = longEvents.filter((ev) => speedById.get(ev.trigger_id) !== "fast");
+      const slowEvents = longEvents.filter(
+        (ev) => speedById.get(ev.trigger_id) !== "fast" && !watchTriggerIds.has(ev.trigger_id),
+      );
       // Every non-momentum buy alert gets live exit timing (stop / take
       // profit / trail / time, every 5 min via manage-positions) instead of
       // the blunt once-a-day 10-day / 25% rule in step 7. Only momentum
