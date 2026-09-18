@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PRICE_H, VOL_H, portalStats } from "./SessionCandleChart";
+import type { VolumeBaseline } from "../lib/volumeBaseline";
 
 /** One split-adjusted SIP bar from the range-candles function. */
 export interface RangeBar {
@@ -24,6 +25,44 @@ interface Props {
   timeframe: RangeTimeframe;
   /** Page column to render the snapshot stats into (right side). */
   statsTarget?: HTMLElement | null;
+  /**
+   * Trailing one-month average daily volume (lib/dailyVolume.ts), drawn as a
+   * dotted line at each candle's size, so every volume bar reads as above or
+   * below the month before it.
+   */
+  baseline?: VolumeBaseline | null;
+}
+
+const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const etDate = (ms: number) => new Date(ms).toLocaleDateString("en-CA", { timeZone: ET });
+
+/**
+ * What a normal candle of this size would trade: the average daily volume
+ * over the 21 sessions before it, times the sessions (or share of one) the
+ * candle covers. Rolling rather than one flat line, since over a year or
+ * more a single average would be wrong for most of the chart.
+ */
+function expectedVolume(b: VolumeBaseline, ms: number, tf: RangeTimeframe): number | null {
+  const day = new Date(ms).toISOString().slice(0, 10); // daily+ bars are stamped midnight ET
+  switch (tf) {
+    case "30Min": {
+      const adv = b.advBefore(etDate(ms));
+      return adv == null ? null : (adv * 30) / 390;
+    }
+    case "1Day":
+      return b.advBefore(day);
+    case "1Week": {
+      const adv = b.advBefore(day);
+      const n = b.sessionsIn(day, addDays(day, 7));
+      return adv == null ? null : adv * (n || 5);
+    }
+    case "1Month": {
+      const adv = b.advBefore(day);
+      const next = new Date(Date.UTC(new Date(ms).getUTCFullYear(), new Date(ms).getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
+      const n = b.sessionsIn(day, next);
+      return adv == null ? null : adv * (n || 21);
+    }
+  }
 }
 
 const LEFT = 8;
@@ -112,7 +151,7 @@ function niceStep(span: number, target: number): number {
  * nights, weekends and holidays leave no gaps. Linear or log price scale;
  * Auto goes log when the range spans AUTO_LOG_RATIO x or more.
  */
-export function RangeCandleChart({ bars, timeframe, statsTarget = null }: Props) {
+export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline = null }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<number | null>(null);
@@ -177,7 +216,8 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null }: Props)
     }
 
     const volBase = TOP + PRICE_H + PANE_GAP + VOL_H;
-    const maxV = Math.max(1, ...pts.map((p) => p.v));
+    const expected = pts.map((p) => (baseline ? expectedVolume(baseline, p.ms, timeframe) : null));
+    const maxV = Math.max(1, ...pts.map((p) => p.v), ...expected.map((e) => (e != null ? e * 1.1 : 0)));
     const ticks = xTicks(
       pts.map((p) => p.ms),
       timeframe,
@@ -193,11 +233,23 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null }: Props)
       change: first && last && first.o ? last.c / first.o - 1 : null,
       volume: pts.reduce((s, p) => s + p.v, 0),
     };
-    return { pts, n, slot, cx, bodyW, py, yTicks, volBase, maxV, ticks, stats, log, autoLog };
-  }, [bars, timeframe, width, scale]);
+    return { pts, n, slot, cx, bodyW, py, yTicks, volBase, maxV, ticks, stats, log, autoLog, expected };
+  }, [bars, timeframe, width, scale, baseline]);
 
   if (!m.n) return null;
-  const { pts, cx, bodyW, py, yTicks, volBase, maxV, ticks, stats, log, autoLog } = m;
+  const { pts, cx, bodyW, py, yTicks, volBase, maxV, ticks, stats, log, autoLog, expected, slot } = m;
+  // Stepped: flat across each candle's slot, stepping between candles, and
+  // broken where there isn't a month of history to average.
+  const vy = (v: number) => volBase - (v / maxV) * VOL_H;
+  const avgPath = expected
+    .map((e, i) => (e == null ? null : `M${(cx(i) - slot / 2).toFixed(1)},${vy(e).toFixed(1)}H${(cx(i) + slot / 2).toFixed(1)}`))
+    .reduce<string>((d, seg, i) => {
+      if (seg == null) return d;
+      const prev = expected[i - 1];
+      // Join to the previous step with a vertical instead of a new move.
+      return prev != null && d ? `${d}V${vy(expected[i]!).toFixed(1)}H${(cx(i) + slot / 2).toFixed(1)}` : `${d}${seg}`;
+    }, "");
+  const hasAvg = expected.some((e) => e != null);
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
@@ -246,6 +298,8 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null }: Props)
           );
         })}
 
+        {avgPath && <path d={avgPath} className="cc-vol-avg" />}
+
         {pts.map((p, i) => {
           const top = py(Math.max(p.o, p.c));
           const bodyH = Math.max(1, Math.abs(py(p.o) - py(p.c)));
@@ -271,6 +325,11 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null }: Props)
         )}
       </svg>
       <div className="candle-legend">
+        {hasAvg && (
+          <span className="cc-key cc-key-vol-avg" title="Average daily volume over the 21 sessions before each candle, times the sessions the candle covers.">
+            avg volume per candle, prior month
+          </span>
+        )}
         <span className="cc-legend-note">
           SIP, split-adjusted · {log ? "log" : "linear"} scale
           {timeframe === "30Min" ? " · regular session 9:30a–4:00p ET" : ""}
@@ -282,7 +341,10 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null }: Props)
           <div>O {fmtPrice(hp.o)} · H {fmtPrice(hp.h)}</div>
           <div>L {fmtPrice(hp.l)} · C {fmtPrice(hp.c)}</div>
           {prevClose != null && <div>vs prior candle {fmtPct(hp.c / prevClose - 1)}</div>}
-          <div>Vol {fmtVol(hp.v)}</div>
+          <div>
+            Vol {fmtVol(hp.v)}
+            {expected[hover] != null ? ` · ${(hp.v / expected[hover]!).toFixed(1)}× avg` : ""}
+          </div>
         </div>
       )}
     </div>
