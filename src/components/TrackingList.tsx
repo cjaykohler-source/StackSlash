@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuotes } from "./QuoteTag";
+import { useQuotes, sessionLabel } from "./QuoteTag";
 import { SpotlightIcon } from "./SpotlightIcon";
 import { useTracking } from "../lib/useTracking";
 
@@ -84,6 +84,12 @@ export function TrackingList() {
                   {q?.delayed && (
                     <span className="quote-delayed" title="Consolidated tape, ~15 minutes behind — no real-time (IEX) prints today.">
                       {" "}15m
+                    </span>
+                  )}
+                  {q?.stale && (
+                    <span className="quote-delayed" title="No trade on any feed today — this is the last session's close.">
+                      {" "}
+                      {sessionLabel(q.asOf)}
                     </span>
                   )}
                 </span>

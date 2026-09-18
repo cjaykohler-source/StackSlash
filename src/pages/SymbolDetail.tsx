@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabaseClient";
 import { DossierCard } from "../components/DossierCard";
 import { SymbolProfile } from "../components/SymbolProfile";
 import { CompanyDescription } from "../components/CompanyDescription";
-import { useQuotes, type Quote } from "../components/QuoteTag";
+import { useQuotes, sessionLabel, type Quote } from "../components/QuoteTag";
 import { SymbolNews } from "../components/SymbolNews";
 import { SessionCandleChart, type Candle, type PrevSession } from "../components/SessionCandleChart";
 import { RangeCandleChart, TIMEFRAME_LABEL, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
@@ -338,7 +338,13 @@ function SymbolQuote({ quote }: { quote: Quote | undefined }) {
       <span className="symbol-quote-change">
         {arrow} {abs >= 0 ? "+" : "−"}${Math.abs(abs).toFixed(2)} ({pctRounded > 0 ? "+" : ""}
         {pctRounded.toFixed(2)}%){" "}
-        <span className="symbol-quote-today">{quote.delayed ? "today · tape, ~15m behind" : "today"}</span>
+        <span className="symbol-quote-today">
+          {quote.stale
+            ? `${sessionLabel(quote.asOf)} close · no trade today`
+            : quote.delayed
+              ? "today · tape, ~15m behind"
+              : "today"}
+        </span>
       </span>
     </div>
   );

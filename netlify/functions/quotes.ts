@@ -51,7 +51,15 @@ export default async (req: Request) => {
   const chunks: string[][] = [];
   for (let i = 0; i < symbols.length; i += CHUNK) chunks.push(symbols.slice(i, i + CHUNK));
 
-  const out: Record<string, { price: number; changePct: number; delayed?: boolean }> = {};
+  const out: Record<string, {
+    price: number;
+    changePct: number;
+    delayed?: boolean;
+    /** no trade today on either feed: this is the last session's close */
+    stale?: boolean;
+    /** the session `price`/`changePct` describe, when it isn't today */
+    asOf?: string;
+  }> = {};
   // ET session date (the daily bar's timestamp is midnight ET = 04:00Z).
   const todayEt = new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10);
   // Only chase the tape while a session is actually running. Outside
@@ -62,6 +70,7 @@ export default async (req: Request) => {
   const utcHM = now.getUTCHours() * 100 + now.getUTCMinutes();
   const sessionLive = now.getUTCDay() >= 1 && now.getUTCDay() <= 5 && utcHM >= 1330 && utcHM < 2000;
   const stale: string[] = [];
+  const staleSnapshot = new Map<string, { price: number; changePct: number; asOf: string }>();
   let anyOk = false;
   const results = await Promise.allSettled(chunks.map((c) => fetchSnapshots(c)));
   for (const res of results) {
@@ -73,6 +82,12 @@ export default async (req: Request) => {
       const barDay = snap.dailyBar?.t?.slice(0, 10) ?? null;
       if (sessionLive && barDay !== todayEt) {
         stale.push(sym);
+        // Keep the last session as a fallback-of-the-fallback: a name that
+        // has not traded on any feed today (halted, or simply nothing yet)
+        // is better shown as "$0.09 · Sep 17 close" than as a blank "—".
+        if (open && price && open > 0 && barDay) {
+          staleSnapshot.set(sym, { price, changePct: (price - open) / open, asOf: barDay });
+        }
         continue;
       }
       if (open && price && open > 0) out[sym] = { price, changePct: (price - open) / open };
@@ -88,7 +103,12 @@ export default async (req: Request) => {
         out[sym] = { price: bar.price, changePct: (bar.price - bar.open) / bar.open, delayed: true };
       }
     } catch {
-      /* tape unavailable — better to show nothing than yesterday as today */
+      /* tape unavailable — fall through to the last-close labelling below */
+    }
+    for (const sym of stale) {
+      if (out[sym]) continue; // the tape had today
+      const last = staleSnapshot.get(sym);
+      if (last) out[sym] = { ...last, stale: true };
     }
   }
   return json(out);
