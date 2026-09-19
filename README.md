@@ -385,6 +385,43 @@ before 02:00 ET's run or right after a quota reset; IB real-time re-probe;
 whether TURB / SWRD get a `factor_state` row (SWRD had none after 09-17's
 scan: 7 bars of history).
 
+### Audit follow-ups (2026-09-19)
+
+Full DB audit: Supabase 2.4 GB / 8 GB (Pro), every scheduled job's latest
+run `ok`, 09-18 data fresh everywhere (SEC 137 filings incl. 113 8-Ks,
+bigmove 17 fires, no watch positions opened). The 7-day failure counts are
+all pre-09-17 history (Netlify timeouts, an invalid FMP key, the 09-18
+sweep). Open items:
+
+1. **Supabase backups are not scheduled.** `research/backup_supabase.sh`
+   has produced exactly one file (`~/StackSlashBackups/`, 161 MB,
+   2026-09-11). Pro's own daily backups cover it for now, but
+   `fire_outcomes` / `trigger_events` / `dossiers` / `alerts` exist
+   nowhere else. Needs `supabase link` (DB password) or `DATABASE_URL`
+   in `.env`, then a launchd job.
+2. **Stale `running` row:** `fundamentals-sync` 2026-09-18 21:00 (the last
+   Netlify double-invocation) still needs sweeping to `failed`.
+3. **`refresh-fundamentals`:** its plist sits in `~/Library/LaunchAgents`
+   (Mon 08:00) but is NOT loaded — load it or delete it, and decide
+   whether it is still wanted next to `fundamentals-sync`.
+4. **First pg_cron runs to verify:** `refresh-spread-estimates` (Sun
+   07:00 UTC; timed out at 20 min on 09-13, hand-run 09-15) and
+   `weekly-bars-scan` (Mon 06:00 UTC; never yet run under pg_cron,
+   `bars_weekly` stops at the week of 09-14).
+5. **Supabase advisors:** leaked-password protection is off (one Auth
+   toggle); `backtest_returns_raw` has RLS with no policy (research table,
+   intentionally unreadable from the browser).
+6. **`stale_active_symbol` grows because nothing deactivates delisted
+   symbols.** The check counts active symbols with no `bars_daily` row in
+   10 days; it went 13 -> 15 on 09-19 when GLMD and RAY stopped printing.
+   Alpaca reports GLMD, RAY, CYCN and KWM as `inactive` / not tradable
+   (delisted), while `symbols.active` is still true. The rest are still
+   tradable but long-halted (SVA has 0 bars ever, HCHL none since June,
+   SCPQ since 08-28) or a thin share class (BIO.B). **Proposed fix:** a
+   reconcile step (weekly, or inside `data-integrity-check`) that sets
+   `active = false` when Alpaca's asset record says inactive, so the
+   check only reports genuinely stale-but-listed names.
+
 ### Open decisions / next steps
 
 - **Short interest — researched, not built.** FINRA's public API
