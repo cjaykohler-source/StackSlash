@@ -820,22 +820,33 @@ body {
   align-self: stretch;
   margin-bottom: 6px;
 }
-.chart-stats-col .factor-snapshot {
+.chart-stats-col .factor-snapshot,
+.financials-panel {
   margin-top: 12px;
   padding: 10px 12px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-.chart-stats-col .factor-snapshot .profile-subheading {
+.chart-stats-col .factor-snapshot .profile-subheading,
+.financials-panel .profile-subheading {
   margin: 0 0 6px;
   font-size: 0.82rem;
 }
 /* Groups inside the snapshot: a small caps title and a divider between. */
-.chart-stats-col .factor-group + .factor-group {
+.chart-stats-col .factor-group + .factor-group,
+.financials-panel .factor-group + .factor-group {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
+}
+.financials-panel {
+  margin-bottom: 12px;
+}
+.financials-asof {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
 }
 .factor-group-title {
   margin: 0 0 2px;
@@ -845,27 +856,32 @@ body {
   letter-spacing: 0.04em;
   color: var(--text-dim);
 }
-.chart-stats-col .factor-snapshot .dossier-metrics {
+.chart-stats-col .factor-snapshot .dossier-metrics,
+.financials-panel .dossier-metrics {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
-.chart-stats-col .factor-snapshot .dossier-metric {
+.chart-stats-col .factor-snapshot .dossier-metric,
+.financials-panel .dossier-metric {
   flex-direction: column;
   align-items: flex-start;
   gap: 1px;
   padding: 5px 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
-.chart-stats-col .factor-snapshot .dossier-metric:last-child {
+.chart-stats-col .factor-snapshot .dossier-metric:last-child,
+.financials-panel .dossier-metric:last-child {
   border-bottom: none;
 }
-.chart-stats-col .factor-snapshot .dossier-metric-label {
+.chart-stats-col .factor-snapshot .dossier-metric-label,
+.financials-panel .dossier-metric-label {
   text-transform: none;
   letter-spacing: 0;
   font-size: 0.78rem;
 }
-.chart-stats-col .factor-snapshot .dossier-metric-value {
+.chart-stats-col .factor-snapshot .dossier-metric-value,
+.financials-panel .dossier-metric-value {
   font-size: 0.9rem;
   font-weight: 600;
   white-space: nowrap;

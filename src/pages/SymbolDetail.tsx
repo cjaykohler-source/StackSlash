@@ -1,3 +1,4 @@
+import FinancialsPanel from "../components/FinancialsPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { etDateString } from "../lib/marketTime";
 import { useParams } from "react-router-dom";
@@ -342,7 +343,12 @@ export function SymbolDetail() {
         <section>
           <SymbolProfile
             symbolId={symbolId}
-            news={ticker ? <SymbolNews ticker={ticker} /> : null}
+            news={
+              <>
+                <FinancialsPanel symbolId={symbolId} />
+                {ticker && <SymbolNews ticker={ticker} />}
+              </>
+            }
             factorsTarget={factorsEl}
           />
         </section>
