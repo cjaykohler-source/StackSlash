@@ -365,6 +365,15 @@ Findings worth keeping:
 - `research-update` runs fine (log `~/Library/Logs/stackslash-research-update`)
   but writes no `job_runs` row — check its log, not job_runs.
 
+- **Robinhood float snapshot (one-off, 2026-09-18):** `broker_snapshot`
+  holds float, shares outstanding, market cap and the exchange
+  listing-compliance status for the 374-name alert set plus tracked names
+  (HCHL not found). **65 are flagged Noncompliant** (deficiency notice).
+  Pulled from a Claude session via the Robinhood MCP (~270k tokens); not
+  refreshed automatically. Not shown on the site yet.
+- **To evaluate later (user note):** Robinhood options data (chains,
+  quotes, IV, open interest; scanner has options-volume filters).
+
 **Needs the user:** load the launchd jobs; decide on the symbol-page
 panel (balance sheet + short interest + borrow, amber); IB support ticket
 if Monday's probe still fails.
