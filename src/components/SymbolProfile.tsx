@@ -232,7 +232,14 @@ export function SymbolProfile({
 
   if (loading) return <p className="empty-state">Loading profile…</p>;
   if (!factorState) {
-    return <p className="empty-state">No factor data yet for this symbol — it may not have been through a scan yet.</p>;
+    // Financials and news don't depend on factors; keep them for new or
+    // thin-history symbols (FBDT had news hidden behind this message).
+    return (
+      <div className="symbol-profile">
+        <p className="empty-state">No factor data yet for this symbol — it may not have been through a scan yet.</p>
+        {news ? <div className="symbol-profile-news">{news}</div> : null}
+      </div>
+    );
   }
 
   const snapshotFields = Object.entries(factorState).filter(
