@@ -843,6 +843,9 @@ body {
 .financials-panel {
   margin-bottom: 12px;
 }
+.financials-panel .financials-amber {
+  color: var(--amber);
+}
 .financials-asof {
   font-weight: 400;
   text-transform: none;

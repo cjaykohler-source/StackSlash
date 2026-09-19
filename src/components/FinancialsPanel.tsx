@@ -20,12 +20,14 @@ type BalanceSheet = {
   shares_outstanding: number | null;
 };
 type ShortInterest = { settlement_date: string; short_shares: number; change_pct: number | null; days_to_cover: number | null };
+type Broker = { as_of: string; float_shares: number | null; shares_outstanding: number | null; financial_status: string | null };
 type Borrow = { captured_at: string; shortable_shares: number | null; shortable_tier: number | null };
 
 export default function FinancialsPanel({ symbolId }: { symbolId: number }) {
   const [bs, setBs] = useState<BalanceSheet | null>(null);
   const [si, setSi] = useState<ShortInterest | null>(null);
   const [borrow, setBorrow] = useState<Borrow | null>(null);
+  const [broker, setBroker] = useState<Broker | null>(null);
   const [sharesFallback, setSharesFallback] = useState<number | null>(null);
 
   useEffect(() => {
@@ -34,12 +36,14 @@ export default function FinancialsPanel({ symbolId }: { symbolId: number }) {
       supabase.from("balance_sheet").select("*").eq("symbol_id", symbolId).order("period_end", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("short_interest").select("settlement_date,short_shares,change_pct,days_to_cover").eq("symbol_id", symbolId).order("settlement_date", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("short_availability").select("captured_at,shortable_shares,shortable_tier").eq("symbol_id", symbolId).order("captured_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("broker_snapshot").select("as_of,float_shares,shares_outstanding,financial_status").eq("symbol_id", symbolId).order("as_of", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("fundamentals").select("shares_outstanding").eq("symbol_id", symbolId).order("as_of", { ascending: false }).limit(1).maybeSingle(),
-    ]).then(([b, s, a, f]) => {
+    ]).then(([b, s, a, r, f]) => {
       if (cancelled) return;
       setBs((b.data as BalanceSheet) ?? null);
       setSi((s.data as ShortInterest) ?? null);
       setBorrow((a.data as Borrow) ?? null);
+      setBroker((r.data as Broker) ?? null);
       setSharesFallback((f.data?.shares_outstanding as number | null) ?? null);
     });
     return () => {
@@ -47,7 +51,7 @@ export default function FinancialsPanel({ symbolId }: { symbolId: number }) {
     };
   }, [symbolId]);
 
-  if (!bs && !si && !borrow) return null;
+  if (!bs && !si && !borrow && !broker) return null;
 
   const shares = bs?.shares_outstanding ?? sharesFallback;
   const currentRatio =
@@ -91,6 +95,26 @@ export default function FinancialsPanel({ symbolId }: { symbolId: number }) {
         </Group>
       )}
 
+      {broker && (
+        <Group title="Float & listing (Robinhood)" asOf={shortDate(broker.as_of)}>
+          <Metric
+            label="Float"
+            tip="Shares available to trade publicly (excludes insiders and locked-up holders). One-off snapshot."
+            value={
+              broker.float_shares != null
+                ? `${count(broker.float_shares)}${broker.shares_outstanding ? ` · ${((Number(broker.float_shares) / Number(broker.shares_outstanding)) * 100).toFixed(0)}% of shares out` : ""}`
+                : "—"
+            }
+          />
+          <Metric
+            label="Listing status"
+            tip="Noncompliant: the exchange has sent a listing-deficiency notice (e.g. under $1, late filing). Often precedes a reverse split."
+            value={broker.financial_status === "Noncompliant" ? "Noncompliant" : "compliant"}
+            className={broker.financial_status === "Noncompliant" ? "financials-amber" : undefined}
+          />
+        </Group>
+      )}
+
       {borrow && (
         <Group title="Borrow (IBKR)" asOf={shortDate(borrow.captured_at)}>
           <Metric
@@ -115,11 +139,11 @@ function Group({ title, asOf, children }: { title: string; asOf: string; childre
   );
 }
 
-function Metric({ label, value, tip }: { label: string; value: string; tip?: string }) {
+function Metric({ label, value, tip, className }: { label: string; value: string; tip?: string; className?: string }) {
   return (
     <div className="dossier-metric">
       <span className="dossier-metric-label">{tip ? <InfoTooltip text={tip}>{label}</InfoTooltip> : label}</span>
-      <span className="dossier-metric-value">{value}</span>
+      <span className={`dossier-metric-value${className ? ` ${className}` : ""}`}>{value}</span>
     </div>
   );
 }
