@@ -2440,3 +2440,25 @@ h1 .quote-tag {
     height: auto !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Trigger accuracy scorecard (Reports)
+   --------------------------------------------------------------------------- */
+
+.reports-scorecard { margin-top: 32px; }
+.scorecard-table { width: 100%; }
+.scorecard-day-start td { border-top: 1px solid var(--border); }
+.scorecard-class {
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+.scorecard-buy { color: var(--green); }
+.scorecard-watch { color: var(--blue, #5b9dd9); }
+.scorecard-sell { color: var(--red); }
+.scorecard-detail td { padding-top: 2px; padding-bottom: 2px; }
+.scorecard-provisional {
+  color: var(--amber);
+  font-size: 0.72rem;
+  margin-right: 8px;
+}
