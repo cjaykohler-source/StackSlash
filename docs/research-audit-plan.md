@@ -397,3 +397,79 @@ MFE and MAE come from daily highs and lows, which cannot be ordered
 within a session. They bound what was *reachable*, not what a path-
 dependent strategy would have captured. U:D is a directional-asymmetry
 measure, not a backtest.
+
+---
+
+## Layer 1.2 — The *production* scorers (not the studies)
+
+Audited 2026-09-21 after noticing that F1 had been derived by comparing
+`bigmove_study.py` against the README's *description* of production,
+rather than against production code. Reading `eod-scan.ts` directly
+confirms F1 and finds two more.
+
+### P1 — Production's 8-K point is structurally always zero
+
+`filed8kIds` selects 8-Ks with `filing_date > prevSession and
+filing_date <= today`. On a Monday that is effectively `filing_date =
+today`. **Those filings do not load until `sec-filings-sync` runs at
+22:30 ET; `eod-scan` runs at 17:45.** The set is empty every session.
+
+So production's `bigmove_score` is not "3 of 4 points." It is
+**3 of 3 volatility points**:
+
+```
+vol_ratio >= 3  AND  |close-to-close| >= 10%  AND  day range >= 2x ATR14
+```
+
+The catalyst input has never contributed. This is worse than C.1
+suggested — it is not a stale 8-K point, it is **no 8-K point at all**,
+and `bigmove_watchlist` in production is a pure volatility triple.
+
+Given §2.2, that matters directionally: the pure-volatility candidates
+have the worst U:D of anything tested. Production's version of the
+trigger is very likely *more* downside-skewed than the study's 0.65.
+
+By contrast `earningsIds` looks at `(prevPrevSession, prevSession]` —
+the *prior* session's filings, which **are** loaded by scan time. Same
+table, two windows, and only one of them can ever return rows. That is
+why `earnings_release` fires and the bigmove 8-K point does not.
+
+### P2 — The only Buy trigger has an unpaginated query
+
+`filed8kIds` paginates correctly, with `.order("accession")` and
+`.range()`. The `earningsIds` query immediately below it does not:
+
+```ts
+const { data: ek } = await db.from("sec_filings")
+  .select("symbol_id, items").eq("form", "8-K")
+  .gt("filing_date", prevPrevSession).lte("filing_date", prevSession);
+```
+
+No `.order()`, no `.range()` — the 1,000-row-cap family, on the input to
+`earnings_release`, which is the system's **only enabled Buy**. Current
+volumes are safe (137 filings on 09-18, 113 of them 8-Ks), but the
+failure mode is silent under-selection of Buy candidates.
+
+### P3 — F1 confirmed from both sides
+
+Production's window is one session (`> prevSession`). The study's is five
+calendar days (`d.date - fl.adate <= 5`). The mismatch is real, now
+verified against code rather than documentation.
+
+The three volatility points match the study exactly: `vol_ratio >= 3`,
+`abs(dret) >= 0.10`, and range over a prior-14-day ATR computed from
+`bars[n-15 .. n-2]` — correctly excluding the current day.
+
+### Status of the two studies
+
+| | Layer 1 | Layer 2 |
+|---|---|---|
+| `bigmove_study.py` | done — 7 findings | done — passes |
+| production `bigMoveScore` | done — P1–P3 | n/a |
+| **`catalyst_study.py`** | **not started** | **not started** |
+
+`catalyst_study.py` has not been read. Its result (+4.2% / +0.4% at 20
+days) has been quoted from the README throughout and is **not** relied on
+by `docs/selection-logic.md`, which cites only audited
+`bigmove_study.py` rows. It is the next target, and now the most
+important one: the catalyst path is the whole selection pool.
