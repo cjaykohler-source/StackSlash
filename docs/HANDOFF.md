@@ -166,6 +166,15 @@ symbols), `short_interest` (FINRA, 12 settlements), `short_availability`
 (IBKR borrow), `broker_snapshot` (Robinhood float + listing status, 374
 names, one-off 2026-09-18), `sec_filings`, `earnings`, `symbol_news`.
 
+**Views:** `trigger_scorecard` (one row per fire: fire price vs the
+reference close, and whether the signal class was directionally right),
+`trigger_scorecard_daily` (the per-day rollup — "11/16 Sell signals closed
+below the firing price"). Horizon differs by trigger speed: **fast** fires
+mid-session so it scores against *that* session's close; **slow** fires
+from `eod-scan` at 17:45 so its fire price already *is* that close, and it
+scores against the *next* session. Getting that backwards returns 0% by
+construction.
+
 **Config/ops:** `symbols` (5,003 active), `triggers` (22), `trigger_stats`,
 `scan_config`, `tracked_symbols`, `regime_state`, `screens`, `watchlists`,
 `job_runs`, `data_quality_issues`.
