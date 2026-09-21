@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
+import { lookupAsset } from "./lib/alpaca";
 import { withJobRun } from "./lib/jobRun";
 import { sendOperationalAlert } from "./lib/notify";
 
@@ -17,6 +18,15 @@ import { sendOperationalAlert } from "./lib/notify";
  * So: run them on a schedule. The heavy lifting is one Postgres function
  * (`check_data_integrity()`), which does a single windowed pass over
  * bars_daily and returns a count per issue class.
+ *
+ * Before checking, it reconciles delisted symbols: `stale_active_symbol`
+ * counts active symbols with no bar in 10 days, and nothing else in this
+ * project ever marks a delisted ticker inactive, so that count could only
+ * grow (GLMD and RAY pushed it 13 -> 15 on 2026-09-19 after delisting).
+ * Alpaca's asset record is the authority: status "inactive" means the
+ * listing is gone and bars will never arrive again, so the symbol is
+ * deactivated. A symbol that is still listed but merely halted stays
+ * active and keeps being reported, which is the signal worth seeing.
  *
  * Alerting is on *deltas*, not absolute counts. This universe has ~736
  * legitimately gappy symbols (halts, delistings, recent listings); that
@@ -42,6 +52,8 @@ export default async (_req?: Request) => {
   const db = getSupabaseAdmin();
 
   const result = await withJobRun(db, "data-integrity-check", async () => {
+    const deactivated = await deactivateDelisted(db);
+
     const { data, error } = await db.rpc("check_data_integrity");
     if (error) throw error;
     const issues = (data as IssueRow[]) ?? [];
@@ -99,13 +111,17 @@ export default async (_req?: Request) => {
 
     let alerted = false;
     if (regressions.length) {
-      await sendOperationalAlert(`⚠️ **Data integrity regression**\n${regressions.join("\n")}`);
+      const note = deactivated.length
+        ? `\n_(deactivated as delisted this run: ${deactivated.join(", ")})_`
+        : "";
+      await sendOperationalAlert(`⚠️ **Data integrity regression**\n${regressions.join("\n")}${note}`);
       alerted = true;
     }
 
     return {
       rowsProcessed: issues.length,
       result: {
+        deactivated,
         issues: Object.fromEntries(issues.map((i) => [i.issue_type, i.affected_count])),
         regressions,
         alerted,
@@ -115,3 +131,37 @@ export default async (_req?: Request) => {
 
   return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
 };
+
+/**
+ * Set `active = false` on stale symbols Alpaca reports as delisted.
+ * Deliberately conservative: only "inactive" or a 404 (the asset record is
+ * gone entirely) deactivates. Tradable-but-silent symbols — long halts like
+ * SVA or HCHL — are left alone, because they can resume. One asset lookup
+ * per stale symbol, and there are ~15 of them.
+ */
+async function deactivateDelisted(db: ReturnType<typeof getSupabaseAdmin>): Promise<string[]> {
+  const { data, error } = await db.rpc("stale_active_symbols");
+  if (error) throw error;
+  const stale = (data as { id: number; ticker: string }[]) ?? [];
+
+  const delisted: { id: number; ticker: string }[] = [];
+  for (const s of stale) {
+    try {
+      const asset = await lookupAsset(s.ticker);
+      if (!asset.found || asset.status === "inactive") delisted.push(s);
+    } catch (err) {
+      // A lookup failure is not evidence of a delisting — skip and retry
+      // tomorrow rather than deactivating a live symbol on an API blip.
+      console.warn(`asset lookup failed for ${s.ticker}:`, err);
+    }
+  }
+
+  if (delisted.length) {
+    const { error: updateErr } = await db
+      .from("symbols")
+      .update({ active: false })
+      .in("id", delisted.map((s) => s.id));
+    if (updateErr) throw updateErr;
+  }
+  return delisted.map((s) => s.ticker);
+}

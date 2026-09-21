@@ -129,16 +129,39 @@ export interface AssetLookup {
 }
 
 export async function validateSymbol(ticker: string): Promise<AssetLookup> {
+  const asset = await lookupAsset(ticker);
+  return {
+    valid: asset.found && asset.tradable === true && asset.assetClass === "us_equity",
+    name: asset.name,
+  };
+}
+
+export interface AssetRecord {
+  found: boolean;
+  /** Alpaca's own lifecycle status: "active" while listed, "inactive" once delisted. */
+  status: string | null;
+  tradable: boolean | null;
+  assetClass: string | null;
+  name: string | null;
+}
+
+/** The raw Alpaca asset record. validateSymbol() only answers "can we trade
+ *  it"; reconciling delisted symbols needs to tell "inactive" (delisted, so
+ *  bars will never arrive again) apart from "active but halted". */
+export async function lookupAsset(ticker: string): Promise<AssetRecord> {
   const res = await fetch(`${TRADING_BASE_URL}/v2/assets/${encodeURIComponent(ticker)}`, {
     headers: authHeaders(),
   });
-  if (res.status === 404) return { valid: false, name: null };
+  if (res.status === 404) return { found: false, status: null, tradable: null, assetClass: null, name: null };
   if (!res.ok) {
     throw new Error(`Alpaca asset lookup failed: ${res.status} ${await res.text()}`);
   }
-  const asset = (await res.json()) as { tradable?: boolean; class?: string; name?: string };
+  const asset = (await res.json()) as { status?: string; tradable?: boolean; class?: string; name?: string };
   return {
-    valid: asset.tradable === true && asset.class === "us_equity",
+    found: true,
+    status: asset.status ?? null,
+    tradable: asset.tradable ?? null,
+    assetClass: asset.class ?? null,
     name: asset.name ?? null,
   };
 }
