@@ -97,7 +97,7 @@ export default async (_req?: Request) => {
             .select("symbol_id")
             .eq("as_of", asOf)
             .gte("last_close", Number(cfg?.price_min ?? 0.1))
-            .lte("last_close", Number(cfg?.price_max ?? 5))
+            .lte("last_close", Number(cfg?.price_max ?? 10))
             .range(from, from + 999);
           for (const r of (data as { symbol_id: number }[] | null) ?? []) inBand.add(r.symbol_id);
           if (!data || data.length < 1000) break;

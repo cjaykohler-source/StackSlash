@@ -67,7 +67,7 @@ def main():
       create temp table d as
       with band as (
         select symbol from wh.sip_bars_daily_raw
-        where date >= date '2016-01-01' and close between 0.10 and 5 group by 1 having count(*) >= 60
+        where date >= date '2016-01-01' and close between 0.10 and 10 group by 1 having count(*) >= 60
       ),
       s as (
         select s.symbol, s.date, s.open o, s.high h, s.low l, s.close c, s.volume v, r.close cr, r.volume rv
@@ -102,7 +102,7 @@ def main():
         case when nc / c between 0.1 and 10 and date_diff('day', date, nd) <= 7 then nl / c - 1 end nl_ret,
         case when c5 / c between 0.1 and 10 and date_diff('day', date, d5) <= 17 then c5 / c - 1 end r5
       from b
-      where date >= date '2016-01-01' and cr between 0.10 and 5 and pc > 0 and c / pc between 0.1 and 10
+      where date >= date '2016-01-01' and cr between 0.10 and 10 and pc > 0 and c / pc between 0.1 and 10
     """)
 
     print("attaching filings...", flush=True)

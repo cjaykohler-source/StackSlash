@@ -54,7 +54,7 @@ def build_days(con) -> pa.Table:
         """
         with band_syms as (
           select symbol from sip_bars_daily_raw
-          where date >= date '2016-01-01' and close between 0.10 and 5
+          where date >= date '2016-01-01' and close between 0.10 and 10
           group by symbol having count(*) >= 60
         )
         select s.symbol, s.date, s.open o, s.close c, s.volume v, r.close cr
@@ -188,7 +188,7 @@ def main():
     con.execute(f"""
       create temp table events as
       select distinct * from filing_events
-      where price between 0.10 and 5 and dollar20 >= {F}
+      where price between 0.10 and 10 and dollar20 >= {F}
     """)
     for ev, n in con.execute("select catalyst, count(*) from events group by 1 order by 1").fetchall():
         print(f"  {ev:<20}{n:>8,}")
@@ -245,7 +245,7 @@ def main():
     base_union = " union all ".join(
         f"select 'BASELINE (random in-band day)' catalyst, 'all' variant, {per('date')} period, {h} h, r{h} gross, "
         f"r{h} - greatest(case when cr >= 1 then 0.01 else 0.0001 end / cr, 0.01) net "
-        f"from days where cr between 0.10 and 5 and dollar20 >= {F} and r{h} is not null and not isnan(r{h})"
+        f"from days where cr between 0.10 and 10 and dollar20 >= {F} and r{h} is not null and not isnan(r{h})"
         for h in HORIZONS
     )
     res = con.execute(f"""

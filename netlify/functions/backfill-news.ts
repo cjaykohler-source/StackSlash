@@ -46,7 +46,7 @@ export default async (req: Request) => {
               .select("symbols(ticker)")
               .eq("as_of", asOf)
               .not("last_close", "is", null)
-              .lte("last_close", Number(cfg?.price_max ?? 5))
+              .lte("last_close", Number(cfg?.price_max ?? 10))
               .gte("dollar_vol_20d", Number(cfg?.min_dollar_vol_20d ?? 50_000))
               .limit(1000)
           : Promise.resolve({ data: [] as unknown[] }),
