@@ -58,7 +58,7 @@ export default async () => {
       .select("price_max, min_dollar_vol_20d")
       .eq("id", 1)
       .maybeSingle();
-    const priceMax = Number(cfgRow?.price_max ?? 3);
+    const priceMax = Number(cfgRow?.price_max ?? 10);
     const minVol = Number(cfgRow?.min_dollar_vol_20d ?? 50000);
 
     const SELECT = "symbol_id, bb_pctb, rsi14, rsi2, momentum_rank_pct, symbols(ticker, alert_excluded)";

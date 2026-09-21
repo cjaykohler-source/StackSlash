@@ -166,7 +166,7 @@ def plan(log):
     rows = wh.execute(
         f"""
         with band as (
-          select distinct symbol from sip_bars_daily_raw where close between 0.10 and 5.00
+          select distinct symbol from sip_bars_daily_raw where close between 0.10 and 10.00
         )
         select date_trunc('month', d.date)::date as month, d.symbol,
                case when b.symbol is not null then 1 else 0 end as priority,

@@ -142,6 +142,32 @@ and do not re-reset without an export.
 **Done when.** The bar is written down, and a pre-reset export step
 exists.
 
+### −1.5 Re-validate the research at the real band — ~4h
+
+**Why.** `scan_config.price_max` was **10** while the README, HANDOFF and
+every research script said **$5**. The band was standardised on $0.10–$10
+on 2026-09-21. Every existing result — the cost model, the hold-duration
+sweep, `daily_trigger_study.py`, `catalyst_study.py`, `bigmove_study.py`,
+the 8-K findings, the 25x blow-off flag — was produced on ≤$5 data.
+**Nothing has been validated in the $5–$10 range**, which is roughly half
+the names the live engine now alerts on.
+
+This is not a reason to distrust the old numbers; it is a reason not to
+extend them to a range they never covered.
+
+**Changes.**
+- Re-run `daily_trigger_study.py`, `catalyst_study.py` and
+  `bigmove_study.py` on the widened band (the scripts are already
+  updated).
+- Report $0.10–$5 and $5–$10 **separately**, not merged — the whole point
+  is to find out whether the new range behaves like the old one.
+- If the 8-K earnings edge or the big-move lift does not hold in $5–$10,
+  say so and scope the triggers by price rather than quietly averaging.
+
+**Done when.** Every enabled trigger's evidence note states which price
+range it was validated on, and the README's research sections are either
+re-run at $10 or explicitly marked as $5-only.
+
 ---
 
 ## Phase 0 — Make the code match the documentation (~4h)
@@ -262,7 +288,7 @@ variant".
 are fetched and discarded. Every downstream factor in
 `lib/intradayFactors.ts` is therefore close-based: `session_high`,
 `session_low`, the 15-minute opening range, `pct_off_hod`, `pct_off_lod`,
-`range_expansion`, and `risingLows()`. On sub-$5 names the wick *is* the
+`range_expansion`, and `risingLows()`. On sub-$10 names the wick *is* the
 move. Today the system misses breakouts that traded through the opening-
 range high and reverted inside the minute, and understates stop risk on
 every name. This is the highest-value single change in the repo.
@@ -398,7 +424,7 @@ set its thresholds.
 ## Phase 3 — Build the console the evidence supports (~10h)
 
 The research says stop looking for entry signals. These are the
-situational-awareness features a discretionary sub-$5 trader needs, which
+situational-awareness features a discretionary sub-$10 trader needs, which
 the system has the inputs for and does not surface.
 
 ### 3.1 Float rotation — ~3h
@@ -422,7 +448,7 @@ float, and coverage of the alerting band is recorded.
 
 ### 3.2 Halt / LULD state — ~4h
 
-**Why.** Halts are where sub-$5 accounts die, and the system is blind to
+**Why.** Halts are where sub-$10 accounts die, and the system is blind to
 them. A resumption traded blind is the single fastest way to lose the
 position. This is a genuine gap in a "day trading tool", not a nicety.
 

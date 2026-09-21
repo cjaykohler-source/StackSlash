@@ -66,7 +66,7 @@ export default async (req: Request) => {
         .select("price_max, min_dollar_vol_20d")
         .eq("id", 1)
         .maybeSingle();
-      const priceMax = Number(cfg?.price_max ?? 5);
+      const priceMax = Number(cfg?.price_max ?? 10);
       const minVol = Number(cfg?.min_dollar_vol_20d ?? 50_000);
       const { data: asOfRow } = await db
         .from("factor_state")
