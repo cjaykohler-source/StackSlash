@@ -417,9 +417,14 @@ sweep). Open items:
    in `.env`, then a launchd job.
 2. **Stale `running` row:** `fundamentals-sync` 2026-09-18 21:00 (the last
    Netlify double-invocation) still needs sweeping to `failed`.
-3. **`refresh-fundamentals`:** its plist sits in `~/Library/LaunchAgents`
-   (Mon 08:00) but is NOT loaded — load it or delete it, and decide
-   whether it is still wanted next to `fundamentals-sync`.
+3. ~~**`refresh-fundamentals`:** its plist sits in `~/Library/LaunchAgents`
+   (Mon 08:00) but is NOT loaded~~ — **loaded 2026-09-21** and kicked once
+   (ok, 4,876 rows, 2m36s). It is wanted next to `fundamentals-sync`:
+   they write different tables. `fundamentals-sync` (FMP, daily) writes
+   `earnings` and company profiles; `refresh-fundamentals` (DoltHub,
+   weekly) is the **only** writer of `fundamentals` — revenue, margins,
+   Zacks ranks, runway. Until now it had only ever run by hand (2026-09-09,
+   09-18), so new quarters were picked up only when someone remembered.
 4. **First pg_cron runs to verify:** `refresh-spread-estimates` (Sun
    07:00 UTC; timed out at 20 min on 09-13, hand-run 09-15) and
    `weekly-bars-scan` (Mon 06:00 UTC; never yet run under pg_cron,
