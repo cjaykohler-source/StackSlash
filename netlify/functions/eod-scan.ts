@@ -328,6 +328,20 @@ export default async () => {
       .eq("enabled", true)
       .neq("category", "exit");
     if (trigErr) throw trigErr;
+
+    // Some enabled triggers are evaluated by their own engine, not by
+    // triggers.ts: realtime_outlier_zscore lives in the worker's
+    // rollingStats.ts, and its `definition` is a {note} stub with no
+    // `all` array. evaluateTrigger returns false for those by
+    // construction, so eod-scan was writing ~25k guaranteed-false
+    // trigger_evaluations per week for a trigger it cannot decide —
+    // noise that also made the trigger look like a live daily rule with
+    // a permanently unreachable threshold. category='exit' was already
+    // excluded above for the same reason; this covers the general case.
+    const evaluable = (triggers ?? []).filter(
+      (t) => ((t.definition as TriggerDefinition | null)?.all ?? []).length > 0,
+    );
+
     const cooldownByTriggerId = new Map((triggers ?? []).map((t) => [t.id, t.cooldown_minutes] as const));
     const directionByTriggerId = new Map(
       (triggers ?? []).map((t) => [t.id, (t.direction as "long" | "short" | null) ?? "long"] as const),
@@ -407,12 +421,18 @@ export default async () => {
           filed8kIds.has(row.symbol_id as number),
         ),
       };
-      for (const trigger of triggers ?? []) {
+      for (const trigger of evaluable) {
         const fired = evaluateTrigger(trigger.definition as unknown as TriggerDefinition, inputs);
         evaluations.push({
           trigger_id: trigger.id,
           symbol_id: row.symbol_id,
-          inputs: row,
+          // The enriched object that was actually evaluated, not the raw
+          // factor_state row. Storing `row` omitted every derived field
+          // (bigmove_score, earnings_release, reverse_split_window,
+          // risk_on) — i.e. exactly the fields that decide whether these
+          // triggers fire — so a zero-fire investigation had no way to
+          // see which condition failed.
+          inputs,
           fired,
         });
         if (fired) {
