@@ -364,7 +364,11 @@ Findings worth keeping:
   are active, the API acknowledgement is signed and the user is
   Non-Professional — IB-side; re-probe Monday, ticket if still failing.
   IB silently stops sending ticks after ~135 symbols at 90 lines x 4 s;
-  45 x 12 s works.
+  45 x 12 s works. Re-tested 2026-09-21 after a weekend and a fresh
+  gateway login: still 10089 on all seven test symbols, delayed data and
+  borrow fine. **Support ticket submitted 2026-09-21** (manual entitlement
+  refresh; also asked whether the bundles are assigned to the account the
+  API defaults to, since the username carries two live accounts).
 - **Robinhood MCP** works from a Claude session only (float, L2, SEC
   facts, consolidated quotes); host jobs cannot call it. Never trade.
 - `research-update` runs fine (log `~/Library/Logs/stackslash-research-update`)
