@@ -55,6 +55,16 @@ CANDIDATES = {
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--floor", type=float, default=800_000)
+    ap.add_argument(
+        "--negative-control",
+        choices=["off", "shuffle"],
+        default="off",
+        help="shuffle: permute each symbol's outcomes across its own feature-days, "
+        "destroying the t -> t+1 link while preserving every marginal "
+        "distribution. Every lift MUST collapse to ~1.0x. Anything that "
+        "survives is leakage or misalignment, not signal.",
+    )
+    ap.add_argument("--seed", type=int, default=20260921, help="seed for --negative-control shuffle")
     args = ap.parse_args()
     F = args.floor
     e = str(EDGAR)
@@ -151,7 +161,67 @@ def main():
         print(s)
         lines.append(s)
 
+    # ---- Stage row counts ----------------------------------------------
+    # Printed on every run. Silent row loss is this project's most common
+    # measurement failure (six documented instances), and a count that
+    # moves between runs is the cheapest possible detector.
+    emit("\n=== Stage row counts (watch for silent drops) ===")
+    for label, q in (
+        ("band symbols", "select count(*) from (select distinct symbol from d)"),
+        ("daily feature rows (d)", "select count(*) from d"),
+        ("  ... with r1 not null", "select count(*) from d where r1 is not null"),
+        ("filing-session rows (fsess)", "select count(*) from fsess"),
+        ("analysis rows (x)", "select count(*) from x"),
+        (f"  ... above floor ${F:,.0f}", f"select count(*) from x where dollar20 >= {F}"),
+        ("  ... with any 8-K", "select count(*) from x where f_8k"),
+    ):
+        emit(f"  {label:<32}{con.execute(q).fetchone()[0]:>12,}")
+
+    # ---- Negative control ----------------------------------------------
+    # Permute each symbol's outcome vector across its own feature-days. All
+    # marginals are preserved; only the t -> t+1 alignment is destroyed.
+    T = "x"
+    if args.negative_control == "shuffle":
+        con.execute(f"select setseed({(args.seed % 1000) / 1000.0})")
+        con.execute("""
+          create temp table x_nc as
+          select f.symbol, f.date, f.cr, f.dollar20, f.spread_est, f.vol_ratio, f.dret,
+                 f.range_x, f.close_loc, f.f_8k, f.f_202, f.f_offer, f.period, f.cost_pct,
+                 o.r1, o.nh_ret, o.nl_ret, o.r5
+          from (select *, row_number() over (partition by symbol order by date) rn from x) f
+          join (select symbol, r1, nh_ret, nl_ret, r5,
+                       row_number() over (partition by symbol order by random()) rn from x) o
+            on f.symbol = o.symbol and f.rn = o.rn
+        """)
+        n_x, n_nc = (con.execute(f"select count(*) from {t}").fetchone()[0] for t in ("x", "x_nc"))
+        if n_x != n_nc:
+            raise SystemExit(f"negative control changed row count: {n_x:,} -> {n_nc:,}")
+        T = "x_nc"
+        emit("\n" + "=" * 78)
+        emit("  NEGATIVE CONTROL ACTIVE (--negative-control shuffle)")
+        emit("  Outcomes permuted within symbol. EVERY lift below must be ~1.0x.")
+        emit("  A candidate that still shows lift is leakage, not signal.")
+        emit("=" * 78)
+
     # ---- Q1: tiers ------------------------------------------------------
+    # Skipped under the negative control: Q1 describes the universe rather
+    # than testing a candidate, so shuffled outcomes make it meaningless
+    # rather than informative.
+    if args.negative_control != "off":
+        emit("\n(Q1 liquidity/spread tiers skipped under negative control.)")
+    else:
+        run_q1(con, emit, F)
+
+    run_q2(con, emit, F, T)
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    suffix = "" if args.negative_control == "off" else f"_nc-{args.negative_control}"
+    path = OUT / f"bigmove_study_{int(F)}{suffix}_{dt.datetime.now():%Y%m%dT%H%M%S}.txt"
+    path.write_text("\n".join(lines) + "\n")
+    print(f"\nsaved: {path}")
+
+
+def run_q1(con, emit, F):
     emit("\n=== Liquidity tiers (all in-band days, no floor) — next session ===")
     emit(f"  {'tier':<22}{'period':<9}{'n':>10}{'spread':>8}{'abs10':>7}{'touch10':>8}{'touch20':>8}{'r1 net':>8}{'r5 net':>8}{'r5 gross':>9}")
     tier = """case when dollar20 < 250000 then '1 <$250k' when dollar20 < 800000 then '2 $250k-800k'
@@ -169,13 +239,15 @@ def main():
       from x where dollar20 >= {F} and spread_est is not null group by 1, 2 order by 1, 2""").fetchall():
         emit(f"  {r[0]:<22}{r[1]:<9}{r[2]:>10,}{r[3]*100:>6.1f}%{r[4]*100:>7.1f}%{r[5]*100:>7.2f}%{(r[6] or 0)*100:>7.2f}%{(r[7] or 0)*100:>8.2f}%")
 
+
+def run_q2(con, emit, F, T):
     # ---- Q2: watchlist candidates --------------------------------------
     emit(f"\n=== Big-move watchlist candidates (floor ${F:,.0f}) — next session vs random in-band day ===")
     emit(f"  {'candidate':<22}{'period':<9}{'n':>9}{'abs10':>7}{'lift':>6}{'touch10':>8}{'lift':>6}{'touch20':>8}{'lift':>6}{'r1 net':>8}{'r5 net':>8}{'up share':>9}")
     base = {p: row for p, *row in con.execute(f"""
       select period, count(*), avg((abs(r1) >= .1)::int), avg((nh_ret >= .1 or nl_ret <= -.1)::int),
         avg((nh_ret >= .2 or nl_ret <= -.2)::int), avg(r1 - cost_pct), avg(r5 - cost_pct)
-      from x where dollar20 >= {F} group by 1""").fetchall()}
+      from {T} where dollar20 >= {F} group by 1""").fetchall()}
     for p in sorted(base):
         b = base[p]
         emit(f"  {'BASELINE':<22}{p:<9}{b[0]:>9,}{b[1]*100:>6.1f}%{'':>6}{b[2]*100:>7.1f}%{'':>6}{b[3]*100:>7.1f}%{'':>6}{b[4]*100:>7.2f}%{(b[5] or 0)*100:>7.2f}%")
@@ -184,7 +256,7 @@ def main():
           select period, count(*), avg((abs(r1) >= .1)::int), avg((nh_ret >= .1 or nl_ret <= -.1)::int),
             avg((nh_ret >= .2 or nl_ret <= -.2)::int), avg(r1 - cost_pct), avg(r5 - cost_pct),
             avg(case when abs(r1) >= .1 then (r1 > 0)::int end)
-          from x where dollar20 >= {F} and ({cond}) group by 1 order by 1""").fetchall():
+          from {T} where dollar20 >= {F} and ({cond}) group by 1 order by 1""").fetchall():
             b = base[r[0]]
             emit(f"  {name:<22}{r[0]:<9}{r[1]:>9,}{r[2]*100:>6.1f}%{r[2]/b[1]:>5.1f}x{r[3]*100:>7.1f}%{r[3]/b[2]:>5.1f}x"
                  f"{r[4]*100:>7.1f}%{r[4]/b[3]:>5.1f}x{r[5]*100:>7.2f}%{(r[6] or 0)*100:>7.2f}%{(r[7] or 0)*100:>8.0f}%")
@@ -195,10 +267,10 @@ def main():
     emit(f"  {'candidate':<22}{'period':<9}" + "".join(f"{t:>20}" for t in ("<2%", "2-4%", ">=4%")))
     st = "case when spread_est < .02 then 'a' when spread_est < .04 then 'b' else 'c' end"
     tb = {(p, t): (n, rate) for p, t, n, rate in con.execute(f"""
-      select period, {st}, count(*), avg((abs(r1) >= .1)::int) from x where dollar20 >= {F} and spread_est is not null group by 1, 2""").fetchall()}
+      select period, {st}, count(*), avg((abs(r1) >= .1)::int) from {T} where dollar20 >= {F} and spread_est is not null group by 1, 2""").fetchall()}
     for name in ("vr3", "vr5", "vr10", "up10_fade_vr3", "up10_close_hi_vr3", "8k_2.02", "8k_any_vr3", "score>=2", "score>=3"):
         rows = {(p, t): (n, rate) for p, t, n, rate in con.execute(f"""
-          select period, {st}, count(*), avg((abs(r1) >= .1)::int) from x
+          select period, {st}, count(*), avg((abs(r1) >= .1)::int) from {T}
           where dollar20 >= {F} and spread_est is not null and ({CANDIDATES[name]}) group by 1, 2""").fetchall()}
         for p in ("2016-21", "2022+"):
             cells = ""
@@ -209,11 +281,6 @@ def main():
                 else:
                     cells += f"{'-':>20}"
             emit(f"  {name:<22}{p:<9}{cells}")
-
-    OUT.mkdir(parents=True, exist_ok=True)
-    path = OUT / f"bigmove_study_{int(F)}_{dt.datetime.now():%Y%m%dT%H%M%S}.txt"
-    path.write_text("\n".join(lines) + "\n")
-    print(f"\nsaved: {path}")
 
 
 if __name__ == "__main__":
