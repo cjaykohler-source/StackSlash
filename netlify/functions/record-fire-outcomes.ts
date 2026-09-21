@@ -47,8 +47,10 @@ type OutcomeRow = {
   trigger_id: number;
   direction: string;
   entry_date: string;
+  entry_ts: string | null;
   entry_price: number | null;
   complete: boolean;
+  intraday_bars_2h: number | null;
 };
 
 type DayBar = {
@@ -130,7 +132,7 @@ export default async (_req?: Request) => {
     // --- Pass 2: fill incomplete rows ---
     const { data: incomplete, error: incErr } = await db
       .from("fire_outcomes")
-      .select("id, trigger_event_id, symbol_id, trigger_id, direction, entry_date, entry_price, complete")
+      .select("id, trigger_event_id, symbol_id, trigger_id, direction, entry_date, entry_ts, entry_price, complete, intraday_bars_2h")
       .eq("complete", false)
       .order("entry_date", { ascending: true })
       .limit(5000);
@@ -175,6 +177,16 @@ export default async (_req?: Request) => {
       );
       for (const s of spreadRows) if (s.spread_pct != null) spreadBySymbol.set(s.symbol_id, Number(s.spread_pct));
     }
+
+    // --- Intraday excursions for fast triggers ---
+    // The daily columns above measure from the entry day's CLOSE over up to
+    // 20 sessions. For a fast trigger that is the wrong question: the
+    // avoid_chase_extended study measured 2 intraday hours from a
+    // mid-session tick, and on 2026-09-21 the five fires of that trigger
+    // showed mean MFE +2.91% against mean MAE -4.53% -- an unfavourable
+    // asymmetry invisible in a daily-close measurement. Computed here so it
+    // accrues automatically instead of needing a hand-written query.
+    const intradayById = await computeIntradayExcursions(db, rows);
 
     const nowMs = Date.now();
     const patches: { id: number; patch: Record<string, unknown> }[] = [];
@@ -230,7 +242,18 @@ export default async (_req?: Request) => {
       if (mfe !== -Infinity) patch.mfe_pct = mfe;
       if (mae !== Infinity) patch.mae_pct = mae;
 
+      Object.assign(patch, intradayById.get(r.id) ?? {});
       patches.push({ id: r.id, patch });
+    }
+
+    // A fast trigger that fired today has no bars_daily row yet -- eod-scan
+    // writes it at 17:45 -- so the daily loop above `continue`s past it
+    // before reaching the intraday merge. That is precisely the case the
+    // intraday columns exist for, so apply them independently here.
+    const patched = new Set(patches.map((p) => p.id));
+    for (const [id, intraday] of intradayById) {
+      if (patched.has(id)) continue;
+      patches.push({ id, patch: { ...intraday, updated_at: nowIso() } });
     }
 
     // Per-row UPDATEs (upsert can't be used — the table's NOT NULL entry
@@ -262,4 +285,87 @@ function etDate(iso: string): string {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+const INTRADAY_WINDOW_MS = 2 * 60 * 60 * 1000; // the horizon avoid_chase_extended was measured on
+
+/**
+ * Intraday excursions for fast-trigger fires, from the fire's own snapshot
+ * tick over the following two hours of `bars_intraday`.
+ *
+ * Deliberately NOT direction-adjusted. The daily columns are stored in the
+ * trigger's own direction sense, but `direction` is overloaded on avoid
+ * triggers (three are marked `short` and none is a short signal), and the
+ * question a fast avoid trigger answers is "would chasing this have hurt a
+ * buyer?". So these are always buyer-sense: positive = price rose.
+ *
+ * bars_intraday is IEX and close-only, so MFE/MAE here are bounds from
+ * 1-minute closes, not true highs and lows — `intraday_bars_2h` is stored
+ * alongside so a thin series can be discounted.
+ */
+async function computeIntradayExcursions(
+  db: ReturnType<typeof getSupabaseAdmin>,
+  rows: OutcomeRow[],
+): Promise<Map<number, Record<string, unknown>>> {
+  const out = new Map<number, Record<string, unknown>>();
+
+  const { data: trigRows } = await db.from("triggers").select("id, speed").eq("speed", "fast");
+  const fastIds = new Set(((trigRows as { id: number }[] | null) ?? []).map((t) => t.id));
+  if (!fastIds.size) return out;
+
+  // Only rows that are fast-trigger fires and not already filled.
+  const pending = rows.filter(
+    (r) => r.intraday_bars_2h == null && r.entry_ts != null && fastIds.has(r.trigger_id),
+  );
+  if (!pending.length) return out;
+
+  // The fire tick lives on the event's snapshot, not on fire_outcomes.
+  const evById = new Map<number, number>();
+  for (let i = 0; i < pending.length; i += 500) {
+    const { data } = await db
+      .from("trigger_events")
+      .select("id, snapshot")
+      .in("id", pending.slice(i, i + 500).map((r) => r.trigger_event_id));
+    for (const e of (data as { id: number; snapshot: Record<string, unknown> | null }[] | null) ?? []) {
+      const px = Number(e.snapshot?.last_price ?? e.snapshot?.latest_price ?? NaN);
+      if (Number.isFinite(px) && px > 0) evById.set(e.id, px);
+    }
+  }
+
+  for (const r of pending) {
+    const entryPx = evById.get(r.trigger_event_id);
+    if (entryPx == null) continue;
+    const startMs = Date.parse(r.entry_ts!);
+    if (!Number.isFinite(startMs)) continue;
+    // The window may not have elapsed yet; leave the row for a later run.
+    if (Date.now() < startMs + INTRADAY_WINDOW_MS) continue;
+
+    const { data: bars } = await db
+      .from("bars_intraday")
+      .select("ts, price")
+      .eq("symbol_id", r.symbol_id)
+      .gt("ts", new Date(startMs).toISOString())
+      .lte("ts", new Date(startMs + INTRADAY_WINDOW_MS).toISOString())
+      .order("ts", { ascending: true });
+    const series = ((bars as { ts: string; price: number }[] | null) ?? []).filter((b) => Number(b.price) > 0);
+    if (!series.length) {
+      out.set(r.id, { intraday_entry_price: entryPx, intraday_bars_2h: 0 });
+      continue;
+    }
+    let hi = -Infinity;
+    let lo = Infinity;
+    for (const b of series) {
+      const p = Number(b.price);
+      if (p > hi) hi = p;
+      if (p < lo) lo = p;
+    }
+    out.set(r.id, {
+      intraday_entry_price: entryPx,
+      intraday_ret_2h: Number(series[series.length - 1].price) / entryPx - 1,
+      intraday_mfe_2h: hi / entryPx - 1,
+      intraday_mae_2h: lo / entryPx - 1,
+      intraday_bars_2h: series.length,
+    });
+  }
+  return out;
 }
