@@ -649,3 +649,70 @@ a decision for the user, not an assumption for me to make.
 
 `--max-price` now exists on both studies. It should have existed before
 the first audit run.
+
+---
+
+## Layer 1.3c — Baseline reconciled: nothing unexplained
+
+Run at `--no-spread-cost --max-price 5`, reproducing the original
+conditions exactly:
+
+| README claim | reproduced |
+|---|---|
+| random in-band day, 20d: **+1.8% / −3.2%** | **+1.85% / −3.20%** |
+| `8k_earnings` excl_flags, 20d: **+4.2% / +0.4%** | **+4.24% / +0.40%** |
+
+**All four numbers match.** The apparent discrepancy in §1.3b was
+entirely the two changes we made deliberately, and nothing else in the
+warehouse moved.
+
+### Full decomposition — baseline 20d net
+
+| | 2016-21 | 2022+ |
+|---|---|---|
+| ≤$5, no spread *(README conditions)* | **+1.85%** | **−3.20%** |
+| ≤$10, no spread *(band widened, #176)* | +1.02% | −2.00% |
+| ≤$5, with spread *(cost fixed, #185)* | −0.97% | −6.86% |
+| ≤$10, with spread *(both)* | −0.95% | −4.62% |
+
+### And the edge, which is what matters
+
+`8k_earnings` excl_flags minus baseline, 20 days:
+
+| | 2016-21 | 2022+ |
+|---|---|---|
+| ≤$5, no spread *(README's implied edge)* | +2.39pp | +3.60pp |
+| ≤$5, **with spread** | **+3.08pp** | **+5.06pp** |
+
+**Charging the spread properly makes the catalyst edge larger, not
+smaller, at the original band.** Both studies now reproduce their
+published numbers exactly, and every difference from them is accounted
+for by a deliberate, documented change.
+
+### Audit status of the two studies the design depends on
+
+| | reproduces | Layer 1 | Layer 2 |
+|---|---|---|---|
+| `bigmove_study.py` | exact | 7 findings | passes |
+| `catalyst_study.py` | exact | 7 findings, C1 resolved | not built |
+
+### What this cost the holdout
+
+Comparing the ≤$5 and ≤$10 runs above makes one thing about $5–$10
+visible without ever running it directly: **widening the band dilutes the
+catalyst edge**, from +2.39pp to +2.05pp in 2016-21 and from +3.60pp to
++2.12pp in 2022+. Since ≤$10 is a mixture of ≤$5 and $5–$10, the $5–$10
+portion must carry a **materially weaker** catalyst edge than ≤$5,
+especially in 2022+.
+
+That is a Phase A finding obtained by inference instead of by the
+pre-registered test, and it is a direct consequence of my running audit
+work at the default $10 band. It is recorded here rather than left
+unstated, because concealing it would make the eventual Phase A result
+look cleaner than it is.
+
+**Phase A must be re-scoped.** It can no longer be "does the mechanism
+generalise above $5?" — that is partly answered, in the negative, for the
+catalyst path. A remaining honest question is the *magnitude* and whether
+$5–$10 clears a usable bar at all, which needs an explicit pre-registered
+run reporting the two ranges separately.
