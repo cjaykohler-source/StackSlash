@@ -91,7 +91,9 @@ below for the full derivation, every number, and every bug found along
 the way — worth reading before changing any trigger or exit logic,
 so the next attempt doesn't re-discover the same dead ends.
 
-> **New here?** `docs/HANDOFF.md` is the logistics map: machines, repo
+> **New here?** `docs/ACCESS.md` is the access map (accounts, credential
+> names, blast radius, handover steps). `docs/HANDOFF.md` is the logistics
+> map: machines, repo
 > layout, how jobs run, every schedule, data sources, database inventory
 > and the current operational state. This file is the strategy, the
 > research derivations and the open decisions.
