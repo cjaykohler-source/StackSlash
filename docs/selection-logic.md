@@ -1,67 +1,83 @@
 # Selection logic — the daily target list
 
-Written 2026-09-21. Specifies Stage 1 of the architecture in
-`docs/overhaul-plan.md`: the logic that picks the **X symbols** that go
-into the pre-open report.
+Written 2026-09-21. Rewritten the same day after the construct-validity
+work in `docs/research-audit-plan.md` §2.2.
 
-**Goal.** Produce a *ranked* list of ~20 target symbols for the next
-session, each carrying the reasons it was selected, so the report layer
-has something to describe and the reader has an ordering to work down.
+Specifies Stage 1 of `docs/overhaul-plan.md`: the logic that picks the
+**X symbols** that go into the pre-open report.
 
-**Non-goal.** Predicting returns. Every component below is either
-evidenced on this universe or excluded from the score entirely.
+**Goal.** A *ranked* list of ~20 target symbols for the next session,
+each carrying the reasons it was selected, so the report layer has
+something to describe and the reader has an ordering to work down.
+
+**Non-goal.** Predicting returns. Every component is either evidenced on
+this universe or excluded from the score.
 
 ---
 
-## Why the current logic can't do this
+## What changed, and why the first draft was wrong
 
-Three structural problems, all measured:
+The first draft pooled two mechanisms as equals: an **attention** path
+(`bigmove_score >= 3`) and a **catalyst** path (8-K 2.02). The
+direction-aware analysis says that is wrong.
 
-1. **It produces booleans, not a ranking.** Triggers fire or don't. A
-   filter yields 3 names one day and 60 the next; a report that asks for
-   "the top 20" needs an ordering. `bigmove_score` is 0–4 and most fires
-   land on 3, so it cannot break ties either.
-2. **It terminates in an empty set.** 21 of 27 `bigmove_watchlist` fires
-   (78%) and **2 of 2** `earnings_release` fires carry a red flag. Under
-   the Buy/Watch rule every red-flagged buy setup becomes Watch — so the
-   only Buy trigger produced zero Buys.
-3. **Its filters describe the universe rather than discriminating within
-   it.** The three dominant red flags — nano-cap <$50M (~27 symbols),
-   ≤2 quarters cash (~23), shares +50% YoY (~20) — are structural
-   properties of sub-$10 micro-caps. A flag that fires on 78% of
-   candidates is a description, not a filter.
+`U:D` is the ratio of upside-reachable to downside-reachable next
+sessions. A selector with no directional edge leaves it at the baseline.
 
-There is also a mechanism-independence finding that constrains the
-design: across both sessions with clean data, `bigmove_watchlist` and
-`earnings_release` overlapped on **zero** symbols (6+1, 20+1). This
-matches `promotionGate.ts`'s recorded reason for removing the confluence
-gate — *"at this price band, genuine multi-trigger confluence is
-near-zero."* **Any tier requiring two mechanisms to agree will be empty.**
+| | period | up lift | down lift | **U:D** | win_net lift | r1 net |
+|---|---|---|---|---|---|---|
+| **BASELINE** | 2016-21 | — | — | **1.32** | — | −3.50% |
+| **BASELINE** | 2022+ | — | — | **1.06** | — | −4.52% |
+| `score>=3` | 2016-21 | 3.2x | 8.1x | **0.65** | 1.2x | −5.33% |
+| `score>=3` | 2022+ | 3.2x | 6.2x | **0.66** | 1.4x | −6.29% |
+| `8k_2.02` | 2022+ | 2.9x | 3.4x | **0.91** | **1.5x** | −3.81% |
+| `8k_any_quiet` | 2016-21 | 1.5x | 1.8x | **1.12** | 1.0x | −4.54% |
+| `vr25` | 2016-21 | 3.0x | 11.6x | **0.42** | 1.1x | −7.07% |
+| `offering_filed` | 2022+ | 1.5x | 4.1x | **0.55** | **0.8x** | −8.96% |
+
+Three conclusions drive this rewrite:
+
+1. **`bigmove_score >= 3` selects for downside.** U:D 0.65/0.66 against a
+   baseline of 1.32/1.06, with downside lift 2–2.5x its upside lift. Its
+   5.3x headline is a lift on `abs10`, which sums both tails; most of
+   what it lifts is falls. Correct as a Watch list, **inverted as a
+   buy-candidate pool.**
+2. **The catalyst path is the only direction-neutral, cost-surviving
+   signal.** `8k_2.02` at U:D 0.90/0.91, the best profitable-next-session
+   lift (1.4x/1.5x) and the least negative net return of any candidate.
+3. **Volume subtracts by adding downside.** `8k_any_quiet` (8-K with
+   volume < 1.5x) is the only candidate above baseline U:D in either
+   period. The same catalyst *with* a volume spike drops to 0.65. This
+   inverts the standard "breakouts need volume confirmation" intuition —
+   on this universe volume confirms the fall as often as the rise.
+
+## Evidence provenance
+
+Everything above comes from `bigmove_study.py`, which has passed **Layer
+1** (static audit, seven findings) and **Layer 2** (both negative
+controls; within-date 1.0–1.1x, within-symbol floor 1.3x) in
+`docs/research-audit-plan.md`.
+
+**It does not rest on `catalyst_study.py`, which is unaudited.** That
+study's separate 8-K result (+4.2% / +0.4% at 20 days) would corroborate
+this if it survives audit, and is the next Layer 1 target. Until then it
+is not cited here.
 
 ---
 
 ## Prerequisites — two flag bugs (~1h)
 
-Both corrupt the signal any calibration would measure against, so they go
-first.
+Both corrupt the signal any calibration would measure against.
 
-### P.1 `Fresh news` is marked red
+**P.1 — `Fresh news` is marked red.** Two dossiers carry
+`Fresh news (2h ago)` at level red, against the documented rule that news
+and earnings are always amber. Red means proven negative; fresh news is
+the opposite for a catalyst strategy, and this demotes exactly the names
+that now belong at the top of the list.
 
-Two dossiers carry `Fresh news (2h ago)` at level **red**. The documented
-rule is *"News and earnings are always amber"*, and red means a proven
-negative. Fresh news is the opposite of a negative for a catalyst
-strategy — this actively demotes the names most likely to belong on the
-list.
-
-**Done when.** No news- or earnings-derived flag can be red.
-
-### P.2 `Nano-cap ($0M)` from missing data
-
-12 occurrences across 7 symbols. A $0M market cap is *missing data*
-rendered as a red flag: absent treated as zero, zero treated as damning.
-
-**Done when.** A null market cap produces an `unknown` flag, never
-`nano-cap`, and the distinction is visible in the report.
+**P.2 — `Nano-cap ($0M)` from missing data.** 12 occurrences across 7
+symbols: a null market cap rendered as a red flag. Absent treated as
+zero, zero treated as damning.
 
 ---
 
@@ -72,150 +88,124 @@ rendered as a red flag: absent treated as zero, zero treated as damning.
 ```
 getShortlist(date, limit = 20) → {
   ticker, rank, score, tier,
-  mechanisms: ["attention" | "catalyst", ...],
+  basis: "catalyst" | "catalyst+quiet" | "fill",
   components: { ...each contributing value, with status },
-  exclusions: [],            // always empty in output; see below
-  unknowns: ["float", ...]   // fields we could not determine
+  annotations: ["elevated-attention", "wide-spread", ...],
+  unknowns: ["float", ...]
 }[]
 ```
 
-`buildReport(ticker, date)` consumes a row. Nothing downstream references
-a trigger by name — the list-agnostic boundary from `overhaul-plan.md`
-B.1, which also means a hand-picked list can be substituted for
-development.
+Nothing downstream references a trigger by name — the list-agnostic
+boundary from `overhaul-plan.md` B.1, which also lets a hand-picked list
+substitute for development.
 
 ### Step 1 — Hard exclusions
 
-Applied before scoring. Only rules with **directional evidence in both
-periods** qualify for exclusion; everything else is context, not a veto.
+Only rules with directional evidence in both periods. Each is now
+corroborated by U:D as well as by the original studies.
 
 | exclusion | evidence |
 |---|---|
+| Volume ≥25× normal | **U:D 0.42/0.47**, down-lift 11.6x vs up-lift 3.0x; −16.2% median over 18 sessions |
+| Offering filed ≤30d | **U:D 0.55/0.64**, and **win_net lift 0.8x — the only candidate below baseline** |
 | Reverse-split window | −17% to −22% over 20 sessions, both periods |
-| Offering filed ≤30d (S-3, 424B4/B5, F-3) | −17% (2022+, priced offerings) |
-| Volume ≥25× normal | −10.0% mean / −16.2% median over 18 sessions, PF 0.489 |
 | Below `scan_config.min_dollar_vol_20d` | tradeability, not prediction |
 
-Deliberately **not** exclusions: nano-cap, low cash runway, high
-dilution. Their evidence is one-regime only (excluding red flags cut
-2022+ losses ~90%/75% but *did not help* in 2016–21) and they fire on
-most of the universe. They move to Step 4 as relative rankings.
+Still **not** exclusions: nano-cap, low runway, high dilution. One-regime
+evidence, and they fire on ~78% of candidates.
 
-An excluded symbol never reaches the list. The report states what was
-excluded and why, so the count is auditable.
+### Step 2 — Candidate pool: catalyst-primary
 
-### Step 2 — Candidate pool (two independent mechanisms)
+The pool is **filings-driven**. Attention is no longer a source of
+candidates.
 
-Union, not intersection — they do not co-occur.
-
-**Attention path:** `bigmove_score >= 3`.
-The threshold is the qualifier and **its definition must not change** —
-the 3–9× next-session lift is tied to exactly these four points (volume
-≥3× 20-day average, close-to-close move ≥10%, day range ≥2× ATR14, 8-K
-since the previous session). Redefining it invalidates the evidence.
-
-**Catalyst path:** 8-K item 2.02 (earnings release).
-The only signal positive in both periods: +4.2% / +0.4% at 20 days
-against a random in-band day's +1.8% / −3.2%.
-
-### Step 3 — Continuous score (ranking within the pool)
-
-`bigmove_score` qualifies; magnitudes rank. This preserves the evidence
-while producing a real ordering.
-
-| component | source | direction |
+| tier | definition | approx. per session (≤$5) |
 |---|---|---|
-| Volume ratio vs 20-day median | `volume_ratio_20d`, capped below the 25× exclusion | higher better |
-| Close-to-close move | `bars_daily` | larger better |
-| Range expansion | day range ÷ ATR14 | higher better |
-| Catalyst weight | 8-K 2.02 = full; other material 8-K = context only | — |
-| Spread estimate | Abdi-Ranaldo (`symbol_spread_estimates`) | **wider is worse** |
+| **A** | 8-K item 2.02 (earnings), volume < 1.5x | ~2–3 |
+| **B** | 8-K item 2.02, any volume | ~7 |
+| **C** | other material 8-K, volume < 1.5x | ~6–20 |
+| **fill** | other material 8-K, any volume | to `limit` |
 
-On the last row, note the project's own finding: the top spread tier has
-both the highest big-move rate *and* the worst net returns (−6.4% /
-−7.5% at 1 day). Wide spread is not a bonus for volatility — it is a
-cost.
+Tier A is the intersection of the two cleanest results — the catalyst
+with the best win_net lift, and the volume condition with the only
+above-baseline U:D. It is small by construction, which is correct: a
+high-conviction tier that is often nearly empty is an honest output.
 
-### Step 4 — Relative quality (percentile within today's pool)
+Pool sizes are estimates from study row counts over trading days and
+**must be confirmed by M.3** before `limit` is fixed.
 
-The change that makes the fundamentals useful. Instead of *"≤2 quarters
-cash → red → excluded"*, rank candidates against **each other**:
+### Step 3 — Attention becomes an annotation, not a qualifier
 
-- Cash-runway percentile
-- Share-count growth (dilution) percentile
-- Market-cap percentile
+`bigmove_score` and its components stay in the system, inverted in role:
 
-Being the best-capitalised name among today's candidates is informative.
-Being under an absolute threshold that 78% of the universe trips is not.
+- **Displayed** on every row, so the reader sees that a name is active.
+- **A de-prioritiser**, not a promoter. A catalyst name also carrying
+  `vol_ratio >= 3` ranks *below* an otherwise-equal quiet one, because
+  quiet catalysts have the better U:D.
+- **Never** a reason for a name to appear on the list.
 
-**Weight this rung low and mark it regime-dependent** — its supporting
-evidence holds in 2022+ and not in 2016–21.
+### Step 4 — Ranking
 
-### Step 5 — Tier, then cut to X
+Within tier, order by:
 
-**Tiers describe evidence strength, not rank.** They exist so the reader
-knows how much to trust a name, and they are assigned per-mechanism
-because mechanisms do not co-occur:
+1. **Catalyst strength** — 2.02 above other material items; more recent
+   acceptance above older.
+2. **Quietness** — lower `vol_ratio` ranks higher (Step 3).
+3. **Tradeability** — dollar volume up, estimated spread down. The
+   widest spread tier has the highest move rates *and* the worst net
+   returns, so spread is a cost, never a bonus.
+4. **Relative quality** — percentile *within today's pool* on cash
+   runway, dilution and size. Low weight, marked regime-dependent.
 
-- **Tier A — catalyst.** 8-K 2.02, no exclusions. The only both-period
-  positive directional signal.
-- **Tier B — attention, strong.** `bigmove_score ≥ 3` with top-quartile
-  magnitude within the pool.
-- **Tier C — attention.** `bigmove_score ≥ 3`, ordinary magnitude.
+### Step 5 — Output
 
-**The report always shows the top X by continuous score, annotated with
-tier.** That decouples "give me 20 names to look at" from "how confident
-should I be" — you get a full list every day, and the tier column tells
-you whether any of it is high-conviction.
-
-Tier A being empty on most days is **an honest output, not a failure**.
-It matches the project's existing stance: *"Targets now holds only
-Earnings Release — the honest state of the evidence, not a gap to fill."*
+Always the top X by rank, annotated with tier. Tier A empty on most days
+is an honest output, matching the project's existing stance on Targets.
 
 ---
 
 ## Rules that govern the score
 
-**1. Only evidenced inputs may move the ranking.** Float rotation,
-short interest, borrow availability, news-crawler catalysts and other 8-K
-item types are all *shown in the report* and none of them touch the score
-until measured on this universe. This is the difference between a report
-that informs and one that manufactures confirmation.
+**1. Direction- and cost-aware targets only.** No component may be
+justified by a lift on `abs10` or any other direction-blind metric. The
+qualifying tests are U:D against baseline, and profitable-next-session
+lift net of the modelled round trip. **This rule exists because the first
+draft was built on a direction-blind target and inverted as a result.**
 
-**2. Unknown is never zero.** Every component carries
+**2. Only evidenced inputs may move the ranking.** Float rotation, short
+interest, borrow, news-crawler catalysts and other 8-K item types are
+*shown in the report* and none touch the score until measured here.
+
+**3. Unknown is never zero.** Every component carries
 `value | unknown | not_applicable`. A missing market cap is not a $0M
-nano-cap (P.2); a symbol with no balance sheet is not a symbol with no
-cash. Unknowns are listed per row and surfaced in the report, because a
-report that silently omits a filed offering is worse than no report —
-you would act on its absence.
+nano-cap (P.2); a symbol with no balance sheet is not one with no cash.
 
-**3. The pool qualifier is frozen.** `bigmove_score >= 3` keeps its exact
-definition. Tuning it is a new research question requiring new evidence,
-not a scoring adjustment.
+**4. The list points attention; it does not claim expectancy.** Every
+candidate tested has a negative mean next-session return net of costs,
+baseline included (−3.50%/−4.52%); only ~20% of in-band days clear the
+cost at all, and the best candidate reaches 30.5%. The report must not
+present these as setups. See `overhaul-plan.md` B.4.
 
 ---
 
-## Must be measured before the weights are fixed
+## Must be measured before weights are fixed
 
-Three unknowns. Until they are answered, ship with equal weights inside
-each rung and say so.
+**M.1 — Does relative quality beat absolute flagging?** Among catalyst
+candidates, did top-quartile-runway names outperform bottom-quartile on a
+*direction-aware* target? If not, drop Step 4.4.
 
-**M.1 Does relative quality beat absolute flagging?** Among historical
-`bigmove_score ≥ 3` candidates, did top-quartile-runway names outperform
-bottom-quartile at 1 and 5 days? If not, drop Step 4 entirely and rank on
-attention and catalyst alone. Runs against the local warehouse.
+**M.2 — Does the catalyst path hold at $5–$10?** `overhaul-plan.md` A.3,
+now the single most important open question: the catalyst path is the
+whole pool. **Phase A must be re-pre-registered around `8k_2.02` and U:D,
+not `score>=3` and `abs10`.**
 
-**M.2 Does the catalyst path hold at $5–$10?** `overhaul-plan.md` A.3.
-The 8-K is the only positive directional signal, so if it does not
-generalise above $5 the catalyst path is ≤$5-only and Tier A narrows.
+**M.3 — What is the real pool size per session?** Tier A/B/C counts at
+≤$5, by period. Determines whether `limit` is a cut or the whole pool.
 
-**M.3 What is the natural pool size?** How many names clear Step 2 on a
-typical session, at $0.10–$5 and $5–$10 separately? If it is reliably
-under 20, X is not a cut — it is the whole pool, and the ranking only
-orders the report. If it is 200, the ranking is doing real work.
-
-M.3 is cheap and should be run first; it determines whether any of the
-rest matters.
+**M.4 — Is `8k_any_quiet` robust?** It is the only above-baseline U:D
+result and carries the most design weight of any single finding here.
+n = 9,622 / 19,249 is large, but it has not been independently confirmed.
+`catalyst_study.py`'s audit should test it directly.
 
 ---
 
@@ -224,37 +214,25 @@ rest matters.
 | step | work | effort |
 |---|---|---|
 | P.1, P.2 | Fix the two flag bugs | ~1h |
-| M.3 | Measure natural pool size | ~1h |
-| 1 | `getShortlist()` skeleton — exclusions + pool, unranked | ~2h |
-| M.1 | Relative-vs-absolute study | ~3h |
-| 3–5 | Scoring, tiers, cut to X | ~3h |
-| M.2 | Catalyst path at $5–$10 (plan A.3) | ~2h |
-
-~12 hours, and the first three (~4h) already produce a usable unranked
-candidate list that `buildReport` can consume.
+| M.3 | Measure real pool size | ~1h |
+| — | Audit `catalyst_study.py` (Layers 1–2) | ~3h |
+| M.4 | Confirm the quiet-catalyst result | ~2h |
+| 1–2 | `getShortlist()` — exclusions + catalyst pool | ~2h |
+| 3–5 | Annotation, ranking, tiers | ~3h |
+| M.1 | Relative-quality test, direction-aware | ~3h |
 
 ## What this deliberately does not do
 
-**No technical-indicator confirmation ladder.** RSI, MACD, moving-average
-crosses and 20-day-high breakouts were each backtested on this universe
-and disabled: `momentum_breakout` (coin-flip), `macd_bullish_cross`
-(−0.1% / −3.3%, indistinguishable from random), `bb_rsi_confluence_long`
-(worse than random in one period, no better in the other),
-`volatility_squeeze_breakout_long` (does not survive 2022+). The
-multi-indicator ladder is also the confluence gate, removed 2026-09-17
-because the rungs do not co-occur at this band.
+**No technical-indicator confirmation ladder.** RSI, MACD, MA crosses and
+20-day-high breakouts were each backtested here and disabled, and the
+multi-indicator ladder is the confluence gate removed 2026-09-17. The
+*tiering structure* is kept; the rungs are evidenced ones.
 
-The *tiering structure* from that approach is kept — it is a good answer
-to the ranking problem. The rungs are replaced with components that have
-evidence here.
+**No volume confirmation.** Directly contradicted: on this universe
+volume confirms the fall as often as the rise (§ *What changed*).
 
-**No RSI momentum confirmation specifically.** It contradicts two live
-findings: `avoid_chase_extended` (early extended moves −2.3% vs −1.0%
-random over 2h) and `scan_config.max_rsi14 = 85`, which already refuses
-longs above that at the promotion gate.
-
-**No new trigger variants.** Steps 2–5 re-rank and re-present signals
-that already exist. Nothing here is a 36th variant.
+**No new trigger variants.** Steps 1–5 re-rank and re-present signals
+that already exist.
 
 **No prediction of returns.** The list orders *where to look*. The report
 supplies the facts. The reader decides.
