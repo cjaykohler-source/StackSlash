@@ -574,3 +574,78 @@ matter. Charging the spread term is the deciding test.
    now has (C6).
 3. Resolve unknown-vs-clean in `flagged` (C2), and report how many rows
    in `excl_flags` are unknowns rather than verified-clean.
+
+---
+
+## Layer 1.3b — C1 resolved: the spread term, and what it does
+
+`catalyst_study.py` now charges `greatest(tick/price, 0.01, spread_est)`,
+matching `bigmove_study.py`. The Abdi-Ranaldo estimator is computed in
+`build_days` over the 20 sessions **strictly before** each row, and
+carried to the entry session (`next_spread` for filing events,
+`spread_est` for technical ones). `--no-spread-cost` reproduces the old
+model for comparison; `--max-price` was added at the same time.
+
+### Like-for-like, same band ($0.10–$10), 20-day net
+
+| | old cost | with spread | delta |
+|---|---|---|---|
+| BASELINE 2016-21 | +1.02% | −0.95% | −1.97pp |
+| BASELINE 2022+ | −2.00% | −4.62% | −2.62pp |
+| `8k_earnings` excl_flags 2016-21 | +3.07% | +1.51% | −1.56pp |
+| `8k_earnings` excl_flags 2022+ | +0.12% | −1.59% | −1.71pp |
+
+**C1 was real** — the spread term costs roughly 1.5–2.6pp of 20-day net.
+**But it charges the baseline as heavily as the candidates**, so the
+differential survives:
+
+| edge over baseline, 20d | old cost | with spread |
+|---|---|---|
+| 2016-21 | +2.05pp | **+2.46pp** |
+| 2022+ | +2.12pp | **+3.03pp** |
+
+### Clean ≤$5 reading, spread-aware
+
+| | 2016-21 | 2022+ |
+|---|---|---|
+| BASELINE 20d net | −0.97% | −6.86% |
+| `8k_earnings` excl_flags | **+2.11%** | **−1.80%** |
+| **edge over baseline** | **+3.08pp** | **+5.06pp** |
+| PF | **1.25** | **0.82** |
+
+### Verdict
+
+**The catalyst edge survives a proper cost model, and is larger in
+relative terms than the README reported.** The catalyst-primary design in
+`docs/selection-logic.md` holds.
+
+**Absolute expectancy does not survive in the recent regime.** +2.11% and
+PF 1.25 in 2016-21; **−1.80% and PF 0.82 in 2022+.** So the 8-K is a
+genuine *relative* signal in both periods and an *absolute* money-maker
+in neither recent one.
+
+That is exactly the framing `selection-logic.md` rule 4 already requires:
+**the list points attention; it does not claim expectancy.** This is now
+measured rather than asserted.
+
+### Unreconciled
+
+The README reports the baseline random in-band day at +1.8% / −3.2% at
+20 days. This run gives **−0.97% / −6.86%** at the same floor and band.
+The spread term explains ~2pp; the remainder (roughly 1.7pp in 2016-21,
+1.7pp in 2022+) does not. Candidate causes: the SIP `bars_daily` reload,
+the placeholder-bar filter, or other warehouse changes since the
+published run. **Not explained — needs reconciliation before these
+numbers replace the README's.**
+
+### Second holdout spend — my error, again
+
+`catalyst_study.py` had no `--max-price` and defaulted to $10 after
+#176, so both comparison runs above covered $0.10–$10. Neither breaks
+$5–$10 out separately, but combined with the ≤$5 run it is now possible
+to infer the range by subtraction. **The $5–$10 holdout should be treated
+as partially compromised**, and whether Phase A is still a clean test is
+a decision for the user, not an assumption for me to make.
+
+`--max-price` now exists on both studies. It should have existed before
+the first audit run.
