@@ -135,7 +135,7 @@ and the Robinhood float snapshot (only possible from a Claude session).
 | **Alpaca** | SIP daily bars, IEX 1-min bars, snapshots, corporate actions, asset validation | `ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY` | Free plan. Daily bars = SIP consolidated. Intraday = IEX (real-time). Free SIP is 15 min delayed. Asset lookups go to `paper-api.alpaca.markets`; the live trading host rejects these keys |
 | **SEC EDGAR** | Filings index, XBRL balance sheets | `SEC_USER_AGENT` (contact email) | Free, ≤10 req/s |
 | **FINRA** | Short interest | none | Public POST API, twice monthly, published 1–2 weeks after settlement |
-| **IBKR** | Shares to borrow, delayed quotes | IB Gateway on 127.0.0.1:**4001** (live login, Read-Only API on) | Free tier only. Real-time market data still returns error 10089 over the API although both bundles are active — open with IB support |
+| **IBKR** | Shares to borrow, delayed quotes | IB Gateway on 127.0.0.1:**4001** (live login, Read-Only API on) | Free tier only (delayed quotes + borrow work). Real-time still returns error 10089 over the API although both bundles are active; **support ticket submitted 2026-09-21** asking for a manual entitlement refresh, and to confirm the subscriptions sit on the account the API session defaults to (the username has two live accounts) |
 | **FMP** | Earnings calendar, company profiles | `FMP_API_KEY` | Free tier ~250 calls/day; the job uses ≤90 profile calls per run |
 | **DoltHub** | Financial statements, forward calendar, Zacks | none | Feeds `fundamentals` |
 | **Discord** | Alerts and digests | webhook in `.env` | |
