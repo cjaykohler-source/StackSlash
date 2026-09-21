@@ -222,3 +222,70 @@ well-documented work, and its explicit point-in-time discipline is better
 than the external literature reviewed this week. The purpose is to find
 out which numbers survive independent checking — not to assume they
 won't.
+
+---
+
+## Layer 2.1 — `bigmove_study.py` negative control: RESULT
+
+Run 2026-09-21. `--negative-control shuffle` permutes each symbol's
+outcome vector across its own feature-days, destroying the t → t+1 link
+while preserving every marginal distribution.
+
+**Every lift should have collapsed to 1.0x. None did.**
+
+| candidate | period | real lift | shuffled | residual |
+|---|---|---|---|---|
+| `score>=3` | 2016-21 | 6.7x | **1.5x** | 4.5x |
+| `score>=3` | 2022+ | 5.6x | **1.6x** | 3.5x |
+| `8k_2.02` | 2016-21 | 3.8x | **1.2x** | 3.2x |
+| `8k_2.02` | 2022+ | 4.0x | **1.0x** | 4.0x |
+| `vr25` | 2016-21 | 8.7x | **1.7x** | 5.1x |
+| `up10` | 2022+ | 4.0x | **1.8x** | 2.2x |
+
+### What it means
+
+The non-unit floor is **not** a bug in `bigmove_study.py`. It is a
+confound the shuffle exposes and the study does not control for:
+shuffling *within symbol* preserves symbol identity, and volatile symbols
+have both more candidate days and higher unconditional big-move rates on
+*all* their days. Conditioning on "is a candidate" therefore still
+selects volatile names, whose shuffled outcomes come from their own
+high-volatility pool.
+
+So the published lift decomposes into two parts:
+
+- **~1.5–1.6x — symbol selection.** "These are names that move a lot on
+  any day." Real, but not what a next-session watchlist claims.
+- **~3.5–4.5x — day-level signal.** "*This* day's features predict
+  *tomorrow*." This is the part that justifies the trigger.
+
+**The signal survives, at roughly two-thirds of its headline size.** The
+study's spread-tier control was reaching for this and partially catches
+it; the within-symbol shuffle is the tighter instrument and should be
+reported alongside every future lift.
+
+### The most useful finding
+
+**`8k_2.02` has the lowest shuffled floor of any candidate — 1.2x /
+1.0x.** Its lift is almost entirely day-level, where the volatility-based
+candidates carry 1.5–2.0x of symbol selection.
+
+The catalyst mechanism is materially cleaner than the attention
+mechanism. `docs/selection-logic.md` should weight it accordingly rather
+than treating the two paths as equivalent.
+
+`vr25` at 8.7x/7.7x abs10 with a **27%/30% up share** independently
+corroborates the blow-off exclusion: enormous movement, mostly downward.
+
+### Corrections to the audit's own method
+
+1. **These runs covered $0.10–$10, which includes the $5–$10 holdout.**
+   They report no separate $5–$10 breakdown, so the specific Phase A
+   question is still unanswered — but this was a partial spend of a
+   single-use resource and should not have happened. **Audit runs must be
+   confined to ≤$5, the already-mined range.** Add a `--max-price` flag
+   and use it for all verification work.
+2. A second control is still needed to isolate the day-level effect
+   directly: shuffle **across symbols within the same calendar date**,
+   which holds market conditions fixed and breaks symbol identity. Run
+   both and report the pair.
