@@ -367,16 +367,33 @@ export default async () => {
     const prevSession = spyDates[spyDates.length - 1];
     const prevPrevSession = spyDates[spyDates.length - 2];
     const earningsIds = new Set<number>();
-    // Any 8-K filed since the previous session (sec-filings-sync runs 17:30,
-    // before this scan) — one input to the big-move score.
+    // 8-Ks filed in the last two sessions — one input to the big-move score.
+    //
+    // This used to be `> prevSession`, i.e. today's filings only. EDGAR
+    // publishes a session's daily index in the evening and
+    // `sec-filings-sync` lands it at 22:30 ET, but this scan runs at 17:45,
+    // so that window matched nothing: the 8-K point was structurally 0 on
+    // every run since it was added, and `bigmove_score` has only ever been
+    // a 3-of-3 volatility triple (docs/research-audit-plan.md P1).
+    //
+    // Widening to prevPrevSession picks up the previous session's filings,
+    // which ARE loaded by scan time — the same window `earningsIds` below
+    // uses, and the reason that one has always worked. It also degrades
+    // gracefully: if the scan later moves after 22:30 (the Stage 1 slot in
+    // docs/overhaul-plan.md), today's filings start being included with no
+    // further change.
+    //
+    // Still narrower than research/bigmove_study.py, which counts a filing
+    // within 5 calendar days (finding F1). Reconciling those two windows is
+    // a separate decision, not a bug fix.
     const filed8kIds = new Set<number>();
-    if (prevSession) {
+    if (prevPrevSession) {
       for (let from = 0; ; from += 1000) {
         const { data: fk, error: fkErr } = await db
           .from("sec_filings")
           .select("accession, symbol_id")
           .eq("form", "8-K")
-          .gt("filing_date", prevSession)
+          .gt("filing_date", prevPrevSession)
           .lte("filing_date", today)
           .not("symbol_id", "is", null)
           .order("accession", { ascending: true })
@@ -387,14 +404,26 @@ export default async () => {
       }
     }
     if (prevSession && prevPrevSession) {
-      const { data: ek } = await db
-        .from("sec_filings")
-        .select("symbol_id, items")
-        .eq("form", "8-K")
-        .gt("filing_date", prevPrevSession)
-        .lte("filing_date", prevSession);
-      for (const r of (ek as { symbol_id: number | null; items: string | null }[] | null) ?? []) {
-        if (r.symbol_id != null && /(^|,)2\.02(,|$)/.test(r.items ?? "")) earningsIds.add(r.symbol_id);
+      // Paginated with an explicit order: PostgREST caps an unordered
+      // select at 1,000 rows and silently drops the rest (HANDOFF §3, and
+      // six documented instances of this bug family). This query feeds
+      // `earnings_release`, the only enabled Buy trigger, so truncation
+      // here is silent under-selection of the system's sole buy setup.
+      // ~113 8-Ks land on a typical session, so it is not truncating today.
+      for (let from = 0; ; from += 1000) {
+        const { data: ek, error: ekErr } = await db
+          .from("sec_filings")
+          .select("accession, symbol_id, items")
+          .eq("form", "8-K")
+          .gt("filing_date", prevPrevSession)
+          .lte("filing_date", prevSession)
+          .order("accession", { ascending: true })
+          .range(from, from + 999);
+        if (ekErr) throw ekErr;
+        for (const r of (ek as { symbol_id: number | null; items: string | null }[] | null) ?? []) {
+          if (r.symbol_id != null && /(^|,)2\.02(,|$)/.test(r.items ?? "")) earningsIds.add(r.symbol_id);
+        }
+        if (!ek || ek.length < 1000) break;
       }
     }
     const reverseSplitIds = new Set<number>();
