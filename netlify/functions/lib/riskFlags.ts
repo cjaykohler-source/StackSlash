@@ -137,7 +137,11 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
   if (typeof x.market_cap === "number" && x.market_cap > 0 && x.market_cap < 50_000_000) {
     f.push({
       level: "red",
-      label: `Nano-cap ($${(x.market_cap / 1e6).toFixed(0)}M)`,
+      // Sub-$1M caps are real on this universe (RETO ~$30k, SLXN ~$159k on
+      // 2026-09-21), and `(cap / 1e6).toFixed(0)` rendered every one of them
+      // as "$0M" — indistinguishable from missing data to a reader, and read
+      // as exactly that during the 2026-09-21 audit. Scale the unit instead.
+      label: `Nano-cap (${formatCap(x.market_cap)})`,
       note: "Below ~$50M market cap — thin float, easily moved by a single order, and dilution/reverse-split prone.",
     });
   }
@@ -243,4 +247,12 @@ export function tradeSuggestion(
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** Market cap with a unit that survives sub-$1M values. */
+export function formatCap(cap: number): string {
+  if (cap < 1_000) return `$${Math.round(cap)}`;
+  if (cap < 1_000_000) return `$${Math.round(cap / 1e3)}k`;
+  if (cap < 10_000_000) return `$${(cap / 1e6).toFixed(1)}M`;
+  return `$${Math.round(cap / 1e6)}M`;
 }
