@@ -91,6 +91,11 @@ below for the full derivation, every number, and every bug found along
 the way — worth reading before changing any trigger or exit logic,
 so the next attempt doesn't re-discover the same dead ends.
 
+> **New here?** `docs/HANDOFF.md` is the logistics map: machines, repo
+> layout, how jobs run, every schedule, data sources, database inventory
+> and the current operational state. This file is the strategy, the
+> research derivations and the open decisions.
+
 ## Current state — handoff (2026-09-18)
 
 Read this, then "The alert pipeline audit (2026-09-16)" below for the
