@@ -305,3 +305,95 @@ need resolving before Phase A.
 2. A residual computed as a ratio of lifts is a rough decomposition, not
    an exact one. It is adequate for rebasing a threshold; it is not a
    precise effect size.
+
+---
+
+## Layer 2.2 — Construct validity: is the target the right target?
+
+Run 2026-09-21 at `--max-price 5`. Measurement validity asks whether the
+study measures what it claims. **Construct validity asks whether the
+claim is the right question.** `bigmove_score` is optimised against
+`abs10` — a 10% move in *either* direction — while the goal is a
+**buy-candidate list**.
+
+New section `run_q3` splits the tails and charges costs. `U:D` is the
+ratio of upside-reachable to downside-reachable next sessions
+(`MFE+10 / MAE-10`). A selector with no directional edge leaves it at the
+baseline value.
+
+| candidate | period | up lift | down lift | **U:D** | win_net lift | r1 net |
+|---|---|---|---|---|---|---|
+| **BASELINE** | 2016-21 | — | — | **1.32** | — | −3.50% |
+| **BASELINE** | 2022+ | — | — | **1.06** | — | −4.52% |
+| `score>=3` | 2016-21 | 3.2x | **8.1x** | **0.65** | 1.2x | −5.33% |
+| `score>=3` | 2022+ | 3.2x | **6.2x** | **0.66** | 1.4x | −6.29% |
+| `vr25` | 2016-21 | 3.0x | **11.6x** | **0.42** | 1.1x | −7.07% |
+| `up10_fade_vr3` | 2016-21 | 2.6x | **10.6x** | **0.41** | 1.0x | −7.93% |
+| `offering_filed` | 2022+ | 1.5x | **4.1x** | **0.55** | **0.8x** | −8.96% |
+| `8k_2.02` | 2016-21 | 2.4x | 3.7x | **0.90** | **1.4x** | −3.85% |
+| `8k_2.02` | 2022+ | 2.9x | 3.4x | **0.91** | **1.5x** | −3.81% |
+| `8k_any_quiet` | 2016-21 | 1.5x | 1.8x | **1.12** | 1.0x | −4.54% |
+
+### 1. The concern was founded
+
+**`score>=3` has a U:D of 0.65/0.66 against a baseline of 1.32/1.06 —
+roughly half.** Its downside lift (8.1x/6.2x) is two to two-and-a-half
+times its upside lift (3.2x/3.2x).
+
+The trigger does not merely fail to find upside. **It selects for
+downside**, and it does so more strongly than it selects for upside. A
+5.3x lift on `abs10` is real, and most of what it is lifting is falls.
+
+For a Watch list this is defensible — the README already says Watch,
+never Buy. **For the candidate pool of a buy-oriented report it is
+inverted**, and `docs/selection-logic.md` makes it exactly that.
+
+### 2. The 8-K is the right signal — now on a third independent basis
+
+`8k_2.02` is the only candidate that is close to direction-neutral
+(U:D 0.90/0.91), has the **best profitable-next-session lift**
+(1.4x/1.5x), and the **least negative net return** of any candidate
+(−3.85%/−3.81% against `score>=3`'s −5.33%/−6.29%).
+
+That is now three independent findings pointing the same way: both-period
+positive in the original catalyst study, the lowest symbol-selection
+floor under the negative controls (0.9x), and the only direction-neutral,
+cost-surviving candidate here.
+
+### 3. Volume is what brings the downside
+
+`8k_any_quiet` — an 8-K with volume *below* 1.5x — has **U:D 1.12 in
+2016-21, the only candidate above baseline in either period.** Adding a
+volume spike to the same catalyst (`8k_any_vr3`) drops U:D to 0.65.
+
+This matches the existing finding that volume conditions *subtract* from
+the 8-K signal. It now appears they subtract specifically by adding
+downside.
+
+### 4. Everything is net negative
+
+Every `r1 net` is negative, baseline included (−3.50%/−4.52%). Baseline
+`win_net` is ~20%: only a fifth of in-band days close up enough to clear
+the modelled cost. The best candidate reaches 30.5%.
+
+Consistent with the project's standing verdict. A watchlist does not need
+positive expectancy to be useful — it needs to point attention. But a
+report framed around buy candidates must not present these as setups.
+
+### Implication for `docs/selection-logic.md`
+
+The spec's Step 2 pools the attention path (`bigmove_score >= 3`) and the
+catalyst path (8-K 2.02) as equal mechanisms. **That is wrong on this
+evidence.** The catalyst path should be primary; the attention path
+belongs as a *de-prioritiser* or a risk annotation, not as a source of
+buy candidates.
+
+`vr25` (U:D 0.42) and `offering_filed` (win_net lift 0.8x — the only
+candidate below baseline) are both strongly corroborated as exclusions.
+
+### Caveat
+
+MFE and MAE come from daily highs and lows, which cannot be ordered
+within a session. They bound what was *reachable*, not what a path-
+dependent strategy would have captured. U:D is a directional-asymmetry
+measure, not a backtest.
