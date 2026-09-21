@@ -15,3 +15,8 @@ research/data/
 
 # Supabase CLI link state (`supabase link`) — machine-local.
 supabase/.temp/
+
+# Supabase CLI scratch (created by `supabase init`); config only, no secrets,
+# but the linked project ref and temp state are machine-local.
+supabase/.temp/
+supabase/.branches/

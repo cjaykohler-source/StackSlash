@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.supabase-backup</string>
+
+    <!-- Nightly logical backup of the operational database. Most of what it
+         holds cannot be re-fetched from anywhere: fire_outcomes,
+         trigger_events, dossiers, alerts, shadow_positions and job_runs are
+         accumulated history. Keeps the newest 14 (~208 MB each). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/research/backup_supabase.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+
+    <!-- 21:15 local (America/New_York): after eod-scan / eod-digest /
+         record-fire-outcomes / data-integrity-check have written the day's
+         rows, before sec-balance-sheet-sync starts at 23:00. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>15</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-supabase-backup/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-supabase-backup/launchd.err.log</string>
+</dict>
+</plist>
