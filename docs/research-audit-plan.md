@@ -473,3 +473,104 @@ days) has been quoted from the README throughout and is **not** relied on
 by `docs/selection-logic.md`, which cites only audited
 `bigmove_study.py` rows. It is the next target, and now the most
 important one: the catalyst path is the whole selection pool.
+
+---
+
+## Layer 1.3 — `catalyst_study.py`
+
+Audited 2026-09-21. Full read. This study is **better constructed than
+`bigmove_study.py` in the respect that matters most for the goal**, and
+weaker in one that partly offsets it.
+
+### What it gets right
+
+- **Its metric is already direction-aware.** It reports signed 1/5/20-day
+  returns, win rate, median, profit factor and mean-excluding-top-1% —
+  not a direction-blind `abs10`. The construct-validity failure that
+  inverted the first selection spec **does not apply here.** The 8-K
+  result is a signed-return comparison against a random in-band day,
+  which is exactly the comparison the goal needs.
+- **Entry timing is deliberately conservative.** Filing events enter at
+  the close of the session *after* the first session on/after the filing
+  date, so the filing is public whatever time of day it was accepted. No
+  intraday-timing assumption at all.
+- **Point-in-time fundamentals.** Shares, cash and burn are asof-joined
+  on their EDGAR `filed` date, so no restated figure leaks backwards.
+  Offerings are checked in a 30-day window ending at the event.
+- **Prior-only rolling windows.** 20-day volume excludes the current day;
+  the 252-session high uses `c[:-1]`.
+- **Split and staleness guards** on every horizon: returns are voided if
+  any daily ratio in the holding window is ≥10x or ≤0.1x, or if the span
+  exceeds `h*2 + 7` days.
+- **Placeholder bars filtered** at load (`volume <= 0 and o = h = l = c`).
+- **Tail reporting** — `mean_net_ex_top1` is computed and published, the
+  project's own hard-won lesson applied.
+- No truncation family: DuckDB + numpy throughout, no PostgREST.
+
+### Findings
+
+**C1 — The cost model is materially weaker than the project's headline
+one.** This study charges `greatest(tick/price, 0.01)` — max of 1% and
+one tick. `bigmove_study.py` charges
+`greatest(tick/price, 0.01, spread_est)`, including the Abdi-Ranaldo
+estimate, and the README's verdict rests on a modelled round trip
+averaging **1.22%**.
+
+So wide-spread names are **undercharged here**, and those are precisely
+the names most likely to produce large moves. The published
++4.2% / +0.4% at 20 days is net of a weaker cost model than the one used
+to kill `catalyst_momentum` (gross PF 1.32 → net 0.779). **Re-running
+with the spread term is the single highest-value check on this study.**
+
+**C2 — Unknown fundamentals are treated as clean.** Every component of
+`flagged` is wrapped in `coalesce(..., false)`, and `offer30` comes from
+a LEFT JOIN whose miss also reads as false. A symbol with no EDGAR shares
+or cash data is therefore **not** nano-cap, **not** diluting and **not**
+low-runway — it passes `excl_flags` as though verified clean. Given how
+patchy XBRL coverage is on micro-caps, the `excl_flags` variant may be
+substantially populated by unknowns. Same class as the live
+`Nano-cap ($0M)` bug (P.2).
+
+**C3 — It is not comparable to `bigmove_study.py`, and the selection
+spec was treating both as one evidence base.** Three divergences:
+
+| | `catalyst_study.py` | `bigmove_study.py` |
+|---|---|---|
+| filing timestamp | `filing_date` | `acceptance_datetime`, 17:45 ET rollover |
+| default floor | $2.5M/day | $800k/day |
+| cost model | max(1%, tick) | max(1%, tick, spread) |
+
+Note `catalyst_study` uses `filing_date`, which is what **production**
+uses — so on filing timing it is the closer of the two to the live
+system.
+
+**C4 — Multiple comparisons.** 8 events × 2 variants × 2 periods × 3
+horizons ≈ 96 cells. "8-K 2.02 beats a random day in both periods" is a
+selection from that family, uncorrected. Same issue as bigmove's F5.
+
+**C5 — Mixed entry conventions in one table.** Filing events enter at
+E+1's close; `high52w_vol` enters at the signal day's close. Documented,
+but the rows sit side by side in one output and invite direct comparison
+that is not valid.
+
+**C6 — No negative control.** Layer 2 not yet built for this study.
+
+**C7 — Docstring said $0.10–$5 while the code said $0.10–$10.** My own
+error from the band standardisation (#176); corrected in this commit,
+with a note that every published result predates the widening.
+
+### Effect on the selection spec
+
+`docs/selection-logic.md` does **not** cite this study, so nothing there
+needs retracting. But the spec's central claim — that the catalyst path
+is the right primary mechanism — would be **strengthened** by this
+study's direction-aware construction and **weakened** if C1 turns out to
+matter. Charging the spread term is the deciding test.
+
+### Next
+
+1. Add the spread term to this study's cost model and re-run (C1).
+2. Add `--max-price` and the two negative controls, as `bigmove_study.py`
+   now has (C6).
+3. Resolve unknown-vs-clean in `flagged` (C2), and report how many rows
+   in `excl_flags` are unknowns rather than verified-clean.
