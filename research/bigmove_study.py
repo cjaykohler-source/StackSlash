@@ -244,6 +244,7 @@ def main():
         run_q1(con, emit, F)
 
     run_q2(con, emit, F, T)
+    run_q3(con, emit, F, T)
 
     OUT.mkdir(parents=True, exist_ok=True)
     suffix = "" if args.negative_control == "off" else f"_nc-{args.negative_control}"
@@ -312,6 +313,53 @@ def run_q2(con, emit, F, T):
                 else:
                     cells += f"{'-':>20}"
             emit(f"  {name:<22}{p:<9}{cells}")
+
+def run_q3(con, emit, F, T):
+    """Direction- and cost-aware view (construct validity).
+
+    Q2 scores candidates on abs10 -- a move of 10% in EITHER direction. A
+    buy-candidate list needs to know whether that lift is upside or
+    downside. This section splits the tails and charges costs.
+
+      up_c / dn_c   next close >= +10% / <= -10% from close t
+      MFE+10        next session's HIGH reaches +10%  (a reachable exit)
+      MAE-10        next session's LOW  reaches -10%  (a stop-out)
+      U:D           MFE+10 / MAE-10. The baseline's own ratio is the bar:
+                    a selector with no directional edge lifts both tails
+                    equally and leaves this unchanged.
+      win_net       next close beats the modelled round-trip cost
+      r1 net        mean next-session return net of that cost
+
+    Daily bars cannot order the high and the low within a session, so MFE
+    and MAE are not a path-dependent backtest -- they bound what was
+    reachable, not what would have been captured.
+    """
+    emit(f"\n=== Direction & cost aware (floor ${F:,.0f}) — is the lift upside or downside? ===")
+    cols = """count(*), avg((r1 >= .1)::int), avg((r1 <= -.1)::int),
+              avg((nh_ret >= .1)::int), avg((nl_ret <= -.1)::int),
+              avg((r1 - cost_pct > 0)::int), avg(r1 - cost_pct)"""
+    base = {p: r for p, *r in con.execute(
+        f"select period, {cols} from {T} where dollar20 >= {F} group by 1").fetchall()}
+
+    emit(f"  {'candidate':<22}{'period':<9}{'n':>9}{'up_c':>7}{'lift':>6}{'dn_c':>7}{'lift':>6}"
+         f"{'MFE+10':>8}{'lift':>6}{'MAE-10':>8}{'lift':>6}{'U:D':>6}{'win_net':>8}{'lift':>6}{'r1 net':>8}")
+    for p in sorted(base):
+        b = base[p]
+        emit(f"  {'BASELINE':<22}{p:<9}{b[0]:>9,}{b[1]*100:>6.1f}%{'':>6}{b[2]*100:>6.1f}%{'':>6}"
+             f"{b[3]*100:>7.1f}%{'':>6}{b[4]*100:>7.1f}%{'':>6}{b[3]/b[4]:>6.2f}{b[5]*100:>7.1f}%{'':>6}{b[6]*100:>7.2f}%")
+    for name, cond in CANDIDATES.items():
+        for r in con.execute(
+            f"select period, {cols} from {T} where dollar20 >= {F} and ({cond}) group by 1 order by 1"
+        ).fetchall():
+            p, v = r[0], r[1:]
+            b = base[p]
+            emit(f"  {name:<22}{p:<9}{v[0]:>9,}{v[1]*100:>6.1f}%{v[1]/b[1]:>5.1f}x{v[2]*100:>6.1f}%{v[2]/b[2]:>5.1f}x"
+                 f"{v[3]*100:>7.1f}%{v[3]/b[3]:>5.1f}x{v[4]*100:>7.1f}%{v[4]/b[4]:>5.1f}x"
+                 f"{v[3]/v[4]:>6.2f}{v[5]*100:>7.1f}%{v[5]/b[5]:>5.1f}x{v[6]*100:>7.2f}%")
+
+    emit("\n  U:D is the ratio of upside-reachable to downside-reachable next sessions.")
+    emit("  A candidate with no directional edge leaves it at the BASELINE value;")
+    emit("  below baseline means the selector is finding falls, not opportunities.")
 
 
 if __name__ == "__main__":
