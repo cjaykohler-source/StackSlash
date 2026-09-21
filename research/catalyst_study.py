@@ -53,31 +53,32 @@ OUT = ROOT / "data" / "study_outputs"
 HORIZONS = (1, 5, 20)
 
 
-def build_days(con) -> pa.Table:
+def build_days(con, P: float = 10.0) -> pa.Table:
     print("loading SIP daily bars for band symbols...", flush=True)
     data = con.execute(
         """
         with band_syms as (
           select symbol from sip_bars_daily_raw
-          where date >= date '2016-01-01' and close between 0.10 and 10
+          where date >= date '2016-01-01' and close between 0.10 and {P}
           group by symbol having count(*) >= 60
         )
-        select s.symbol, s.date, s.open o, s.close c, s.volume v, r.close cr
+        select s.symbol, s.date, s.open o, s.high h, s.low l, s.close c, s.volume v, r.close cr
         from sip_bars_daily_split s
         join sip_bars_daily_raw r using (symbol, date)
         join band_syms using (symbol)
         where s.date >= date '2015-01-01'
           and not (s.volume <= 0 and s.open = s.high and s.high = s.low and s.low = s.close)
         order by s.symbol, s.date
-        """
+        """.replace("{P}", repr(P))
     ).fetchnumpy()
     sym = data["symbol"]
     D = data["date"].astype("datetime64[D]")
-    O, C, V, CR = (data[k].astype(float) for k in ("o", "c", "v", "cr"))
+    O, H, L, C, V, CR = (data[k].astype(float) for k in ("o", "h", "l", "c", "v", "cr"))
     N = len(C)
     print(f"  {N:,} bars", flush=True)
 
-    out = {k: np.full(N, np.nan) for k in ("dollar20", "vol_ratio", "gap", "next_cr", "next_dollar20", "next_gap")}
+    out = {k: np.full(N, np.nan) for k in ("dollar20", "vol_ratio", "gap", "next_cr", "next_dollar20",
+                                          "next_gap", "spread_est", "next_spread")}
     out["hi252"] = np.zeros(N, dtype=bool)
     for h in HORIZONS:
         out[f"r{h}"] = np.full(N, np.nan)   # from close t
@@ -88,6 +89,7 @@ def build_days(con) -> pa.Table:
     for a, b in zip(starts, ends):
         n = b - a
         c, v, o, cr, d = C[a:b], V[a:b], O[a:b], CR[a:b], D[a:b]
+        hh, ll = H[a:b], L[a:b]
         dollar20 = rolling_mean(c * v, 20)
         prior = np.full(n, np.nan)
         if n > 20:
@@ -95,6 +97,22 @@ def build_days(con) -> pa.Table:
         with np.errstate(divide="ignore", invalid="ignore"):
             vol_ratio = np.where(prior > 0, v / prior, np.nan)
             gap = np.r_[np.nan, o[1:] / c[:-1] - 1]
+        # Abdi-Ranaldo (2017) spread estimate, matching bigmove_study.py:
+        # s^2 = 4 * E[(ln c_t - eta_t)(ln c_t - eta_t+1)], eta = mid log range.
+        # Averaged over the 20 sessions STRICTLY BEFORE t, so a row's spread
+        # uses only data available at its own close.
+        spread = np.full(n, np.nan)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ok = (hh > 0) & (ll > 0) & (c > 0)
+            eta = np.where(ok, (np.log(np.where(ok, hh, 1.0)) + np.log(np.where(ok, ll, 1.0))) / 2.0, np.nan)
+            lc = np.where(ok, np.log(np.where(ok, c, 1.0)), np.nan)
+            ar = np.full(n, np.nan)
+            if n > 1:
+                ar[1:] = 4.0 * (lc[:-1] - eta[:-1]) * (lc[:-1] - eta[1:])
+            ar_pos = np.where(np.isfinite(ar), np.maximum(ar, 0.0), np.nan)
+            if n > 20:
+                spread[20:] = np.sqrt(rolling_mean(np.nan_to_num(ar_pos), 20)[19:-1])
+
         hi = np.zeros(n, dtype=bool)
         if n > 252:
             prior_max = swv(c[:-1], 252).max(axis=1)  # max of the 252 closes before t
@@ -114,6 +132,8 @@ def build_days(con) -> pa.Table:
         out["dollar20"][a:b] = dollar20
         out["vol_ratio"][a:b] = vol_ratio
         out["gap"][a:b] = gap
+        out["spread_est"][a:b] = spread
+        ns = np.full(n, np.nan); ns[:-1] = spread[1:]; out["next_spread"][a:b] = ns
         out["hi252"][a:b] = hi
         nc = np.full(n, np.nan); nc[:-1] = cr[1:]; out["next_cr"][a:b] = nc
         nd = np.full(n, np.nan); nd[:-1] = dollar20[1:]; out["next_dollar20"][a:b] = nd
@@ -128,13 +148,22 @@ def build_days(con) -> pa.Table:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--floor", type=float, default=2_500_000)
+    ap.add_argument("--max-price", type=float, default=10.0,
+                    help="upper price bound. Audit runs MUST pass --max-price 5: $5-$10 is the "
+                         "project's least-examined range (docs/overhaul-plan.md Phase A).")
+    ap.add_argument("--no-spread-cost", action="store_true",
+                    help="reproduce the pre-2026-09-21 cost model: max(1%%, tick) with no "
+                         "spread term. For comparison only -- it undercharges wide-spread names.")
     args = ap.parse_args()
     F = args.floor
+    P = args.max_price
+    SPREAD_EV = '0' if args.no_spread_cost else 'coalesce(b1.spread, 0)'
+    SPREAD_BASE = '0' if args.no_spread_cost else 'coalesce(spread_est, 0)'
 
     con = duckdb.connect()
     con.execute(f"attach '{WAREHOUSE}' as wh (read_only)")
     con.execute("use wh")
-    days = build_days(con)
+    days = build_days(con, P)
     con.execute("use memory")
     con.register("days_arrow", days)
     con.execute("create temp table days as select * from days_arrow order by symbol, date")
@@ -166,13 +195,13 @@ def main():
         where fl.form in ('8-K', 'SC 13D', 'SC 13G', '424B4') and fl.filing_date >= '2016-01-01'
       )
       select f.catalyst, d.symbol, d.date edate, d.next_cr price, d.next_dollar20 dollar20, d.next_gap,
-             d.rn1 r1, d.rn5 r5, d.rn20 r20
+             d.next_spread spread, d.rn1 r1, d.rn5 r5, d.rn20 r20
       from f asof join days d on f.symbol = d.symbol and f.fdate <= d.date
       where f.catalyst is not null
     """)
     con.execute("""
       insert into filing_events
-      select '8k_earnings_gapup', symbol, edate, price, dollar20, next_gap, r1, r5, r20
+      select '8k_earnings_gapup', symbol, edate, price, dollar20, next_gap, spread, r1, r5, r20
       from filing_events where catalyst = '8k_earnings' and next_gap >= 0.05
     """)
     con.execute(f"""
@@ -182,18 +211,18 @@ def main():
         from read_parquet('{CA}/*.parquet', union_by_name = true)
         where type = 'reverse_splits' and ex_date between '2016-01-01' and '2030-01-01'
       )
-      select 'reverse_split', d.symbol, d.date, d.next_cr, d.next_dollar20, d.next_gap, d.rn1, d.rn5, d.rn20
+      select 'reverse_split', d.symbol, d.date, d.next_cr, d.next_dollar20, d.next_gap, d.next_spread, d.rn1, d.rn5, d.rn20
       from rs asof join days d on rs.symbol = d.symbol and rs.xdate <= d.date
     """)
     con.execute(f"""
       insert into filing_events
-      select 'high52w_vol', symbol, date, cr, dollar20, next_gap, r1, r5, r20
+      select 'high52w_vol', symbol, date, cr, dollar20, next_gap, spread_est, r1, r5, r20
       from days where hi252 and vol_ratio >= 2
     """)
     con.execute(f"""
       create temp table events as
       select distinct * from filing_events
-      where price between 0.10 and 10 and dollar20 >= {F}
+      where price between 0.10 and {P} and dollar20 >= {F}
     """)
     for ev, n in con.execute("select catalyst, count(*) from events group by 1 order by 1").fetchall():
         print(f"  {ev:<20}{n:>8,}")
@@ -218,7 +247,7 @@ def main():
       create temp table offers as select cik, filing_date::date fd from read_parquet('{e}/edgar_filings.parquet')
       where form in ('S-1', 'S-3', 'F-1', 'F-3', '424B4', '424B5')
     """)
-    con.execute("""
+    con.execute(f"""
       create temp table ev as
       with b as (select e.*, tc.cik, e.edate - interval 365 day as d1y from events e left join ticker_cik tc on tc.ticker = e.symbol),
       s1 as (select b.*, sh.shares from b asof left join sh on b.cik = sh.cik and b.edate >= sh.filed),
@@ -235,7 +264,7 @@ def main():
           or coalesce(b1.shares_1y > 0 and b1.shares / b1.shares_1y - 1 >= 0.5, false)
           or coalesce(b1.burn_q > 0 and b1.cash / b1.burn_q <= 2, false)
           or o.offer30 as flagged,
-        greatest(case when b1.price >= 1 then 0.01 else 0.0001 end / b1.price, 0.01) as cost
+        greatest(case when b1.price >= 1 then 0.01 else 0.0001 end / b1.price, 0.01, {SPREAD_EV}) as cost
       from b1 join o using (catalyst, symbol, edate)
     """)
 
@@ -249,8 +278,8 @@ def main():
     )
     base_union = " union all ".join(
         f"select 'BASELINE (random in-band day)' catalyst, 'all' variant, {per('date')} period, {h} h, r{h} gross, "
-        f"r{h} - greatest(case when cr >= 1 then 0.01 else 0.0001 end / cr, 0.01) net "
-        f"from days where cr between 0.10 and 10 and dollar20 >= {F} and r{h} is not null and not isnan(r{h})"
+        f"r{h} - greatest(case when cr >= 1 then 0.01 else 0.0001 end / cr, 0.01, {SPREAD_BASE}) net "
+        f"from days where cr between 0.10 and {P} and dollar20 >= {F} and r{h} is not null and not isnan(r{h})"
         for h in HORIZONS
     )
     res = con.execute(f"""
