@@ -1,657 +1,596 @@
 # RIOT overhaul — scoped plan
 
 Written 2026-09-21, from a full read of `README.md`, `docs/HANDOFF.md`,
-`docs/ACCESS.md`, the live alert path (`intraday-bars-scan`,
-`intraday-factors-scan`, `intraday-flip-scan`), the rules layer
-(`lib/triggers.ts`, `lib/cooldown.ts`, `lib/promotionGate.ts`,
-`lib/alertPositions.ts`), the outlier worker, and the production
-`triggers` table.
+the live alert path, the rules layer, the outlier worker and the
+production `triggers` / `scan_config` tables. Revised the same day after
+the Phase −1.1 audit and the architecture decision below.
 
 **Premise.** The research verdict is settled and this plan does not
-re-litigate it: nothing tested has a multi-regime edge on the sub-$5
-universe net of costs. Given that, the product is no longer "a signal
-generator" — it is a **situational-awareness console for a discretionary
-trader**, and it should be overhauled to be excellent at that. Three
-things block it:
+re-litigate it: nothing tested has a multi-regime edge net of costs on
+this universe. Given that, RIOT is not a signal generator. It is a
+**preparation engine for a discretionary trader** — it does the homework
+overnight and hands over a short, deeply-researched list before the open.
 
-1. **The code disagrees with the documentation** in the live alert path.
-   The alerting liquidity floor is not applied to any intraday alert.
-2. **The intraday data is lossy by construction.** `bars_intraday` stores
-   only the close, so every high/low/range factor is understated.
-3. **The rules layer is under-specified where it grew.** The declarative
-   engine evaluates thresholds; the real logic lives uncatalogued in scan
-   code, and no part of it has a test.
+That reframing is not a retreat. It is the only shape that fits three
+facts the project has already established:
 
-Everything below is sequenced so each phase leaves `main` deployable.
-Rough total: **34–45 hours**.
+1. **Both evidenced signals are end-of-day.** `earnings_release` (8-K
+   2.02, 20-day hold) and `bigmove_watchlist` (next-session 10%+ move at
+   3–9× base rate) are next-session signals. Delivering them faster adds
+   nothing.
+2. **Real-time entry alerting is not viable here.** IEX is real-time but
+   carries ~1.7% of band volume; SIP is complete but ~15 minutes stale.
+   Neither supports entry timing on a $2 stock, and the modelled 1.22%
+   round-trip cost is already larger than any edge measured.
+3. **The expensive data sources only work on a shortlist.** FMP's free
+   tier is 250 calls/day, IBKR borrow takes ~25 min for the band, SEC
+   XBRL ~2 h — and Robinhood (float, listing status, L2) *cannot run from
+   a host job at all*. All are trivial on 20 names. A shortlist is what
+   makes that data reachable.
 
-> **Read Phase −1 first.** Every defect in Phases 0–2 was found by
-> *reading code*, not by verifying the engine against reality. A 30-minute
-> check on 2026-09-21 found two things code review had missed (a trigger
-> that has never fired, and an ops view that contradicts itself). Until
-> the engine can demonstrate it is correct, repairing individual defects
-> is guesswork about which ones matter. **Phase −1 is a gate: do not
-> start Phase 0 until it passes.**
-
----
-
-## Phase −1 — Establish ground truth (~6h) — GATE
-
-**Why this is first.** The project has found six silent-corruption bugs.
-The response each time was to write more careful research code. What was
-never built is a **standing verification layer** that answers "is the
-engine correct *today*" without a human reading source. HANDOFF §3 says
-"check `job_runs` before believing any job works" — but `job_runs` is one
-of the things that is currently wrong (see −1.2). Right now nothing in
-the system can tell you whether the engine is trustworthy, and that — not
-any individual defect below — is the top issue.
-
-### −1.1 Prove every enabled trigger fires correctly — ~2h
-
-**Why.** `realtime_outlier_zscore` is enabled and has fired **0 times in
-30 days**, while its worker reports 2,072,977 processed ticks. That is the
-signature of an unreachable threshold — the same failure the README
-already documents for `momentum_rank_entry` ("an unreachable percentile
-threshold at this symbol count") and for `bb_rsi_confluence_short` /
-`macd_bearish_cross` ("fired zero times in 5 years… not 'negative
-expectancy' so much as unreachable"). **This is the fourth instance of a
-known failure mode, live in production, presenting in the UI as an
-enabled trigger.** Nothing flagged it because nothing checks.
-
-Separately, `earnings_release` and `avoid_reverse_split` both test
-`field == 1` through `compare()`'s strict `===`. If either underlying
-column is a boolean rather than a number, the rule silently never fires
-and looks identical to "no setup today."
-
-**Changes.**
-- For each enabled trigger, record over a fixed lookback: evaluations,
-  fires, promotions, alerts. A trigger with evaluations > 0 and fires = 0
-  is **presumed broken**, not "quiet."
-- Confirm the stored type of every field an enabled trigger references;
-  assert number-vs-boolean at evaluation time rather than failing closed
-  in silence.
-- Diagnose `realtime_outlier_zscore` specifically: is the z-score
-  threshold reachable given `ewmaAlpha` and `minTicksBeforeEval`? Either
-  fix the threshold or disable the trigger — an enabled trigger that
-  cannot fire is a lie in the UI.
-
-**Done when.** Every enabled trigger has either fired on real data in the
-lookback, or is disabled with the reason recorded.
-
-### −1.2 Make the ops view tell the truth — ~2h
-
-**Why.** As of 2026-09-21 13:00 UTC there is exactly **one** outlier
-worker process (PID 48383, started 8 Sep). Yet **two** `job_runs` rows for
-`realtime-outlier-worker` were heartbeated within the last minute:
-
-| id | status | started | ticks | last heartbeat |
-|---|---|---|---|---|
-| 6191 | `running` | 09-18 | **0** | 36s ago |
-| 547 | `failed` | 09-08 | 2,072,977 | 39s ago |
-
-The row that reads healthy has processed nothing; the row doing the work
-is marked failed. One live process cannot legitimately own both. So the
-single instruction the handoff doc gives for trusting the system — check
-`job_runs` — currently returns a contradiction for the one always-on
-component. This must be understood before it is patched; do not just
-sweep the rows.
-
-Related, already known: `fundamentals-sync` leaks a `running` row, and
-628 stale `running` rows were swept on 09-18.
-
-**Changes.**
-- Diagnose the double-heartbeat (stale `jobRunId` reuse in
-  `Heartbeat.beat()`, a second `start()` call, or a non-launchd writer).
-- A daemon's liveness must be derived from heartbeat age, not from
-  `status`; `failed` with a 39-second-old heartbeat is nonsense.
-- Add a check to `data-integrity-check`: more than one open heartbeat row
-  per daemon, any `running` row older than its job's expected duration,
-  and any enabled trigger with zero fires in N days → Discord.
-
-**Done when.** `job_runs` has exactly one open row per running daemon,
-and `data-integrity-check` alerts on the three conditions above.
-
-### −1.3 End-to-end reconciliation on one symbol — ~1h
-
-**Why.** Nothing verifies that the bars, the factor row, the trigger
-snapshot, the dossier and the rendered UI agree. Every silent-corruption
-bug in this project's history was a disagreement between two layers that
-nothing compared.
-
-**Changes.**
-- A script that takes a ticker and a session and prints, side by side:
-  `bars_intraday`-derived session state, the `intraday_factor_state` row,
-  any `trigger_events.snapshot`, and what the symbol page renders.
-- Run it against a name that fired and one that did not.
-
-**Done when.** The four layers agree for both cases, or the disagreement
-is documented.
-
-### −1.4 Decide what the live evidence base is — ~1h (decision)
-
-**Why.** `trigger_events` holds **118 rows spanning two trading days**
-(09-17 → 09-18); all prior history was deleted in the 09-17 reset.
-`fire_outcomes` has the matching 118. That is the entire live track
-record. It is not enough to judge any trigger, and it means "the engine
-is working" currently rests on two days of data.
-
-**Changes.** State explicitly in the README how many sessions of clean
-live history must accrue before any trigger is judged on live outcomes,
-and do not re-reset without an export.
-
-**Done when.** The bar is written down, and a pre-reset export step
-exists.
-
-### −1.5 Re-validate the research at the real band — ~4h
-
-**Why.** `scan_config.price_max` was **10** while the README, HANDOFF and
-every research script said **$5**. The band was standardised on $0.10–$10
-on 2026-09-21. Every existing result — the cost model, the hold-duration
-sweep, `daily_trigger_study.py`, `catalyst_study.py`, `bigmove_study.py`,
-the 8-K findings, the 25x blow-off flag — was produced on ≤$5 data.
-**Nothing has been validated in the $5–$10 range**, which is roughly half
-the names the live engine now alerts on.
-
-This is not a reason to distrust the old numbers; it is a reason not to
-extend them to a range they never covered.
-
-**Changes.**
-- Re-run `daily_trigger_study.py`, `catalyst_study.py` and
-  `bigmove_study.py` on the widened band (the scripts are already
-  updated).
-- Report $0.10–$5 and $5–$10 **separately**, not merged — the whole point
-  is to find out whether the new range behaves like the old one.
-- If the 8-K earnings edge or the big-move lift does not hold in $5–$10,
-  say so and scope the triggers by price rather than quietly averaging.
-
-**Done when.** Every enabled trigger's evidence note states which price
-range it was validated on, and the README's research sections are either
-re-run at $10 or explicitly marked as $5-only.
+Rough total: **38–50 hours**, but the sequencing matters far more than
+the total — see **Phase A**, which gates roughly half of it.
 
 ---
 
-## Phase 0 — Make the code match the documentation (~4h)
+## The target architecture
 
-Nothing here is a feature. Every item is a place where the system does
-something other than what `README.md` says it does.
+**Stage 1 — Analysis (after 22:30 ET).** Score the universe, produce
+tomorrow's shortlist. This is where the evidence lives.
 
-### 0.1 Apply the alerting liquidity floor to live intraday alerts — ~1h
+**Stage 2 — Enrichment (overnight).** Fan out expensive per-symbol work
+on the shortlist *only*: float, borrow, balance sheet, offering history,
+filings, news. Affordable precisely because it is scoped.
+
+**Stage 3 — Pre-open report (~08:00–08:30 ET).** Last night's shortlist
+refreshed with overnight 8-Ks, pre-market gap and pre-market volume.
+Delivered before the user sits down.
+
+**Intraday — monitoring, not discovery.** Scoped to names already on the
+shortlist or tracked. Reframed from "here is a trade" to "something on
+your list changed" and "here is a reason not to buy." This makes the
+28-slot websocket budget sufficient rather than absurd, and makes latency
+tolerable because the analysis happened last night.
+
+**Trading posture: ready at the open, execute on confirmation.** Not
+trading the first 30–60 minutes. Spreads are widest then, the 1.22% cost
+model is an all-day average rather than an opening-bell number, and
+`avoid_chase_extended` exists precisely because first-hour extended moves
+returned −2.3% against −1.0% for a random entry. The edge comes from the
+homework, which means there is no need to pay the opening spread.
+
+---
+
+## Status — landed 2026-09-21
+
+- **Phase −1.1 complete** (#174). Audited the evaluation→fire funnel for
+  every enabled trigger. Two defects found and fixed: `eod-scan` stored
+  the raw `factor_state` row instead of the enriched `inputs` actually
+  evaluated (so every derived field that decides firing was absent from
+  the audit trail), and it evaluated `realtime_outlier_zscore` — whose
+  definition is a `{note}` stub with no `all` clause — 24,875 times a
+  week for guaranteed-false results.
+- **Outlier worker fixed** (#175). It filled all 28 subscription slots
+  with the highest-dollar-volume names in the universe, no price filter —
+  mega-caps, none in band. Every fire was discarded by
+  `promotionGate.inBand()`. 2,072,977 ticks since 2026-09-08, zero
+  promotions: structurally incapable of firing. Now band-scoped from
+  `scan_config`, with a startup warning when the in-band fill is empty.
+- **Band standardised on $0.10–$10** (#176). `scan_config.price_max` had
+  been 10 while every doc and research script said 5. Code fallbacks,
+  research scripts and current-state docs now agree. Historical research
+  keeps its original $5 scope — see **Phase A**.
+
+---
+
+## Phase A — The holdout test (~5h) — GATES THE ARCHITECTURE
+
+**Why this is first.** The architecture above concentrates everything on
+the quality of the EOD shortlist. Stages 2 and 3 are expensive machinery
+wrapped around that list. If the selection mechanism does not hold, they
+are machinery around a weak list.
+
+And there is a deadline of a kind. Everything at ≤$5 has been mined
+across ~35 trigger variants, a 5-year multi-regime backtest, a
+1-day-to-6-month duration sweep and a cost model; the README itself says
+2022+ should be treated as "seen, not a sealed holdout." **The $5–$10
+range has never been examined.** It is the only genuinely unexamined data
+this project owns, and as of 2026-09-21 it is roughly 46% of the
+alertable universe (673 of 1,031 names at the $2.5M floor, against 363 at
+the old $5 ceiling).
+
+That makes it a real holdout by accident — and a single-use one. A few
+exploratory passes and it is as compromised as everything else. So the
+test is **pre-registered below and run once.**
+
+### A.1 Pre-registration — write this down before running anything
+
+**Hypothesis.** The `bigmove_score >= 3` selection mechanism generalises
+to $5–$10: it produces a materially elevated rate of large next-session
+moves in a price range it was never fitted on.
+
+**Primary metric.** Next-session lift — the ratio of
+
+- P(next-session close-to-close move ≥ 10% | score ≥ 3), to
+- P(next-session move ≥ 10% | random in-band day, same period)
+
+This is a **hit-rate-versus-base-rate** metric, deliberately not profit
+factor. `bigmove_watchlist` is a Watch, never a Buy: only ~36% of its
+moves are up and its 1/5-day net returns are negative. The list's job is
+to concentrate attention, and lift is what measures that. Judging it on
+P&L would conflate list quality with execution.
+
+**Pass threshold.** Lift **≥ 2.5×** in $5–$10, in **both** 2016–21 and
+2022+ reported separately, and surviving the spread-tier control below.
+Published lift at ≤$5 is 3.3–9.4× tier-controlled; 2.5× is a deliberately
+lower bar, because the question is whether the mechanism *generalises*,
+not whether it is equally strong.
+
+**Controls.**
+- **Spread tier.** Volatile names move more on any day. Lift must hold
+  *within* Abdi-Ranaldo spread tiers, as `bigmove_study.py` already does
+  at ≤$5. An uncontrolled result does not count.
+- **Dollar-volume floor.** $800k, matching the monitoring band.
+- **Periods.** 2016–21 and 2022+ **always reported separately, never
+  merged.** Merging is how a period-specific artefact looks robust.
+- **Price ranges.** $0.10–$5 and $5–$10 **reported separately.** The ≤$5
+  number is the already-known control; the $5–$10 number is the test.
+
+**Number of passes: one.** One run of `bigmove_study.py` at the widened
+band, one report. No threshold sweeps, no "what if score ≥ 2," no
+re-cuts after seeing the answer. Anything further is a new, explicitly
+non-holdout question and must be labelled as such in the README.
+
+**Pre-committed decision rule.**
+
+| result in $5–$10 | what it means | what happens |
+|---|---|---|
+| lift ≥ 2.5× both periods, tier-controlled | mechanism generalises | build Stages 2–3 in earnest on the full $10 band |
+| lift ≥ 2.5× in one period only | period-specific | build Stages 2–3, but shortlist scoped to ≤$5; revisit later |
+| lift < 2.5× but > 1.5× | weak but real | build Stages 2–3; **price-scope the trigger**, do not average the ranges together |
+| lift ≈ 1.0× | no signal above $5 | shortlist stays ≤$5, and the $5–$10 range is screen-only (see B.4) |
+
+**What this test does not do.** It does not measure profitability, and it
+must not be reported as if it did. It measures whether the shortlist
+points at the right names.
+
+### A.2 Run it — ~2h
+
+`research/bigmove_study.py` is already band-widened (#176). Run once,
+report the four cells (2 periods × 2 price ranges) plus tier-controlled
+lift. Record the result, the date and the pre-registration in the README
+next to the existing ≤$5 table.
+
+**Done when.** The four cells are in the README, the decision rule above
+has been applied, and the next phase is chosen by it rather than by
+preference.
+
+### A.3 Re-validate the catalyst path — ~2h
+
+Second priority, same discipline. `catalyst_study.py` at $10: does 8-K
+2.02 still beat a random day above $5? This is the other mechanism the
+shortlist will lean on (see B.2), and `earnings_release` is currently the
+only Buy in the system.
+
+**Done when.** `earnings_release`'s evidence note states which price
+range it was validated on.
+
+---
+
+## Phase B — De-risk the shortlist dependency (~6h)
+
+Concentrating on one list is the architecture's main structural risk.
+These four items reduce it; **B.1 should be done before Stages 2–3
+regardless of how Phase A turns out.**
+
+### B.1 Make Stages 2 and 3 list-agnostic — ~1h
+
+**Why.** The cheapest risk reduction available. Enrichment and reporting
+should take a list of tickers as **input**, not compute one. A single
+interface — `getShortlist(date) → ticker[]` — and everything downstream
+is indifferent to where the list came from.
+
+With that boundary in place, a Phase A failure collapses from "the
+architecture is wrong" to "one input needs replacing." The expensive
+machinery is reusable whatever selects the names.
+
+**Done when.** No stage-2 or stage-3 code references `bigmove_watchlist`,
+`trigger_events` or any trigger by name.
+
+### B.2 Diversify the list by mechanism, not by variants — ~3h
+
+**Why.** The shortlist would currently be ~96% one trigger:
+`bigmove_watchlist` at 77 fires/week against `earnings_release`'s 3.
+Single point of failure by construction.
+
+The distinction that matters, given this project's standing "do not add a
+36th trigger variant" rule — which stands: `bigmove_score` is one
+composite of four *correlated* volatility/attention proxies. Adding a
+fifth correlated proxy is exactly what not to do. Adding a
+**mechanistically independent selection path** is a different move.
+
+The filings path is the one with evidence already: 8-K 2.02 beats a
+random day in both periods; reverse splits run −17% to −22%; 424B4
+offerings −17%. That is a catalyst mechanism, not a volatility mechanism.
+If volatility-based selection decays, catalyst-based selection does not
+necessarily go with it.
+
+**Changes.** Shortlist = union of the volatility path (`bigmove_score`)
+and the filings path (8-K 2.02 / material filings), each contributing a
+labelled slice so their lift is tracked separately (B.3).
+
+**Done when.** The shortlist draws on two independently-measured
+mechanisms, and the report says which path put each name on the list.
+
+### B.3 Standing lift scoreboard — ~2h
+
+**Why.** The risk is not only "is the list good today" but "will anyone
+notice when it stops." `fire_outcomes` and `record-fire-outcomes` already
+exist; what is missing is a rolling metric on the **list**, per mechanism.
+
+Same metric as Phase A — hit rate against base rate, not profit factor.
+Published lift is 3–9×. If the trailing-20-session figure drifts toward
+1.0×, the list is dead and it shows up in weeks rather than never.
+
+**Done when.** The Reports page shows trailing-20-session lift per
+selection path, and `data-integrity-check` posts to Discord when it falls
+below a floor.
+
+### B.4 Write down the floor case — ~30m (decision)
+
+**Why.** If lift is ≈1.0× above $5, the shortlist there degrades to "the
+most active sub-$10 names with a catalyst." That is **still a useful
+product** — a screen rather than a prediction — and the README already
+frames the system that way: *"a solid, real-time screening and monitoring
+tool… treat alerts as things to look at, not blindly trade."*
+
+The downside is not "architecture wasted," it is "the claim gets weaker."
+Recording that in advance keeps a disappointing Phase A result from
+reading as a project failure.
+
+**Done when.** The README states what the shortlist claims in each Phase
+A outcome, and the UI language matches the weakest one that applies.
+
+---
+
+## Phase C — Fix the firing path (~5h)
+
+Defect repair. Every item is a place where the system does something
+other than what the documentation says.
+
+### C.1 The analysis stage runs before its own inputs land — ~1h
+
+**Why.** `eod-scan` runs 17:45 ET. `sec-filings-sync` lands that session's
+filings at 22:30 ET. Verified 2026-09-21:
+
+```
+filing_date 2026-09-18 → 137 filings, first loaded 22:30 ET on 09-18
+eod-scan ran 17:45 ET on 09-18 — 4h45m earlier
+```
+
+So the 8-K component of `bigmove_score` is **always one session stale**. A
+name that filed today gets no 8-K point tonight, and by tomorrow night
+"filed since the previous session" has moved on. The 22:30 run was added
+on 09-18 specifically to land same-day filings, but nothing consuming it
+was moved. **One of the four points in the project's best trigger has
+never worked as designed.**
+
+This also fixes itself under the target architecture, where Stage 1 runs
+after 22:30 by definition.
+
+**Changes.** Move `eod-scan` after `sec-filings-sync`'s late run, or split
+scoring into a second pass that runs after it. Re-check `bigmove_score`
+fire counts and the 8-K component's contribution before and after.
+
+**Done when.** A name that filed an 8-K today can score its 8-K point
+tonight, demonstrated on a real filing.
+
+### C.2 Apply the alerting liquidity floor to live intraday alerts — ~1h
 
 **Why.** `intraday-factors-scan` builds its universe from
-`scan_config.monitor_min_dollar_vol_20d` (**$800k/day**, correct — it is
-the monitoring band). `intraday-flip-scan` then filters `liveRows` on
-`price_min` / `price_max` and `alert_excluded` only, and inserts straight
-into `trigger_events`, deliberately bypassing `promotionGate`. The result:
-`min_dollar_vol_20d` (**$2.5M/day**) is never applied to any live alert.
-Every `rvol_breakout` and `avoid_chase_extended` card can fire on a name
-at a third of the documented alerting floor. On this universe that is the
-line between tradeable and untradeable.
+`monitor_min_dollar_vol_20d` ($800k — correct, it is the monitoring
+band). `intraday-flip-scan` then filters only on price and
+`alert_excluded`, and inserts straight into `trigger_events`, bypassing
+`promotionGate`. `min_dollar_vol_20d` ($2.5M) is **never applied to any
+live alert**. Every `rvol_breakout` and `avoid_chase_extended` card can
+fire on a name at a third of the documented alerting floor.
 
-**Changes.**
-- In `intraday-flip-scan.ts`, read `min_dollar_vol_20d` alongside the
-  price bounds, and filter `liveRows` on the symbol's latest
-  `factor_state.dollar_vol_20d` before evaluation.
-- Prefer reusing `promotionGate.inBand()` over a second copy of the rule;
-  if the gate stays bypassed for the cooldown/ranking reasons in that
-  file's docstring, extract `inBand` and call it directly.
-- A symbol whose dollar volume is unknown does **not** qualify (match the
-  gate's existing "better to miss a signal than alert on something
-  untradeable").
+**Changes.** Extract `inBand()` and call it from `intraday-flip-scan`, or
+filter `liveRows` on the latest `factor_state.dollar_vol_20d`. Unknown
+dollar volume does not qualify.
 
-**Done when.** A session's `trigger_events` from `intraday-flip-scan`
-contain no symbol whose latest `factor_state.dollar_vol_20d` is below
-`scan_config.min_dollar_vol_20d`. Expect fire counts to drop materially —
-that is the fix working, not a regression.
+**Done when.** No `intraday-flip-scan` event is below
+`scan_config.min_dollar_vol_20d`. Expect fire counts to drop — that is
+the fix working.
 
-### 0.2 Paginate the cooldown query — ~30m
+### C.3 Paginate the cooldown query — ~30m
 
-**Why.** `filterByCooldown` runs
-`.select(...).in("trigger_id", ...).gte("ts", cutoff)` with no `.order()`
-and no range. HANDOFF §3 records that PostgREST silently truncates at
-1,000 rows without an explicit order, and the README documents six
-instances of this exact bug family. The max cooldown among fast triggers
-is 1,440 minutes, so this pulls a full day of events. At ~25–40
-alerts/day it is not truncating today — but the failure mode is *missing
-last-fire rows*, i.e. duplicate Discord alerts, which is the precise bug
-`cooldown.ts` was written to prevent.
+**Why.** `filterByCooldown` selects with no `.order()` and no range.
+HANDOFF §3 records that PostgREST silently truncates at 1,000 rows
+without an explicit order, and the README documents six instances of this
+bug family. Max fast-trigger cooldown is 1,440 minutes, so it pulls a full
+day of events. Not truncating at ~25–40 alerts/day — but the failure mode
+is *missing last-fire rows*, i.e. duplicate Discord alerts, the exact bug
+`cooldown.ts` exists to prevent.
 
-**Changes.**
-- Add `.order("ts", { ascending: false })` and page with `.range()` until
-  a short page, matching the loop already used in `intraday-flip-scan`
-  for `intraday_factor_state`.
+**Done when.** Paginated, with a test at >1,000 in-window events.
 
-**Done when.** The query is paginated and a synthetic test with >1,000
-events in-window returns every `(trigger_id, symbol_id)` last-fire.
+### C.4 Replace the category guard with `opens_position` — ~1h
 
-### 0.3 Replace the category guard with an explicit `opens_position` — ~1h
+**Why.** On 09-18 `bigmove_watchlist` (category `watch`) opened six shadow
+positions; the fix filtered `category !== 'watch'`.
+`avoid_chase_extended` is category `avoid` and passes that filter — it is
+saved only because `openAlertPositions` filters `direction === 'long'` and
+that trigger happens to be marked `short`. A denylist keyed on the wrong
+field; one `avoid` trigger written as `long` reopens the bug.
 
-**Why.** On 2026-09-18, `bigmove_watchlist` (category `watch`) opened six
-shadow positions. The fix filtered `category !== 'watch'` at the creation
-site. `avoid_chase_extended` is category `avoid`, so it passes that
-filter — it is saved only because `openAlertPositions` filters
-`direction === 'long'` and that trigger happens to be marked `short`. The
-guard is a denylist keyed on the wrong field; one `avoid` trigger written
-as direction `long` reopens the same bug.
+**Changes.** `triggers.opens_position boolean not null default false`,
+true only for `earnings_release`. Select on it instead of inferring.
 
-**Changes.**
-- Migration: `alter table triggers add column opens_position boolean not
-  null default false;` then set it true only for `earnings_release` (and
-  any future buy setup).
-- `intraday-flip-scan` and `eod-scan` select on `opens_position` instead
-  of inferring from `category` / `direction`.
+**Done when.** `openAlertPositions` is reachable only by
+`opens_position = true`, and changing `category` or `direction` cannot
+open a position.
 
-**Done when.** `openAlertPositions` is reached only by triggers with
-`opens_position = true`, and flipping any trigger's `category` or
-`direction` cannot open a position.
-
-### 0.4 Clean up dead and sentinel `exit_rules` — ~30m
+### C.5 Clean up dead and sentinel `exit_rules` — ~30m
 
 **Why.** `earnings_release` carries `trail_pct: 1` and
-`profit_target_pct: 1` — 100%, meaning "disabled", matching its 20-day
-study. Everywhere else these are decimals (`0.03`, `0.12`). A reader who
-reads 1 as 1% sees a position that exits instantly. Separately,
-`rvol_breakout` carries a full `exit_rules` object but is category
-`watch` and can never open a position — dead config that reads as live.
+`profit_target_pct: 1` — 100%, meaning "disabled," matching its 20-day
+study. Everywhere else these are decimals like `0.03`. A reader who reads
+1 as 1% sees a position that exits instantly. Separately `rvol_breakout`
+carries a full `exit_rules` object but is category `watch` and can never
+open a position.
 
-**Changes.**
-- Migration: set `earnings_release.exit_rules` trail/profit-target to
-  `null`; confirm `alertPositions`'s `{...rules, ...exitRules}` merge
-  skips nulls rather than writing them (adjust the merge if not).
-- Migration: null out `rvol_breakout.exit_rules`.
+**Done when.** No `exit_rules` value is a disabled-sentinel `1`, and no
+non-position trigger carries exit rules.
 
-**Done when.** No `exit_rules` value in `triggers` is a disabled-sentinel
-`1`, and no disabled-for-positions trigger carries exit rules.
-
-### 0.5 Retire `sim-intraday-flips` — ~30m
+### C.6 Retire `sim-intraday-flips` — ~30m
 
 **Why.** Audited 2026-09-11 with four unfixed defects (no cost model,
-lookahead in the RVOL denominator via `perMinuteMean()`, no gap/split
-guard on the daily roll, mixed intraday/daily price bases) plus a latent
-`.limit(1000)`. It produced `catalyst_momentum`'s PF 1.32, which is net
-0.779. It is still in the tree and will hand a plausible number to
-whoever runs it next.
+lookahead in the RVOL denominator, no gap/split guard on the daily roll,
+mixed price bases) plus a latent `.limit(1000)`. It produced
+`catalyst_momentum`'s PF 1.32, which is net 0.779. Still in the tree,
+still able to hand a plausible number to whoever runs it next.
 
-**Changes.** Delete it, or make it throw on entry with a pointer to the
-audit. Deleting is the honest call given "do not add a 36th trigger
-variant".
-
-**Done when.** The file cannot produce a number.
+**Done when.** It cannot produce a number.
 
 ---
 
-## Phase 1 — Fix the intraday data (~6h)
+## Phase D — Foundation for measurement (~8h)
 
-### 1.1 Store full OHLC in `bars_intraday` — ~3h
-
-**Why.** `intraday-bars-scan.ts` writes
-`{ symbol_id, ts, price: b.c, volume: b.v }` — Alpaca's `o`, `h` and `l`
-are fetched and discarded. Every downstream factor in
-`lib/intradayFactors.ts` is therefore close-based: `session_high`,
-`session_low`, the 15-minute opening range, `pct_off_hod`, `pct_off_lod`,
-`range_expansion`, and `risingLows()`. On sub-$10 names the wick *is* the
-move. Today the system misses breakouts that traded through the opening-
-range high and reverted inside the minute, and understates stop risk on
-every name. This is the highest-value single change in the repo.
-
-**Changes.**
-- Migration: add `open`, `high`, `low` (nullable) to `bars_intraday`.
-- `intraday-bars-scan.ts`: write `b.o` / `b.h` / `b.l`.
-- `lib/intradayFactors.ts`: take `high`/`low` on `IntradayBar`; use them
-  for `session_high`/`session_low`, opening range, `pct_off_hod`,
-  `pct_off_lod`, `range_expansion` and `risingLows()`. Keep `close` for
-  VWAP, `session_return` and `gap_pct`. Fall back to `close` when
-  high/low are null so historical rows still evaluate.
-- Forward-only; no backfill needed.
-
-**Done when.** For a sample session, `session_high` from the factor layer
-equals the max of `bars_intraday.high`, and differs from the close-based
-value on a majority of active names.
-
-### 1.2 Re-baseline the affected thresholds — ~3h
-
-**Why.** 1.1 changes the meaning of four live conditions. `pct_off_hod >=
--0.02` currently measures distance from an *understated* high, so it
-fires more often than the rule intends; after the fix it tightens.
-`rvol_breakout` and `avoid_chase_extended` fire counts will both move.
-
-**Changes.**
-- Re-run the minute studies in `research/schema_lab.py` on OHLC-correct
-  session state.
-- Record the new fire rates for both live fast triggers over a week
-  before and after, in the README.
-
-**Done when.** Both triggers' fire rates are re-measured and documented,
-and any threshold change cites the study that produced it.
-
----
-
-## Phase 2 — Make the rules layer say what it means (~8h)
-
-### 2.1 Tests for the evaluator and the cooldown — ~2h
+### D.1 Tests for the evaluator and the cooldown — ~2h
 
 **Why.** There is no test file in the repo. `evaluateTrigger` is twelve
-lines and the single most leveraged function in the system: every fire,
-live and backtested, passes through it. Its null handling, type coercion
-and operator semantics are unverified. `reverse_split_window == 1` and
-`earnings_release == 1` rely on `eq` doing strict `===` against whatever
-type `factor_state` actually stores — if either is a boolean column, the
-rule silently never fires.
+lines and the most leveraged function in the system — every fire, live
+and backtested, passes through it — and its null handling, type coercion
+and operator semantics are unverified. `earnings_release` and
+`avoid_reverse_split` both test `field == 1` through a strict `===`; both
+do fire on real data (confirmed in −1.1), but nothing guards that.
 
-**Changes.**
-- Add a test runner (`vitest`, or `node --test` to avoid a dependency).
-- `triggers.test.ts`: every operator, null/undefined fields, boundary
-  equality, boolean-vs-number coercion on `eq`, empty and malformed
-  definitions.
-- `cooldown.test.ts`: exactly-at-threshold, multiple triggers with
-  different cooldowns in one batch, >1,000 events in-window (guards 0.2).
-- **Verify against production** which type `reverse_split_window` and
-  `earnings_release` hold, and that both triggers have actually fired.
+**Changes.** `vitest` or `node --test`. Cover every operator,
+null/undefined fields, boundary equality, boolean-vs-number coercion on
+`eq`, malformed definitions; and for cooldown, exactly-at-threshold,
+mixed cooldowns in one batch, and >1,000 in-window events.
 
-**Done when.** Tests run in CI on every PR, and the two `== 1` triggers
-are confirmed to fire on real data.
+**Done when.** Tests run in CI on every PR.
 
-### 2.2 Split `direction` from intent — ~1h
+### D.2 Store full OHLC in `bars_intraday` — ~3h
 
-**Why.** `avoid_chase_extended`, `avoid_volume_blowoff` and
-`avoid_reverse_split` are all marked `direction = short`. None is a short
-signal; all three mean "do not buy this." `promotionGate.inBand()`
-branches on direction (it skips the RSI ceiling for shorts), so the
-overload changes eligibility logic for reasons unrelated to the intent.
+**Why.** `intraday-bars-scan` writes `{ symbol_id, ts, price: b.c,
+volume: b.v }` — Alpaca's `o`, `h`, `l` are fetched and discarded. So
+`session_high`, `session_low`, the opening range, `pct_off_hod`,
+`pct_off_lod`, `range_expansion` and `risingLows()` are all close-based.
+On these names the wick *is* the move: breakouts that traded through the
+opening-range high and reverted inside the minute are invisible, and stop
+risk is understated everywhere.
 
-**Changes.**
-- Allow `direction = 'none'`; set it on the three avoid triggers.
-- `inBand` applies the long RSI ceiling for `long`, and no directional
-  rule for `none`.
-- Audit the UI's Buy/Watch/Sell split, which currently keys off a mix of
-  `category` and `direction`, for the same overload.
+Under the new architecture this matters mainly for Stage 3 and the
+monitoring tier, but it is also the input to any future intraday study.
 
-**Done when.** No trigger claims a trade direction it does not mean, and
-the Buy/Watch/Sell rule reads from `category` + `opens_position` only.
+**Changes.** Add `open`/`high`/`low` (nullable), write them, use them for
+extremes and the opening range while keeping `close` for VWAP and
+returns. Fall back to `close` when null. Forward-only.
 
-### 2.3 Give score logic a home — ~4h
+**Done when.** `session_high` equals `max(bars_intraday.high)` and differs
+from the close-based value on a majority of active names.
 
-**Why.** The declarative engine is doing less than it appears. Four of
-six enabled rules are a single threshold on a field computed elsewhere:
-`bigmove_score >= 3`, `earnings_release == 1`,
-`reverse_split_window == 1`, `volume_ratio_20d >= 25`. The four-part
-big-move score — volume ≥3×, move ≥10%, range ≥2×ATR, 8-K since the
-previous session — is real logic living in `eod-scan.ts`, invisible to
-the `triggers` table, with no test and no backtest-parity guarantee. The
-grammar (`all` of flat `{field, op, value}`, six operators, no OR, no
-NOT, no arithmetic, no cross-field comparison) cannot express it.
+### D.3 Re-baseline the affected thresholds — ~3h
 
-**Two honest options — pick one, do not keep the middle ground.**
+**Why.** D.2 changes the meaning of four live conditions.
+`pct_off_hod >= -0.02` currently measures distance from an understated
+high, so it fires more often than intended.
 
-- **(a) Extend the grammar.** Add `any` (OR), `not`, and a `score` node
-  (`{ score: [...conditions], gte: 3 }`). `bigmove_score` becomes data.
-  Cost: the evaluator roughly triples and needs the Phase 2.1 tests
-  first.
-- **(b) Name the code.** Keep the grammar flat; move every derived field
-  into a registry of named, tested pure functions in
-  `lib/derivedFields.ts`, and have the `triggers` row reference one by
-  name. Cheaper, keeps the evaluator trivial, and makes the real logic
-  catalogued and testable.
-
-**Recommendation: (b).** It matches the project's stated position that
-the constraint is measurement quality rather than expressiveness, and it
-does not grow the one function every fire depends on.
-
-**Done when.** Every field referenced by an enabled trigger is either a
-raw column or a named function in the registry, and each has a test.
-
-### 2.4 Record threshold provenance — ~1h
-
-**Why.** Every live threshold is a round number — `rvol >= 2`, `>= 3`,
-`session_return >= 0.10`, `gap_pct >= 0.05`, `pct_off_hod >= -0.02`.
-None was derived from a distribution. Worse, they mix feed scales:
-`volume_ratio_20d >= 25` is SIP daily, while `rvol >= 2 / >= 3` is IEX
-intraday — a feed measured at ~1.7% of band volume — and only the daily
-side was recalibrated for the 09-17 SIP switch.
-
-**Changes.**
-- Migration: add `triggers.evidence_note text` and
-  `triggers.calibrated_on date`.
-- Populate from the README's trigger disposition table; state the feed
-  each threshold was calibrated against.
-- Surface on the symbol page's trigger status, so a threshold's basis is
-  visible where it is used.
-
-**Done when.** Every enabled trigger states which study and which feed
-set its thresholds.
+**Done when.** `rvol_breakout` and `avoid_chase_extended` fire rates are
+re-measured before and after and recorded, and any threshold change cites
+its study.
 
 ---
 
-## Phase 3 — Build the console the evidence supports (~10h)
+## Phase E — Build the three stages (~14h)
 
-The research says stop looking for entry signals. These are the
-situational-awareness features a discretionary sub-$10 trader needs, which
-the system has the inputs for and does not surface.
+**Gated on Phase A.** Scope follows the decision rule in A.1.
 
-### 3.1 Float rotation — ~3h
+### E.1 Stage 1 — the analysis pass — ~3h
 
-**Why.** Volume ÷ float is *the* small-cap day-trading metric, and it
-separates "heavy volume" from "the entire float changed hands today." You
-already hold both inputs: `broker_snapshot` (Robinhood float, 374 names)
-and live `cum_volume`. The existing 25× `volume_ratio_20d` flag is a
-crude proxy for it.
+Scoring after 22:30 (C.1), producing a ranked shortlist through the
+`getShortlist()` boundary (B.1), drawing on both mechanisms (B.2). Target
+list size ~15–25: small enough that Stage 2 is cheap, large enough to be
+worth reading.
 
-**Changes.**
-- Derived field `float_rotation = cum_volume / float`, in the Phase 2.3
-  registry.
-- Symbol page + dossier. **Amber**, per the house rule — untested is
-  never red.
-- Backfill float coverage beyond 374 names (a Robinhood MCP session; it
-  cannot run from a host job).
+### E.2 Stage 2 — shortlist enrichment — ~6h
 
-**Done when.** Float rotation shows on every symbol page with known
-float, and coverage of the alerting band is recorded.
+Per-symbol work that is only affordable when scoped:
 
-### 3.2 Halt / LULD state — ~4h
+- Float and listing status (**Robinhood MCP — a Claude session, not a
+  host job**; this is the piece the architecture exists to make possible)
+- Borrow availability (IBKR), short interest (FINRA)
+- Balance sheet, cash runway (SEC XBRL — already synced)
+- Offering history and recent filings (`sec_filings`)
+- **Float rotation** = session volume ÷ float. The small-cap metric the
+  system has both inputs for and does not compute. Amber until studied.
+- News, with the existing roundup filter
 
-**Why.** Halts are where sub-$10 accounts die, and the system is blind to
-them. A resumption traded blind is the single fastest way to lose the
-position. This is a genuine gap in a "day trading tool", not a nicety.
+**Done when.** Every shortlisted name has a complete enrichment record by
+07:00 ET, and missing fields are shown as missing rather than absent.
 
-**Changes.**
-- Derived: a gap in the minute series during RTH on a name that was
-  printing is very likely a halt. Flag it.
-- Prefer a real source if one is reachable on the current plans (Alpaca's
-  trade conditions / halt status); fall back to the derived signal, and
-  label which one is in use.
-- **Red flag** — this is a proven negative in the house sense.
+### E.3 Stage 3 — the pre-open report — ~5h
 
-**Done when.** A halted name is visibly marked on the feed and symbol
-page within one scan cycle, and the source (real vs derived) is shown.
+~08:00–08:30 ET. Last night's shortlist plus overnight 8-Ks, pre-market
+gap and pre-market volume. Delivered to Discord and the site.
 
-### 3.3 Surface what is already collected — ~3h
+Note this needs pre-market bars, which the factor layer currently filters
+out by design (`intradayFactors` is regular-session only, correctly —
+pre/post bars distort VWAP and the opening range). Pre-market data should
+be a separate read for the report, **not** folded into session factors.
 
-**Why.** `short_interest` (FINRA, 12 settlements) and `short_availability`
-(IBKR borrow) are synced on schedule and under-surfaced; the Financials
-panel exists but the README lists short interest as "researched, not
-built" for display. Data collected and not shown is pure cost.
-
-**Changes.**
-- Short interest as "X% of shares outstanding · N days to cover · as of
-  <date>", amber.
-- Borrow availability beside it.
-- Both on the symbol page and in the dossier for alerting-band names.
-
-**Done when.** Every table the nightly jobs populate is either visible in
-the UI or explicitly documented as research-only.
+**Done when.** A report lands before 08:30 ET containing the shortlist,
+its enrichment, and overnight changes.
 
 ---
 
-## Phase 4 — Make the live tier actually live (~8h)
+## Phase F — The monitoring tier (~6h)
 
-### 4.1 Two-tier scan cadence — ~4h
+Reframed from "live alert engine" to "monitoring on names already on the
+list." Gated on Phase E.
 
-**Why.** The chain is `intraday-bars-scan` (5 min) →
-`intraday-factors-scan` (5 min) → `intraday-flip-scan` (+2 min offset),
-with `FRESH_MINUTES = 15` tolerated. Worst case an alert describes state
-7–12 minutes old. For `earnings_release` (20-day hold) that is
-irrelevant; for anything named "intraday flip" it is fatal — on a $2
-stock seven minutes is the whole move. The cadence is slow because it
-scans everything.
+### F.1 Scope intraday alerting to the shortlist + tracked — ~2h
 
-**Changes.**
-- Fast tier: top ~100 by dollar volume plus everything in
-  `tracked_symbols`, at 1-minute cadence, `FRESH_MINUTES` 3.
-- Slow tier: the rest of the band, unchanged at 5 minutes.
-- Watch Alpaca's 200 req/min ceiling; the fast tier is ~4 chunks of 25.
+**Why.** Solves four problems at once: alert volume drops to something
+readable; IEX's thin coverage stops mattering as much because those
+specific names can be prioritised; the 28-slot websocket budget becomes
+sufficient; and latency matters less because the analysis already
+happened.
 
-**Done when.** Median age of the factor row behind a fast-tier alert is
-under 2 minutes, measured from `as_of` at insert.
+### F.2 One-minute cadence for the monitored set — ~3h
 
-### 4.2 Re-rank the websocket worker's subscriptions intraday — ~2h
+**Why.** The current chain is bars (5 min) → factors (5 min) → flip-scan
+(+2 min), with `FRESH_MINUTES = 15` tolerated: worst case 7–12 minutes
+stale. Fine for a 20-day hold, fatal for `avoid_chase_extended`, whose
+whole premise is the first hour. At ~20–60 symbols this is cheap.
 
-**Why.** The one true real-time path is capped at 30 symbols by the free
-IEX plan, and `worker/src/index.ts` picks them **once at startup** from
-the previous close's `factor_state`. By 10:00 that is the wrong 30 names
-— the movers are exactly the ones it is not watching.
+**Done when.** Median factor-row age behind a monitored alert is under 2
+minutes.
 
-**Changes.**
-- Re-rank every 15 minutes against `intraday_factor_state` (by RVOL, then
-  session move), keeping all `tracked_symbols` pinned.
-- Resubscribe on change; log the churn.
+### F.3 Re-rank the websocket subscriptions intraday — ~1h
 
-**Done when.** The watched set demonstrably follows the day's movers, and
-`tracked_symbols` are never evicted.
-
-### 4.3 Decide the IEX question explicitly — ~2h (decision + doc)
-
-**Why.** You measured it: IEX carries ~1.7% of band volume, SIP/IEX
-median 58.7×, and thin names can print nothing all session. The delayed-
-tape fallback patches the *displayed price*; it does not patch the
-*factor layer*, which is still IEX-only by design (tape bars are
-deliberately never written to `bars_intraday`). So the live alert engine
-reasons about a shadow of the market. There is no third option:
-
-- **(a)** Accept it. The live tier is a screening tool on partial data —
-  say so in the UI next to the quote-state tag, not only in the README.
-- **(b)** Price Alpaca's paid SIP feed and get real-time consolidated
-  intraday. This makes 4.1 and every intraday factor meaningfully
-  correct, and it is the only change that would make the intraday
-  triggers worth re-studying.
-
-**Done when.** The decision is recorded in the README with its reasoning,
-and the UI reflects it.
+**Why.** The worker picks its symbols once at startup from the previous
+close. Band-scoped as of #175, but still static. Under F.1 it should
+track the shortlist, with `tracked_symbols` pinned.
 
 ---
 
-## Phase 5 — Close the loop (~6h)
+## Phase G — Close the loop (~6h)
 
-### 5.1 Trade journal — ~3h
+### G.1 Trade journal — ~3h
 
-**Why.** There is no record of what was actually filled. `shadow_positions`
-tracks hypothetical exits; nothing captures real entries, real fills or
-real slippage. This is the only dataset no vendor can supply, and it is
-the only way to learn whether the modelled 1.22% round-trip spread
-matches reality — the number the entire strategy verdict rests on.
-
-**Changes.**
-- Table `trades`: symbol, side, ts, fill price, size, exit ts/price,
-  optional `trigger_event_id`, free-text note.
-- Manual entry UI (a small form on the symbol page is enough).
-- Compare realized slippage against `tradingCosts.roundTripCostPct()`.
+**Why.** Nothing records actual fills. `shadow_positions` tracks
+hypothetical exits. This is the only dataset no vendor can supply and the
+only way to learn whether the modelled 1.22% round trip matches reality —
+the number the entire strategy verdict rests on.
 
 **Done when.** Realized cost per round trip can be plotted against the
 modelled estimate.
 
-### 5.2 Live-vs-backtest Reports panel — ~2h
+### G.2 Live-vs-backtest panel — ~2h
 
-**Why.** Already on the backlog (Phase 8, item 4, unbuilt). `fire_outcomes`
-and `backtest_returns_raw` both exist; nothing compares them. Without it
-a decaying trigger is invisible.
+Already on the backlog, unbuilt. `fire_outcomes` and
+`backtest_returns_raw` both exist; nothing compares them.
 
-**Done when.** Per trigger, realized `fire_outcomes` sit beside
-backtested `trigger_stats` at matching horizons, with fire counts.
+### G.3 Operational resilience — ~1h
 
-### 5.3 Operational resilience — ~1h
+Confirm the nightly Supabase backup (#172) is loaded and landing files;
+reconcile delisted symbols so `stale_active_symbol` stops growing; fix
+the `fundamentals-sync` double invocation and its leaked `running` row.
 
-**Why.** One Mac, no SSH, no Screen Sharing, unscheduled backups (one
-dump, 2026-09-11), IB Gateway needing manual login every ~24h.
-`fire_outcomes`, `trigger_events`, `dossiers` and `alerts` exist nowhere
-but Supabase, and Supabase Pro's own daily backups are the sole net.
+---
 
-**Changes.**
-- Schedule `research/backup_supabase.sh` via launchd (needs `supabase
-  link` or `DATABASE_URL` in `.env`) — the nightly job already exists as
-  of #172; confirm it is loaded and landing files.
-- Reconcile delisted symbols: set `symbols.active = false` when Alpaca's
-  asset record says inactive, so `stale_active_symbol` reports only
-  genuinely stale-but-listed names.
-- Sweep the remaining stale `fundamentals-sync` `running` row and fix the
-  double invocation.
+## Phase H — Deferred (ops hygiene, not alert logic)
 
-**Done when.** Two consecutive nightly backups land in
-`~/StackSlashBackups/`, and `stale_active_symbol` stops growing.
+### H.1 The `job_runs` double heartbeat
+
+One outlier worker process (PID 48383, started 8 Sep) yet **two**
+`job_runs` rows heartbeated within the same minute: id 6191 `running`
+with 0 ticks, id 547 `failed` with 2,072,977. The row that reads healthy
+has done nothing; the row doing the work is marked failed. One live
+process cannot legitimately own both.
+
+Deferred because it does not change what fires — but it does mean the
+single instruction HANDOFF §3 gives for trusting the system returns a
+contradiction for the one always-on component. **Diagnose before
+sweeping.** Daemon liveness should derive from heartbeat age, not
+`status`.
+
+### H.2 Remaining rules-layer cleanup
+
+`direction` is overloaded (three `avoid` triggers are marked `short` and
+none is a short signal, while `inBand` branches on direction); score logic
+lives uncatalogued in `eod-scan` rather than in the trigger grammar or a
+named registry; thresholds are round numbers with no recorded provenance
+and mix feed scales (`volume_ratio_20d >= 25` is SIP daily, `rvol >= 2` is
+IEX intraday). Worth doing, none of it urgent under the new architecture.
+
+### H.3 The IEX question — now a clearer "no"
+
+Paying for real-time SIP would improve the monitoring tier's accuracy. It
+does not help Stage 1 or Stage 2 at all, and it does not rescue entry
+timing, which was the main argument for it. Revisit only if the
+monitoring tier proves load-bearing.
 
 ---
 
 ## Suggested order
 
-**Phase −1 is a gate.** It is ~6 hours and it is the only phase that
-answers "can the engine be trusted." Everything after it is wasted effort
-if the answer is no, because you would be repairing and extending a
-system whose behaviour you cannot verify. Nothing below starts until
-−1.1 and −1.2 pass.
+1. **Phase A** — pre-register, then run once. It gates Phase E, and every
+   exploratory query against $5–$10 spends the holdout. Do not start it
+   until A.1 is written down.
+2. **B.1** (~1h) — the interface boundary. Do this regardless of A's
+   result; it is the cheapest risk reduction available.
+3. **Phase C** — defect repair. C.1 is the largest single correctness win
+   in the plan: one of `bigmove_score`'s four points has never worked.
+4. **D.1 (tests)** before D.2, and before any threshold change.
+5. **Phase E**, scoped by A's decision rule.
+6. **B.2/B.3**, alongside E.1 — the shortlist should be measured from the
+   day it becomes load-bearing.
+7. **Phase F**, then **G**. **H** when it becomes annoying.
 
-Then:
+### The gate, concretely
 
-1. **Phase 0** in one or two PRs. All defect repair, ~4 hours, and 0.1
-   means a documented safety rule is currently not enforced.
-2. **Phase 2.1 (tests)** — promoted ahead of Phase 1. Tests are part of
-   the foundation, not part of the rules cleanup. Do them before changing
-   any factor math, so 1.1's changes land against a harness.
-3. **Phase 1.1 (OHLC)** — the largest single gain in data fidelity;
-   every later measurement depends on it.
-4. **Phase 2.2–2.4** — the rest of the rules cleanup.
-5. **Phase 3** — the product direction. 3.2 (halts) is a safety issue,
-   not a feature.
-6. **Phase 4.3 (the IEX decision)** gates how much 4.1 is worth. Make the
-   call before building the fast tier.
-7. **Phase 5** in parallel throughout; it gates nothing and informs
-   everything.
+Do not spend meaningful time on Phase E until:
 
-### The foundation gate, concretely
-
-Do not spend meaningful time on Phases 1–5 until all of these hold:
-
-- [ ] Every enabled trigger has fired on real data, or is disabled with a
-      reason (−1.1)
-- [ ] `job_runs` shows exactly one open row per daemon, and daemon health
-      is derived from heartbeat age (−1.2)
-- [ ] `data-integrity-check` alerts on zero-fire enabled triggers and
-      duplicate/stale heartbeat rows (−1.2)
-- [ ] Bars → factors → snapshot → UI reconcile for a fired and an
-      unfired symbol (−1.3)
-- [ ] `evaluateTrigger` and `filterByCooldown` have tests running in CI
-      (2.1)
-- [ ] The alerting liquidity floor is enforced in the live path (0.1)
+- [ ] A.1 pre-registration written down **before** A.2 is run
+- [ ] A.2 run once; the four cells recorded; decision rule applied
+- [ ] B.1 interface boundary in place
+- [ ] B.4 floor case recorded
+- [ ] C.1 — the analysis stage sees same-day 8-Ks
+- [ ] C.2 — the alerting liquidity floor enforced in the live path
+- [ ] D.1 — `evaluateTrigger` and `filterByCooldown` under test in CI
 
 ## What this plan deliberately does not do
 
 **No new triggers.** The search returned negative across ~35 variants, a
-5-year multi-regime backtest, a 1-day-to-6-month duration sweep and a
-cost model. Nothing here adds a 36th.
+5-year backtest, a duration sweep and a cost model. B.2 adds a second
+*mechanism*, not a variant; that distinction is the whole point.
 
-**No re-opening of the strategy verdict.** Phase 1.1 will change intraday
-factor values and Phase 4 may change the feed. If either produces a
-reason to re-study the intraday triggers, that is a new decision with new
-evidence — not a reason to re-enable anything now.
+**No re-opening of the strategy verdict.** D.2 changes intraday factor
+values. If that produces a reason to re-study the intraday triggers, it
+is a new decision with new evidence, not a reason to re-enable anything
+now.
 
-**No automated trading.** Both broker connections stay read-only. Nothing
-in this plan places an order.
+**No automated trading.** Both broker connections stay read-only.
+
+**No mining of the holdout.** One pass at $5–$10, pre-registered. Any
+further question against that range is labelled non-holdout in the README
+the moment it is asked.
 
 **No account-size fiction.** At $40 with `max_risk_pct` 0.20, position
-sizing is not a meaningfully solvable problem; the live tier is a
-simulation regardless, and the plan treats it as one.
+sizing is not a solvable problem; the live tier is a simulation and the
+plan treats it as one.
 
-## One unresolved product question
+## Resolved since the first draft
 
-`earnings_release` is the only Buy, and its evidence (+4.2% / +0.4% at
-20 days) is a **20-day hold**. The one surviving edge and the "day
-trading tool" framing point in opposite directions. Phases 3 and 4 build
-the discretionary console; Phase 5 measures the swing setup. Both are
-defensible — but which one RIOT *is* should be decided explicitly rather
-than by whichever phase gets built first.
+The earlier version ended on an open question: the only Buy is a 20-day
+hold, which pointed away from the "day trading tool" framing. **Resolved
+by the architecture above.** RIOT is a preparation engine: EOD analysis,
+overnight enrichment, a pre-open report, and intraday monitoring on a
+known list. The 20-day `earnings_release` hold and the next-session
+`bigmove_watchlist` both fit that shape. Nothing in the evidence supports
+an intraday entry engine, and the plan no longer pretends otherwise.
