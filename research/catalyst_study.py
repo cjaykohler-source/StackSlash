@@ -1,7 +1,7 @@
 """
 Buy-catalyst event study on the SIP warehouse + SEC EDGAR + corporate actions.
 
-Question: are there public events after which sub-$5 stocks do better than
+Question: are there public events after which in-band stocks do better than
 a random in-band day, net of costs? Every event is point-in-time:
 
   filing events   entry at the CLOSE of the session AFTER the first session
@@ -21,8 +21,13 @@ Events
   reverse_split      reverse split ex-date (corporate actions)
   high52w_vol        close at a new 252-session closing high on >= 2x volume
 
-Gates at entry: raw close $0.10-$5 and 20-day SIP dollar volume >= --floor.
+Gates at entry: raw close $0.10-$10 (band widened 2026-09-21; every result
+published before that date was produced at $0.10-$5) and 20-day SIP dollar
+volume >= --floor.
 Returns: 1/5/20 sessions from the entry close, net of max(1%, one tick).
+NOTE: this cost model has no spread term, unlike bigmove_study.py, which
+charges max(1%, tick, Abdi-Ranaldo spread). Wide-spread names are therefore
+undercharged here relative to the project's headline cost model (~1.22%).
 Variants: all | excl_flags (drop nano-cap, shares +50% YoY, <=2Q runway, or
 an offering filed in the prior 30 days). Baseline: every gated in-band day.
 Periods 2016-21 and 2022+ reported separately.
