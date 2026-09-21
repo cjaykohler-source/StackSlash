@@ -102,7 +102,8 @@ PostgREST pagination silently skips rows without an explicit `.order()`.
 
 | Time | Job | Home | Does |
 |---|---|---|---|
-| 02:00, 17:00 daily | `fundamentals-sync` | launchd | FMP earnings calendar + company profiles |
+| 02:00, 17:00 daily | `fundamentals-sync` | launchd | FMP earnings calendar + company profiles → `earnings` |
+| Mon 08:00 | `refresh-fundamentals` | launchd | DoltHub statements + Zacks → `fundamentals` (the only writer of that table; loaded 2026-09-21) |
 | 07:15 weekdays | `finra-short-interest-sync` | launchd | FINRA short interest, skips settlements already loaded |
 | 07:30 / 17:30 / **22:30** weekdays | `sec-filings-sync` | launchd | EDGAR daily index → `sec_filings`. EDGAR publishes a session's index in the evening, so **22:30 is the run that lands that day's filings** |
 | 09:45, 15:15 weekdays | `ib-short-availability` | launchd | IBKR shares-to-borrow. Needs IB Gateway logged in |
@@ -124,7 +125,7 @@ PostgREST pagination silently skips rows without an explicit `.order()`.
 | Mon 02:00 ET (06:00 UTC) | `weekly-bars-scan` | `bars_weekly` |
 
 **Manual only:** `intraday-scan`, `backfill-history`, `backtest-triggers`,
-`refresh-fundamentals` (plist present but not loaded), the Supabase backup,
+the Supabase backup,
 and the Robinhood float snapshot (only possible from a Claude session).
 
 ---
