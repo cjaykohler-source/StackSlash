@@ -225,67 +225,83 @@ won't.
 
 ---
 
-## Layer 2.1 — `bigmove_study.py` negative control: RESULT
+## Layer 2.1 — `bigmove_study.py` negative controls: RESULT
 
-Run 2026-09-21. `--negative-control shuffle` permutes each symbol's
-outcome vector across its own feature-days, destroying the t → t+1 link
-while preserving every marginal distribution.
+Run 2026-09-21, all at `--max-price 5` so the $5-$10 holdout stays
+untouched. Two complementary controls:
 
-**Every lift should have collapsed to 1.0x. None did.**
+- **within-symbol** — permute each symbol's outcomes across its own days.
+  Breaks t → t+1, keeps symbol identity. The floor is lift from simply
+  selecting volatile names.
+- **within-date** — permute outcomes across the symbols trading that
+  session. Breaks symbol identity, keeps the calendar day. The floor is
+  lift from candidates clustering on volatile market days.
 
-| candidate | period | real lift | shuffled | residual |
-|---|---|---|---|---|
-| `score>=3` | 2016-21 | 6.7x | **1.5x** | 4.5x |
-| `score>=3` | 2022+ | 5.6x | **1.6x** | 3.5x |
-| `8k_2.02` | 2016-21 | 3.8x | **1.2x** | 3.2x |
-| `8k_2.02` | 2022+ | 4.0x | **1.0x** | 4.0x |
-| `vr25` | 2016-21 | 8.7x | **1.7x** | 5.1x |
-| `up10` | 2022+ | 4.0x | **1.8x** | 2.2x |
+### 1. The study exactly reproduces its published numbers
 
-### What it means
+| claim (README) | reproduced |
+|---|---|
+| random in-band day ≥10% move: 6.7% / 9.3% | **6.7% / 9.3%** |
+| `score>=3`: 35.4% (5.3x) / 42.8% (4.6x) | **35.4% (5.3x) / 42.9% (4.6x)** |
+| `score>=2`: 27.6% (4.1x) / 34.8% (3.8x) | **27.6% (4.1x) / 34.9% (3.8x)** |
+| `score>=3` touch ±20%: 26.5% (7.6x) / 36.4% (7.7x) | **26.5% (7.6x) / 36.4% (7.8x)** |
 
-The non-unit floor is **not** a bug in `bigmove_study.py`. It is a
-confound the shuffle exposes and the study does not control for:
-shuffling *within symbol* preserves symbol identity, and volatile symbols
-have both more candidate days and higher unconditional big-move rates on
-*all* their days. Conditioning on "is a candidate" therefore still
-selects volatile names, whose shuffled outcomes come from their own
-high-volatility pool.
+The README is faithful to its own code. This rules out the failure mode
+that produced the PF 1.78 artifact — numbers transcribed from a different
+or since-broken run.
 
-So the published lift decomposes into two parts:
+### 2. The controls, and what survives them
 
-- **~1.5–1.6x — symbol selection.** "These are names that move a lot on
-  any day." Real, but not what a next-session watchlist claims.
-- **~3.5–4.5x — day-level signal.** "*This* day's features predict
-  *tomorrow*." This is the part that justifies the trigger.
+| candidate | period | real | within-symbol | within-date | residual |
+|---|---|---|---|---|---|
+| `score>=3` | 2016-21 | 5.3x | 1.3x | 1.1x | **~4.1x** |
+| `score>=3` | 2022+ | 4.6x | 1.3x | 1.0x | **~3.5x** |
+| `8k_2.02` | 2016-21 | 3.0x | 1.1x | 1.1x | **~2.7x** |
+| `8k_2.02` | 2022+ | 3.2x | **0.9x** | 1.1x | **~2.9x** |
+| `vr25` | 2016-21 | 6.5x | 1.3x | 0.9x | ~5.0x |
+| `vr25` | 2022+ | 5.9x | 1.5x | 1.0x | ~3.9x |
 
-**The signal survives, at roughly two-thirds of its headline size.** The
-study's spread-tier control was reaching for this and partially catches
-it; the within-symbol shuffle is the tighter instrument and should be
-reported alongside every future lift.
+**The within-date control passes cleanly (1.0–1.1x).** That is the
+decisive check that the harness is not broken: break symbol identity
+while holding the session fixed and the lift vanishes, exactly as it
+should. Candidates are not merely clustering on volatile market days.
 
-### The most useful finding
+**The within-symbol floor is 1.3x** — a real but modest confound. Roughly
+a quarter of the headline lift is "these are names that move a lot on any
+day"; the remaining **~3.5–4.1x is genuine day-level signal**.
 
-**`8k_2.02` has the lowest shuffled floor of any candidate — 1.2x /
-1.0x.** Its lift is almost entirely day-level, where the volatility-based
-candidates carry 1.5–2.0x of symbol selection.
+### 3. `8k_2.02` is the cleanest candidate
+
+Its within-symbol floor is **0.9x in 2022+** — below one. Essentially
+none of its lift comes from symbol selection, where every
+volatility-based candidate carries 1.3–1.5x.
 
 The catalyst mechanism is materially cleaner than the attention
-mechanism. `docs/selection-logic.md` should weight it accordingly rather
-than treating the two paths as equivalent.
+mechanism. `docs/selection-logic.md` should weight it above the attention
+path rather than treating the two as equivalent.
 
-`vr25` at 8.7x/7.7x abs10 with a **27%/30% up share** independently
+`vr25` at 6.5x/5.9x with a **27%/30% up share** independently
 corroborates the blow-off exclusion: enormous movement, mostly downward.
+
+### 4. Verdict
+
+`bigmove_study.py` **passes Layer 2.** Its numbers reproduce, its harness
+survives the decisive control, and its headline lift is overstated by
+about 1.3x rather than fabricated. Phase A's threshold should be rebased
+against the residual (~3.5–4.1x at ≤$5), not the headline 4.6–5.3x.
+
+The static-audit findings F1 (5-day vs 1-session 8-K window) and F2
+(`dollar20` includes the current day) are unaffected by this and still
+need resolving before Phase A.
 
 ### Corrections to the audit's own method
 
-1. **These runs covered $0.10–$10, which includes the $5–$10 holdout.**
-   They report no separate $5–$10 breakdown, so the specific Phase A
-   question is still unanswered — but this was a partial spend of a
-   single-use resource and should not have happened. **Audit runs must be
-   confined to ≤$5, the already-mined range.** Add a `--max-price` flag
-   and use it for all verification work.
-2. A second control is still needed to isolate the day-level effect
-   directly: shuffle **across symbols within the same calendar date**,
-   which holds market conditions fixed and breaks symbol identity. Run
-   both and report the pair.
+1. **An earlier within-symbol run was done at $0.10–$10 and reported a
+   1.5–1.6x floor.** That run touched the $5–$10 holdout, which should
+   not have happened, and its floor is not comparable to the ≤$5 figures
+   above. `--max-price` now exists and audit runs must pass
+   `--max-price 5`. The ≤$5 floor is **1.3x**; the $10-band figure is
+   superseded and should not be quoted.
+2. A residual computed as a ratio of lifts is a rough decomposition, not
+   an exact one. It is adequate for rebasing a threshold; it is not a
+   precise effect size.

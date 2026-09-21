@@ -57,27 +57,48 @@ def main():
     ap.add_argument("--floor", type=float, default=800_000)
     ap.add_argument(
         "--negative-control",
-        choices=["off", "shuffle"],
+        choices=["off", "within-symbol", "within-date"],
         default="off",
-        help="shuffle: permute each symbol's outcomes across its own feature-days, "
-        "destroying the t -> t+1 link while preserving every marginal "
-        "distribution. Every lift MUST collapse to ~1.0x. Anything that "
-        "survives is leakage or misalignment, not signal.",
+        help="within-symbol: permute each symbol's outcomes across its own "
+        "feature-days. Breaks the t -> t+1 link, KEEPS symbol identity, so "
+        "the residual floor measures how much lift comes from simply "
+        "selecting volatile names. "
+        "within-date: permute outcomes across symbols inside the same "
+        "session. Breaks symbol identity, KEEPS the calendar day, so the "
+        "floor measures how much comes from candidates clustering on "
+        "volatile market days. Run both: the true per-symbol-per-day effect "
+        "is what survives above the higher of the two floors.",
     )
-    ap.add_argument("--seed", type=int, default=20260921, help="seed for --negative-control shuffle")
+    ap.add_argument("--seed", type=int, default=20260921, help="seed for the negative-control permutation")
+    ap.add_argument(
+        "--max-price",
+        type=float,
+        default=10.0,
+        help="upper price bound. Audit and verification runs MUST pass "
+        "--max-price 5 so they stay inside the already-mined range: $5-$10 "
+        "is the project's only unexamined data and is reserved for the "
+        "single pre-registered Phase A run (docs/overhaul-plan.md).",
+    )
     args = ap.parse_args()
     F = args.floor
+    P = args.max_price
     e = str(EDGAR)
+    if args.negative_control != "off" and P > 5.0:
+        print(
+            f"WARNING: negative control running with --max-price {P}, which includes the "
+            "$5-$10 holdout. Pass --max-price 5 for audit work.",
+            flush=True,
+        )
 
     con = duckdb.connect()
     con.execute("set threads = 8")
     con.execute(f"attach '{WAREHOUSE}' as wh (read_only)")
     print("building daily features...", flush=True)
-    con.execute("""
+    con.execute(f"""
       create temp table d as
       with band as (
         select symbol from wh.sip_bars_daily_raw
-        where date >= date '2016-01-01' and close between 0.10 and 10 group by 1 having count(*) >= 60
+        where date >= date '2016-01-01' and close between 0.10 and {P} group by 1 having count(*) >= 60
       ),
       s as (
         select s.symbol, s.date, s.open o, s.high h, s.low l, s.close c, s.volume v, r.close cr, r.volume rv
@@ -112,7 +133,7 @@ def main():
         case when nc / c between 0.1 and 10 and date_diff('day', date, nd) <= 7 then nl / c - 1 end nl_ret,
         case when c5 / c between 0.1 and 10 and date_diff('day', date, d5) <= 17 then c5 / c - 1 end r5
       from b
-      where date >= date '2016-01-01' and cr between 0.10 and 10 and pc > 0 and c / pc between 0.1 and 10
+      where date >= date '2016-01-01' and cr between 0.10 and {P} and pc > 0 and c / pc between 0.1 and 10
     """)
 
     print("attaching filings...", flush=True)
@@ -181,26 +202,36 @@ def main():
     # Permute each symbol's outcome vector across its own feature-days. All
     # marginals are preserved; only the t -> t+1 alignment is destroyed.
     T = "x"
-    if args.negative_control == "shuffle":
+    if args.negative_control != "off":
+        key = "symbol" if args.negative_control == "within-symbol" else "date"
+        blurb = (
+            "Outcomes permuted WITHIN SYMBOL, across that symbol's own days.\n"
+            "  Symbol identity is preserved, so the residual floor is the lift\n"
+            "  attributable purely to selecting volatile names."
+            if key == "symbol"
+            else "Outcomes permuted WITHIN SESSION, across the symbols trading that day.\n"
+            "  The calendar day is preserved, so the residual floor is the lift\n"
+            "  attributable to candidates clustering on volatile market days."
+        )
         con.execute(f"select setseed({(args.seed % 1000) / 1000.0})")
-        con.execute("""
+        con.execute(f"""
           create temp table x_nc as
           select f.symbol, f.date, f.cr, f.dollar20, f.spread_est, f.vol_ratio, f.dret,
                  f.range_x, f.close_loc, f.f_8k, f.f_202, f.f_offer, f.period, f.cost_pct,
                  o.r1, o.nh_ret, o.nl_ret, o.r5
-          from (select *, row_number() over (partition by symbol order by date) rn from x) f
-          join (select symbol, r1, nh_ret, nl_ret, r5,
-                       row_number() over (partition by symbol order by random()) rn from x) o
-            on f.symbol = o.symbol and f.rn = o.rn
+          from (select *, row_number() over (partition by {key} order by symbol, date) rn from x) f
+          join (select {key} k, r1, nh_ret, nl_ret, r5,
+                       row_number() over (partition by {key} order by random()) rn from x) o
+            on f.{key} = o.k and f.rn = o.rn
         """)
         n_x, n_nc = (con.execute(f"select count(*) from {t}").fetchone()[0] for t in ("x", "x_nc"))
         if n_x != n_nc:
             raise SystemExit(f"negative control changed row count: {n_x:,} -> {n_nc:,}")
         T = "x_nc"
         emit("\n" + "=" * 78)
-        emit("  NEGATIVE CONTROL ACTIVE (--negative-control shuffle)")
-        emit("  Outcomes permuted within symbol. EVERY lift below must be ~1.0x.")
-        emit("  A candidate that still shows lift is leakage, not signal.")
+        emit(f"  NEGATIVE CONTROL ACTIVE (--negative-control {args.negative_control})")
+        emit(f"  {blurb}")
+        emit("  Lift above this floor is the part the trigger can actually claim.")
         emit("=" * 78)
 
     # ---- Q1: tiers ------------------------------------------------------
