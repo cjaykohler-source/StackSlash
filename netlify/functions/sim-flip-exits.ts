@@ -81,7 +81,7 @@ export default async (req: Request) => {
       .eq("id", 1)
       .maybeSingle();
     const priceMin = Number(cfg?.price_min ?? 0.1);
-    const priceMax = Number(cfg?.price_max ?? 10);
+    const priceMax = Number(cfg?.price_max ?? 5);
     const minVol = Number(cfg?.min_dollar_vol_20d ?? 50_000);
     const rules = {
       hard_stop_pct: body.hardStopPct ?? Number(cfg?.default_stop_pct ?? 0.12),

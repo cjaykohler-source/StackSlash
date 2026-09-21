@@ -35,7 +35,7 @@ export default async () => {
       .select("price_max, min_dollar_vol_20d, monitor_min_dollar_vol_20d")
       .eq("id", 1)
       .maybeSingle();
-    const priceMax = Number(cfgRow?.price_max ?? 10);
+    const priceMax = Number(cfgRow?.price_max ?? 5);
     // Live monitoring covers the band down to the monitoring floor (~700
     // names at $10k/day), not just the $50k alerting floor.
     const minVol = Number(cfgRow?.monitor_min_dollar_vol_20d ?? cfgRow?.min_dollar_vol_20d ?? 10_000);

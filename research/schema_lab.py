@@ -205,7 +205,7 @@ def pool_sql(u: dict, period: str) -> str:
       )
       select symbol, date from d
       where {date_filter}
-        and prev_close_raw between {float(u.get('price_min', 0.10))} and {float(u.get('price_max', 10.00))}
+        and prev_close_raw between {float(u.get('price_min', 0.10))} and {float(u.get('price_max', 5.00))}
         and adv20_dollar >= {float(u.get('min_dollar_vol_20d', 50_000))}
         and date_diff('day', prev_date, date) <= 7
         {"and (symbol, date) in (select symbol, date from filings8k_sessions)" if u.get("require_8k") else ""}

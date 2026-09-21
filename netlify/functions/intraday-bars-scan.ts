@@ -60,7 +60,7 @@ export default async () => {
     add(pending.data as never);
 
     const asOf = asOfRow.data?.as_of;
-    const priceMax = Number(cfgRow.data?.price_max ?? 10);
+    const priceMax = Number(cfgRow.data?.price_max ?? 5);
     const minVol = Number(cfgRow.data?.monitor_min_dollar_vol_20d ?? cfgRow.data?.min_dollar_vol_20d ?? 10000);
 
     type FsRow = { symbol_id: number; symbols: { ticker: string; alert_excluded: boolean } | null };

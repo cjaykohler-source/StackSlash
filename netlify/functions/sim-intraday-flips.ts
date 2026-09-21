@@ -95,7 +95,7 @@ export default async (req: Request) => {
     // liquid names from the latest factor_state + tracked.
     const days = body.days ?? 90;
     const sinceIso = new Date(Date.now() - days * 86400_000).toISOString();
-    const priceMax = Number(cfg?.price_max ?? 10);
+    const priceMax = Number(cfg?.price_max ?? 5);
     const minVol = Number(cfg?.min_dollar_vol_20d ?? 50_000);
     const { data: asOfRow } = await db
       .from("factor_state")

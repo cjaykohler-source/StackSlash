@@ -73,22 +73,17 @@ def main():
     ap.add_argument(
         "--max-price",
         type=float,
-        default=10.0,
-        help="upper price bound. Audit and verification runs MUST pass "
-        "--max-price 5 so they stay inside the already-mined range: $5-$10 "
-        "is the project's only unexamined data and is reserved for the "
-        "single pre-registered Phase A run (docs/overhaul-plan.md).",
+        default=5.0,
+        help="upper price bound. Defaults to the live band. Anything above 5 "
+        "leaves it: $5-$10 is outside the traded universe and was only ever "
+        "examined incidentally (docs/research-audit-plan.md 1.3c).",
     )
     args = ap.parse_args()
     F = args.floor
     P = args.max_price
     e = str(EDGAR)
-    if args.negative_control != "off" and P > 5.0:
-        print(
-            f"WARNING: negative control running with --max-price {P}, which includes the "
-            "$5-$10 holdout. Pass --max-price 5 for audit work.",
-            flush=True,
-        )
+    if P > 5.0:
+        print(f"WARNING: --max-price {P} is above the live band ($0.10-$5).", flush=True)
 
     con = duckdb.connect()
     con.execute("set threads = 8")

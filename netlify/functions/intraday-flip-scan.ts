@@ -60,7 +60,7 @@ export default async () => {
       .eq("id", 1)
       .maybeSingle();
     const priceMin = Number(cfg?.price_min ?? 0.1);
-    const priceMax = Number(cfg?.price_max ?? 10);
+    const priceMax = Number(cfg?.price_max ?? 5);
     const alertCap = Number(cfg?.intraday_alert_cap ?? 10);
 
     // Live factors for today's session, fresh rows only.

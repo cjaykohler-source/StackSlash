@@ -239,7 +239,7 @@ below a floor.
 ### B.4 Write down the floor case — ~30m (decision)
 
 **Why.** If lift is ≈1.0× above $5, the shortlist there degrades to "the
-most active sub-$10 names with a catalyst." That is **still a useful
+most active sub-$5 names with a catalyst." That is **still a useful
 product** — a screen rather than a prediction — and the README already
 frames the system that way: *"a solid, real-time screening and monitoring
 tool… treat alerts as things to look at, not blindly trade."*
