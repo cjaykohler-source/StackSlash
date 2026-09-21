@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabaseClient";
 import { triggerLabel } from "../lib/triggerInfo";
 import { TriggerFeed } from "../components/TriggerFeed";
 import { BrandHomeLink } from "../components/BrandHomeLink";
+import { TriggerScorecard } from "../components/TriggerScorecard";
 
 interface RawEvent {
   symbol_id: number;
@@ -341,6 +342,11 @@ export function Reports() {
       {error && <p className="error">{error}</p>}
 
       <canvas ref={canvasRef} className={`report-canvas ${hasReport ? "" : "report-canvas-empty"}`} />
+
+      <section className="reports-scorecard">
+        <h2>Trigger accuracy — by day</h2>
+        <TriggerScorecard />
+      </section>
 
       <section className="reports-feed-history">
         <h2>Trigger feed — earlier days</h2>
