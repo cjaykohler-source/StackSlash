@@ -148,9 +148,9 @@ def build_days(con, P: float = 10.0) -> pa.Table:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--floor", type=float, default=2_500_000)
-    ap.add_argument("--max-price", type=float, default=10.0,
-                    help="upper price bound. Audit runs MUST pass --max-price 5: $5-$10 is the "
-                         "project's least-examined range (docs/overhaul-plan.md Phase A).")
+    ap.add_argument("--max-price", type=float, default=5.0,
+                    help="upper price bound. Defaults to the live band. Anything above 5 leaves "
+                         "it (docs/research-audit-plan.md 1.3c).")
     ap.add_argument("--no-spread-cost", action="store_true",
                     help="reproduce the pre-2026-09-21 cost model: max(1%%, tick) with no "
                          "spread term. For comparison only -- it undercharges wide-spread names.")

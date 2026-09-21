@@ -55,7 +55,7 @@ async function main() {
     .eq("id", 1)
     .maybeSingle();
   const priceMin = Number(cfgRow?.price_min ?? 0.1);
-  const priceMax = Number(cfgRow?.price_max ?? 10);
+  const priceMax = Number(cfgRow?.price_max ?? 5);
   const minDollarVol = Number(cfgRow?.monitor_min_dollar_vol_20d ?? 0);
 
   let liquid: { id: number; ticker: string }[] = [];

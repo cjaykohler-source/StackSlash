@@ -3,7 +3,7 @@ Daily trigger study on the clean SIP warehouse, with point-in-time exclusions.
 
 Replays the enabled after-close buy setups exactly as eod-scan computes them
 (same indicator formulas as netlify/functions/lib/indicators.ts, same gates:
-$0.10-$10 price band, 20-day dollar-volume floor, RSI(14) <= 85 for longs,
+$0.10-$5 price band, 20-day dollar-volume floor, RSI(14) <= 85 for longs,
 risk-on regime) over SIP consolidated daily bars 2016 -> today, zero-volume
 placeholder bars removed. Scores 1/5/10/20-session close-to-close returns net
 of a round-trip cost of max(1%, one tick).
@@ -99,7 +99,7 @@ def compute_fires(con, floor: float):
         """
         with band_syms as (
           select symbol from sip_bars_daily_raw
-          where date >= date '2016-01-01' and close between 0.10 and 10
+          where date >= date '2016-01-01' and close between 0.10 and 5
           group by symbol having count(*) >= 60
         )
         select s.symbol, s.date, s.close as c, s.volume as v, r.close as cr

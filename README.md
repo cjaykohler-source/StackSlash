@@ -6,7 +6,7 @@ repo, Netlify site name, URL and Discord bot still say StackSlash.
 A two-tier market scanner — a wide Tier-1 factor surface over the whole
 tracked universe, and Tier-2 triggers that fire a deep-dive dossier and a
 dedup'd Discord alert — running as the signal engine behind a **live $40
-paper-money account trading sub-$10 names**, plus the research harness
+paper-money account trading sub-$5 names**, plus the research harness
 built to find out whether any of its signals actually have edge.
 
 ## Read this first — current strategy verdict (2026-09-11)
@@ -106,14 +106,12 @@ derivations. Everything here was built and verified 2026-09-15 → 09-18;
 
 ### What the system does now
 
-- **Universe:** $0.10–$10 (`scan_config.price_max` = 10). **Every research
-  result in this file below was produced on a $0.10–$5 band** — that was
-  the documented universe until the mismatch between the docs and
-  `scan_config` was found on 2026-09-21, and the band was standardised on
-  $0.10–$10. Historical findings keep their original $5 scope and their
-  original numbers; **nothing has been validated in the $5–$10 range**.
-  Re-running the studies at $10 is an open item. **Daily bars are SIP
-  consolidated tape**
+- **Universe:** $0.10–$5 (`scan_config.price_max` = 5). The band was
+  briefly standardised on $0.10–$10 on 2026-09-21 after `scan_config` was
+  found to disagree with the docs, then **reverted the same day**: the
+  catalyst edge measurably dilutes above $5 (see `docs/research-audit-plan.md`
+  §1.3c). Every research result below is at $0.10–$5, which is again the
+  live band. **Daily bars are SIP consolidated tape**
   (`fetchDailyBars` feed `sip`; `bars_daily` reloaded 5 years from the local
   warehouse 2026-09-17). Intraday 1-min bars stay IEX (real-time; free SIP
   is 15-min delayed). IEX carried only ~1.7% of band volume (SIP/IEX median
@@ -1694,7 +1692,7 @@ Chase** (avoid), and the exits. No open `shadow_positions` were orphaned by
 the change. Targets now holds only Earnings Release — the honest state of the
 evidence, not a gap to fill.
 
-`scan_config` (current): `price_min/max` 0.10–10.00, `min_dollar_vol_20d`
+`scan_config` (current): `price_min/max` 0.10–5.00, `min_dollar_vol_20d`
 2.5M (SIP scale), `max_rsi14` 85 (`min_confluence` was dropped
 2026-09-18, with the confluence gate), `account_size` 40, `max_risk_pct` 0.20,
 `default_stop_pct` 0.12, `score_horizon_days` 3, `flip_profit_target_pct`
