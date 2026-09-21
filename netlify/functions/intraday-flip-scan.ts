@@ -56,12 +56,21 @@ export default async () => {
 
     const { data: cfg } = await db
       .from("scan_config")
-      .select("price_min, price_max, intraday_alert_cap")
+      .select("price_min, price_max, intraday_alert_cap, min_dollar_vol_20d")
       .eq("id", 1)
       .maybeSingle();
     const priceMin = Number(cfg?.price_min ?? 0.1);
     const priceMax = Number(cfg?.price_max ?? 5);
     const alertCap = Number(cfg?.intraday_alert_cap ?? 10);
+    // The ALERTING floor, not the monitoring one. intraday-factors-scan
+    // builds intraday_factor_state from monitor_min_dollar_vol_20d
+    // ($800k) because that is the band worth watching; this scan then
+    // inserts straight into trigger_events, bypassing promotionGate, so
+    // min_dollar_vol_20d ($2.5M) was never applied to a live alert at all
+    // (docs/research-audit-plan.md C.2). Every rvol_breakout and
+    // avoid_chase_extended card could fire a third below the documented
+    // alerting floor.
+    const minDollarVol = Number(cfg?.min_dollar_vol_20d ?? 2_500_000);
 
     // Live factors for today's session, fresh rows only.
     const ifsRows: Record<string, unknown>[] = [];
@@ -76,10 +85,44 @@ export default async () => {
       if (!data || data.length < 1000) break;
     }
     const freshCutoff = Date.now() - FRESH_MINUTES * 60_000;
-    const liveRows = ifsRows.filter((r) => {
+    const priced = ifsRows.filter((r) => {
       const px = Number(r.last_price);
       return Date.parse(String(r.as_of)) >= freshCutoff && px >= priceMin && px <= priceMax;
     });
+    if (!priced.length) return empty;
+
+    // Apply the alerting liquidity floor. intraday_factor_state carries no
+    // dollar volume, so it comes from the latest factor_state — the same
+    // source promotionGate.inBand() uses for the path this scan bypasses.
+    // A symbol whose liquidity we cannot establish does NOT qualify,
+    // matching the gate's "better to miss a signal than alert on
+    // something untradeable".
+    const dollarVolBySymbol = new Map<number, number>();
+    {
+      const { data: asOfRow } = await db
+        .from("factor_state")
+        .select("as_of")
+        .order("as_of", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const asOf = (asOfRow as { as_of: string } | null)?.as_of;
+      if (!asOf) return empty;
+      const ids = priced.map((r) => r.symbol_id as number);
+      for (let i = 0; i < ids.length; i += 500) {
+        const { data, error } = await db
+          .from("factor_state")
+          .select("symbol_id, dollar_vol_20d")
+          .eq("as_of", asOf)
+          .in("symbol_id", ids.slice(i, i + 500));
+        if (error) throw error;
+        for (const r of (data as { symbol_id: number; dollar_vol_20d: number | null }[] | null) ?? []) {
+          if (r.dollar_vol_20d != null) dollarVolBySymbol.set(r.symbol_id, Number(r.dollar_vol_20d));
+        }
+      }
+    }
+    const liveRows = priced.filter(
+      (r) => (dollarVolBySymbol.get(r.symbol_id as number) ?? -1) >= minDollarVol,
+    );
     if (!liveRows.length) return empty;
     const symIds = liveRows.map((r) => r.symbol_id as number);
 

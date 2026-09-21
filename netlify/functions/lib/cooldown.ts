@@ -24,15 +24,29 @@ export async function filterByCooldown<
   if (maxCooldownMinutes === 0) return fires;
 
   const cutoff = new Date(Date.now() - maxCooldownMinutes * 60 * 1000).toISOString();
-  const { data, error } = await db
-    .from("trigger_events")
-    .select("trigger_id, symbol_id, ts")
-    .in("trigger_id", triggerIds)
-    .gte("ts", cutoff);
-  if (error) throw error;
+  // Paginated with an explicit order. PostgREST caps an unordered select at
+  // 1,000 rows and silently drops the rest (HANDOFF section 3; six
+  // documented instances of this family here). Truncation would lose
+  // last-fire rows, and a missing last fire reads as "never fired" -- i.e.
+  // duplicate Discord alerts, the exact bug this file exists to prevent.
+  // The longest fast-trigger cooldown is 1,440 minutes, so this pulls a
+  // full day of events; at ~25-40 alerts/day it is far under the cap today.
+  const rows: { trigger_id: number; symbol_id: number; ts: string }[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from("trigger_events")
+      .select("trigger_id, symbol_id, ts")
+      .in("trigger_id", triggerIds)
+      .gte("ts", cutoff)
+      .order("ts", { ascending: false })
+      .range(from, from + 999);
+    if (error) throw error;
+    rows.push(...((data as { trigger_id: number; symbol_id: number; ts: string }[] | null) ?? []));
+    if (!data || data.length < 1000) break;
+  }
 
   const lastFireByKey = new Map<string, number>();
-  for (const row of (data as { trigger_id: number; symbol_id: number; ts: string }[] | null) ?? []) {
+  for (const row of rows) {
     const key = `${row.trigger_id}:${row.symbol_id}`;
     const ts = new Date(row.ts).getTime();
     const existing = lastFireByKey.get(key);
