@@ -39,14 +39,37 @@ async function main() {
     .limit(1)
     .maybeSingle();
 
+  // The liquidity fill MUST be band-scoped. Without a price filter this
+  // query returns the most liquid names in the whole ~5,000-symbol
+  // universe — which are mega-caps ($50-$1,800/share), not the $0.10-$5
+  // names this system alerts on. Every outlier the worker then detected
+  // was discarded downstream by promotionGate.inBand()'s price check, so
+  // the worker streamed 2,072,977 ticks between 2026-09-08 and 09-21 and
+  // produced exactly zero promotions. It was structurally incapable of
+  // firing: all 28 slots went to MU, ASML, INTC, AMD, TSM, BAC and the
+  // like, none of them in band. The concept dates from when the universe
+  // was the S&P 500; it was never re-scoped when the band was.
+  const { data: cfgRow } = await supabase
+    .from("scan_config")
+    .select("price_min, price_max, monitor_min_dollar_vol_20d")
+    .eq("id", 1)
+    .maybeSingle();
+  const priceMin = Number(cfgRow?.price_min ?? 0.1);
+  const priceMax = Number(cfgRow?.price_max ?? 5);
+  const minDollarVol = Number(cfgRow?.monitor_min_dollar_vol_20d ?? 0);
+
   let liquid: { id: number; ticker: string }[] = [];
   if (asOfRow?.as_of) {
     const { data: liquidRows, error: liqErr } = await supabase
       .from("factor_state")
-      .select("symbol_id, dollar_vol_20d, symbols!inner(ticker, alert_excluded)")
+      .select("symbol_id, dollar_vol_20d, last_close, symbols!inner(ticker, alert_excluded)")
       .eq("as_of", asOfRow.as_of)
       .eq("symbols.alert_excluded", false)
       .not("dollar_vol_20d", "is", null)
+      .not("last_close", "is", null)
+      .gte("last_close", priceMin)
+      .lte("last_close", priceMax)
+      .gte("dollar_vol_20d", minDollarVol)
       .order("dollar_vol_20d", { ascending: false })
       .limit(budget);
     if (liqErr) throw liqErr;
@@ -63,7 +86,22 @@ async function main() {
     tickers.push(s.ticker);
   }
   if (!tickers.length) throw new Error("No symbols to watch — factor_state empty and nothing tracked?");
-  log(`watching ${tickers.length} symbols (${tracked.length} tracked + liquidity fill): ${tickers.join(", ")}`);
+  log(
+    `watching ${tickers.length} symbols (${tracked.length} tracked + ${liquid.length} in-band liquidity fill): ${tickers.join(", ")}`,
+  );
+
+  // A fire on an out-of-band symbol is discarded by promotionGate.inBand(),
+  // so a watchlist with no in-band names can never produce an alert. That
+  // was the silent state from 2026-09-08 to 09-21. Say so at startup
+  // rather than streaming millions of ticks into a filter that rejects
+  // all of them.
+  if (!liquid.length) {
+    log(
+      `WARNING: zero in-band symbols in the liquidity fill (band $${priceMin}-$${priceMax}, ` +
+        `min 20d dollar volume ${minDollarVol}). Only tracked symbols are watched, and any ` +
+        `out-of-band fire will be discarded by the promotion gate.`,
+    );
+  }
 
   // The trigger row this worker fires into. Seeded via migration (see
   // README) — not evaluated through triggers.ts's declarative evaluator
