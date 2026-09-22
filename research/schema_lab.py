@@ -573,6 +573,67 @@ def summarise(ev: dict, ctl: dict, seed: int) -> dict:
     return out
 
 
+def excursion_summary(ev: dict, ctl: dict, seed: int) -> dict:
+    """
+    Risk asymmetry for a BUYER at the entry, from true intraday highs and
+    lows (mfe_to_close / mae_to_close are max(high) / min(low) after the
+    entry bar, so these are real extremes, not close-based bounds).
+
+    Why this is separate from big_move_summary: that one measures
+    "touches +t OR -t", which sums both tails and so scores a selector
+    that finds crashes exactly as highly as one that finds rallies. On
+    2026-09-21 that direction-blindness was traced through
+    research/bigmove_study.py's abs10 metric all the way into the first
+    draft of docs/selection-logic.md, which it inverted.
+
+    u_over_d is mean MFE / |mean MAE|. Above 1 means a buyer's reachable
+    upside exceeded the drawdown they had to sit through; below 1 means
+    the reverse. The control's own ratio is the bar, not 1.0 -- an
+    in-band session has its own baseline asymmetry.
+    """
+    rng = np.random.default_rng(seed + 2)
+
+    def arr(d, k):
+        return np.asarray(d.get(k, []), dtype=float)
+
+    def one(d):
+        mfe, mae = arr(d, "mfe_to_close"), arr(d, "mae_to_close")
+        ok = ~np.isnan(mfe) & ~np.isnan(mae)
+        mfe, mae = mfe[ok], mae[ok]
+        if not len(mfe):
+            return None
+        mm, ma = float(mfe.mean()), float(mae.mean())
+        return {
+            "n": int(len(mfe)),
+            "mean_mfe": mm,
+            "mean_mae": ma,
+            "median_mfe": float(np.median(mfe)),
+            "median_mae": float(np.median(mae)),
+            "u_over_d": float(mm / abs(ma)) if ma < 0 else None,
+            "share_mfe_gt_5pct": float((mfe >= 0.05).mean()),
+            "share_mae_lt_5pct": float((mae <= -0.05).mean()),
+        }
+
+    e, c = one(ev), one(ctl)
+    if e is None:
+        return {"n": 0}
+    out = {**e, "control": c}
+    # Is the event's asymmetry better than the control's, with uncertainty?
+    mfe, mae = arr(ev, "mfe_to_close"), arr(ev, "mae_to_close")
+    ok = ~np.isnan(mfe) & ~np.isnan(mae)
+    net = mfe[ok] + mae[ok]  # >0 when reachable upside outweighs drawdown
+    if len(net) > 1:
+        boots = rng.choice(net, size=(1000, len(net)), replace=True).mean(axis=1)
+        lo, hi = np.percentile(boots, [5, 95])
+        out["mfe_plus_mae_mean"] = float(net.mean())
+        out["mfe_plus_mae_ci90"] = [float(lo), float(hi)]
+        out["better_than_control"] = bool(
+            c and c.get("u_over_d") is not None and e.get("u_over_d") is not None
+            and e["u_over_d"] > c["u_over_d"] and lo > 0
+        )
+    return out
+
+
 def big_move_summary(ev: dict, ctl: dict, seed: int) -> dict:
     """
     Direction-neutral attention score: how often a matched session makes a
@@ -626,6 +687,31 @@ def print_big_move(bm: dict):
         lift = f"{s['lift']:.2f}x" if s["lift"] is not None else "-"
         print(f"  {name:<40}{s['n']:>8,}{s['rate'] * 100:>7.1f}%   [{s['ci90'][0] * 100:>5.1f}%, {s['ci90'][1] * 100:>5.1f}%]"
               f"{ctl:>9}{lift:>7}  {'YES' if s['notable'] else 'no'}")
+
+
+def print_excursion(ex: dict):
+    """Buyer-side risk asymmetry, from true intraday highs and lows."""
+    c = ex.get("control") or {}
+    print("\n  Risk asymmetry to the close (true highs/lows, gross) vs random-minute control")
+    print(f"  {'':<14}{'n':>9}{'mean MFE':>11}{'mean MAE':>11}{'U:D':>8}"
+          f"{'MFE>5%':>9}{'MAE<-5%':>9}")
+
+    def row(label, d):
+        if not d or not d.get("n"):
+            return
+        ud = f"{d['u_over_d']:.2f}" if d.get("u_over_d") is not None else "-"
+        print(f"  {label:<14}{d['n']:>9,}{d['mean_mfe'] * 100:>10.2f}%{d['mean_mae'] * 100:>10.2f}%{ud:>8}"
+              f"{d['share_mfe_gt_5pct'] * 100:>8.1f}%{d['share_mae_lt_5pct'] * 100:>8.1f}%")
+
+    row("schema", ex)
+    row("control", c)
+    if ex.get("mfe_plus_mae_ci90"):
+        lo, hi = ex["mfe_plus_mae_ci90"]
+        verdict = "YES" if ex.get("better_than_control") else "no"
+        print(f"  MFE+MAE mean {ex['mfe_plus_mae_mean'] * 100:>+.2f}%  90% CI "
+              f"[{lo * 100:>+.2f}%, {hi * 100:>+.2f}%]   better than control: {verdict}")
+    print("  U:D above the CONTROL's ratio is the bar, not above 1.00 -- an in-band")
+    print("  session has its own baseline asymmetry.")
 
 
 def print_summary(summary: dict, meta: dict):
@@ -785,13 +871,17 @@ def finish(rc, con, run_id: str, run_dir: Path, seed: int):
     ct = con.execute(f"select * from read_parquet('{run_dir}/control_*.parquet')").fetchnumpy() if ctf else {}
     summary = summarise(ev, ct, seed) if ev else {}
     big_move = big_move_summary(ev, ct, seed) if ev else {}
+    excursion = excursion_summary(ev, ct, seed) if ev else {}
     rc.execute("update runs set status = 'done', summary_json = ?, finished_at = now(), events = ? where run_id = ?",
-               [json.dumps({**summary, "big_move": big_move}), int(len(ev.get("symbol", []))) if ev else 0, run_id])
+               [json.dumps({**summary, "big_move": big_move, "excursion": excursion}),
+                int(len(ev.get("symbol", []))) if ev else 0, run_id])
     row =rc.execute("select run_id, schema_name, schema_hash, tier, seed, period, sessions_sampled, sessions_with_bars, events from runs where run_id = ?", [run_id]).fetchone()
     meta = dict(zip(["run_id", "schema_name", "schema_hash", "tier", "seed", "period", "sessions_sampled", "sessions_with_bars", "events"], row))
     print_summary(summary, meta)
     if big_move:
         print_big_move(big_move)
+    if excursion and excursion.get("n"):
+        print_excursion(excursion)
     if evf:
         per_year(run_dir, con)
     print(f"  retained: {run_dir}")
