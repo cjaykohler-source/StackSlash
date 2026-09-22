@@ -36,7 +36,9 @@ worker/              standalone Node package (outlier websocket worker,
                      ibShortAvailability.ts); own package.json + node_modules
 scripts/             host-side runners, launchd plists, Python syncs
 research/            Python research + local DuckDB/Parquet warehouse
-research/data/       90 GB warehouse (NOT backed up, rebuildable)
+research/data/       90 GB warehouse (NOT backed up, rebuildable).
+                     minute/ = ~2 BILLION SIP minute bars, 2016-2026,
+                     market-wide, full OHLC + trade_count + vwap
 docs/                this file
 dist/                built site (git-ignored)
 ```
@@ -157,6 +159,10 @@ through the service-role key. The site reads directly via PostgREST.
 `symbol_spread_estimates`.
 
 **Signals/history:** `factor_state` (daily factors), `intraday_factor_state`,
+`fire_outcomes` (now also `intraday_entry_price` / `intraday_ret_2h` /
+`intraday_mfe_2h` / `intraday_mae_2h` / `intraday_bars_2h` — buyer-sense
+excursions from the fire tick over 2h, for fast triggers; the older
+`mfe_pct`/`mae_pct` are daily-horizon from the daily close),
 `factor_window_stats`, `trigger_evaluations` (407 MB, pruned),
 `pending_fires`, `trigger_events`, `alerts`, `dossiers`, `fire_outcomes`,
 `shadow_positions`, `backtest_returns_raw`, `flip_sim`.
@@ -186,7 +192,11 @@ Destructive production SQL (row DELETE/DROP) is handed to the user to run.
 
 ### Local research warehouse — `research/data/`, ~90 GB, not backed up
 
-`minute/` (85 GB SIP minute bars), `stackslash.duckdb` (1.1 GB daily bars +
+`minute/` (85 GB SIP minute bars — ~2 billion rows, 2016 to yesterday,
+6,029 symbols in 2016 rising to 13,271 in 2026, with `open, high, low,
+close, volume, trade_count, vwap`. This is **deeper and truer than
+production's `bars_intraday`**, which is IEX, 90 days and close-only —
+all intraday research belongs here, and nothing needs backfilling), `stackslash.duckdb` (1.1 GB daily bars +
 research tables), `edgar/` (3.1 GB submissions + companyfacts + Parquet
 extracts), `minute_log.duckdb`, `corporate_actions/`, `schema_runs*`.
 Rebuildable from Alpaca and EDGAR, which is why it is disposable — the
@@ -219,7 +229,32 @@ widths, overflow) rather than eyeballing it.
 
 ---
 
-## 8. Current state, 2026-09-21 08:00 ET
+## 8. Current state, 2026-09-22 09:00 ET
+
+- **Read `README.md` -> "Session 2026-09-21/22 — the audit" first.** It
+  supersedes older sections where they disagree, and it is where the
+  trigger evidence now lives.
+- All scheduled jobs' latest runs are `ok`. `refresh-fundamentals` is now
+  **loaded** (Mon 08:00) -- it is the only writer of the `fundamentals`
+  table and had never been scheduled, so revenue/Zacks data only updated
+  when someone pressed the button on /settings.
+- **Band is $0.10-$5.00.** `scan_config.price_max` had drifted to 10; it
+  was standardised, measured, and reverted (#176 then #187). Monitoring
+  band 623 names, alerting band 363.
+- The outlier worker fires again (#175), and `bigmove_score`'s 8-K point
+  fires for the first time (#190).
+- **`fundamentals` row age is the quarterly reporting cycle, not
+  staleness.** `as_of` is the fiscal period end; median ~83 days is
+  correct with 85% of rows on Q2 2026. It cannot be fresher than the
+  companies report. Q3 lands late Oct-mid Nov.
+- Supabase backups: `research/backup_supabase.sh` plus the nightly job
+  from #172. Pro's own daily backups remain the net.
+- **Do not run research scripts above `--max-price 5`** without meaning
+  to: $5-$10 is outside the traded band and was only ever examined
+  incidentally. Both `bigmove_study.py` and `catalyst_study.py` now
+  default to 5 and warn above it.
+
+## 8b. Previous state, 2026-09-21 08:00 ET
 
 - All scheduled jobs' latest runs are `ok`. The weekend's two pg_cron jobs
   both ran: `refresh-spread-estimates` Sunday (4,960 rows),
@@ -254,3 +289,45 @@ next steps" for the full list of what is pending and why.
   **median** day of the prior 20 sessions, never the mean.
 - Triggers are judged on evidence: net of ~1% round-trip cost, against a
   random in-band control, 2016–21 and 2022+ reported separately.
+
+---
+
+## 10. Starting a new conversation on this project
+
+Read in this order:
+
+1. **`README.md` -> "Session 2026-09-21/22 — the audit, and what it
+   changed"**. It is the current state of the evidence and supersedes
+   older sections. Everything below it is history.
+2. **`docs/research-audit-plan.md`** — what has and has not been verified.
+   Layers 1 and 2 are done for `bigmove_study.py` and
+   `catalyst_study.py`; Layer 3 (independent reimplementation) has not
+   started, and four other studies are unaudited.
+3. **`docs/overhaul-plan.md`** — the architecture: EOD analysis after
+   22:30, overnight enrichment of a shortlist, a pre-open report,
+   intraday monitoring of names already listed.
+4. **`docs/selection-logic.md`** — how the daily target list is chosen.
+   Catalyst-primary; `bigmove_score` is an annotation and a
+   de-prioritiser, not a source of candidates.
+5. This file for logistics, and `docs/ACCESS.md` for credentials.
+
+### Working rules learned the hard way
+
+- **Verify against code and data, never against a description.** Three
+  separate findings on 2026-09-21 came from reading this repo's own docs
+  instead of the thing they describe, and two of them were wrong. If a
+  README line matters to a decision, open the file it describes.
+- **Check whether it already exists before building it.** A backfill, a
+  replay, MFE/MAE columns and a negative-control harness were each
+  proposed and then found to exist or to be unnecessary.
+- **Never judge a signal on a direction-blind metric.** `abs10` sums both
+  tails, which is how a downside selector reached the top of the first
+  selection spec.
+- **A mean carried by one observation is not a result.** This project's
+  own `mean_excl_top1pct` machinery exists because of it; the live
+  scorecard reproduced the same trap within five fires.
+- **Feed scales do not mix.** `volume_ratio_20d` is SIP daily, `rvol` is
+  IEX intraday. Conflating them produced a wrong recommendation minutes
+  after that exact failure was written up as an audit finding.
+- Research runs default to `--max-price 5`. Above that leaves the traded
+  band.

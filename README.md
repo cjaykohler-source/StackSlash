@@ -98,6 +98,180 @@ so the next attempt doesn't re-discover the same dead ends.
 > and the current operational state. This file is the strategy, the
 > research derivations and the open decisions.
 
+## Session 2026-09-21/22 — the audit, and what it changed
+
+The longest single change in this project's history. Read this before the
+older handoff sections below; where they disagree, this wins.
+
+### Why it happened
+
+The session began with "analyse this project" and turned into an audit
+when the question was asked directly: *how do you know there was not an
+issue with the backtesting logic?* Every recommendation up to that point
+had been resting on numbers read out of this README, in a project whose
+own thesis is that its measurements have repeatedly been wrong.
+
+### What the audit found — the studies are sound
+
+`docs/research-audit-plan.md` is the full record. Three layers were
+defined (static read, negative controls, independent reimplementation);
+the first two are done for both studies the design depends on.
+
+- **`bigmove_study.py` and `catalyst_study.py` both reproduce their
+  published numbers exactly.** Baseline 6.7% / 9.3%, `score>=3` 35.4%
+  (5.3x) / 42.9% (4.6x), `8k_earnings` excl_flags +4.24% / +0.40%. Every
+  figure in this README that they produced is faithful to its code.
+- **`bigmove_study.py` passes both negative controls.** A within-date
+  shuffle collapses lift to 1.0-1.1x, which is the decisive proof the
+  harness does not manufacture signal. A within-symbol shuffle leaves a
+  **1.3x floor** — about a quarter of the headline lift is "these are
+  names that move a lot on any day", leaving **~3.5-4.1x** of genuine
+  day-level signal.
+- **The cost model was too weak in `catalyst_study.py`** (no spread
+  term). Adding it costs 1.5-2.6pp of 20-day net — but charges the
+  baseline as heavily, so the catalyst edge *grows*: +3.08pp / +5.06pp
+  over a random in-band day at <=$5.
+
+### What was actually broken — production, not research
+
+- **`bigmove_score`'s 8-K point had never fired.** `filed8kIds` selected
+  filings from *today*, which `sec-filings-sync` does not load until
+  22:30, while `eod-scan` runs at 17:45. Production's score was a 3-of-3
+  volatility triple, never 3-of-4. Fixed (#190); the 09-21 run put the
+  8-K point on ~109 symbols and 41 rows scored >=3.
+- **The outlier worker could not fire.** It filled all 28 IEX
+  subscriptions with the highest-dollar-volume names in the *whole*
+  universe -- MU, ASML, INTC -- none in band, so every fire was discarded
+  by `inBand()`. 2,072,977 ticks since 09-08, zero promotions. Fixed
+  (#175); it now fires normally (24 on 09-21).
+- **The alerting liquidity floor was never applied to a live alert.**
+  `intraday-flip-scan` bypasses `promotionGate`, so `min_dollar_vol_20d`
+  ($2.5M) was ignored and alerts could fire at the $800k monitoring
+  floor. Fixed (#191).
+- **`trigger_evaluations` recorded the wrong object** -- the raw
+  `factor_state` row rather than the enriched inputs -- so `bigmove_score`,
+  `earnings_release` and `risk_on` were absent from every stored
+  evaluation. Nobody could ask "why didn't this fire". Fixed (#174).
+- Two unpaginated queries, one feeding `earnings_release` (the only Buy),
+  fixed (#190, #191).
+
+### The construct problem, which mattered more than any bug
+
+`bigmove_score` is optimised against `abs10` -- a 10% move in **either**
+direction. Splitting the tails (`research/bigmove_study.py` `run_q3`):
+
+| | period | up lift | down lift | **U:D** | r1 net |
+|---|---|---|---|---|---|
+| BASELINE | 2016-21 | — | — | **1.32** | −3.50% |
+| `score>=3` | 2016-21 | 3.2x | **8.1x** | **0.65** | −5.33% |
+| `8k_2.02` | 2022+ | 2.9x | 3.4x | **0.91** | −3.81% |
+| `8k_any_quiet` | 2016-21 | 1.5x | 1.8x | **1.12** | −4.54% |
+
+**`score>=3` selects for downside** -- U:D roughly half the baseline, with
+downside lift 2-2.5x its upside lift. Correct as a Watch list, inverted as
+a buy-candidate pool. And **volume subtracts by adding downside**:
+`8k_any_quiet` (an 8-K *without* a volume spike) is the only candidate
+above baseline U:D in either period.
+
+### What the system now is
+
+A **preparation engine**, not a signal generator: EOD analysis after
+22:30, overnight enrichment of a shortlist, a pre-open report, and
+intraday monitoring of names already listed. Trading posture is ready at
+the open, not trading the first 30-60 minutes. See
+`docs/overhaul-plan.md`; `docs/selection-logic.md` is catalyst-primary
+with `bigmove_score` demoted to an annotation and an explicit
+de-prioritiser.
+
+### Band reverted to $0.10-$5.00
+
+`scan_config.price_max` was found to be **10** while every doc and script
+said 5. It was standardised on 10 (#176), then the audit measured what
+that range contains -- the catalyst edge falls from +3.60pp to +2.12pp in
+2022+ when the band widens -- and it was reverted (#187). Code fallbacks,
+research defaults and docs all read 5 again.
+
+### New instrumentation
+
+- **`trigger_scorecard` / `trigger_scorecard_daily`** (views): did each
+  fire close in the direction its class claimed? Fast triggers score
+  against their own session's close, slow ones against the next session,
+  because a slow trigger's fire price already *is* that close. `rth_close`
+  prefers SIP and falls back to the last IEX print at/before 16:00
+  (`rth_source` marks provisional); `ext_close` is the last print of the
+  session. Surfaced on Reports.
+- **`fire_outcomes.intraday_*`**: MFE/MAE from the fire tick over the
+  following 2h, buyer-sense. The existing `mfe_pct`/`mae_pct` are
+  daily-horizon from the daily close, which answers nothing about a fast
+  trigger.
+- **`schema_lab.py` `excursion_summary`**: MFE/MAE asymmetry and U:D
+  against the random-minute control, from true intraday highs and lows.
+
+### Live trigger evidence as of 2026-09-22
+
+Scorecard, two complete days: **Sell 22 correct of 33 (66.7%)**, mean
+−8.71% (09-17) and −3.92% (09-18). Watch fell on both days.
+
+250,000-tier schema runs (5x anything previously run here; disjoint fresh
+sessions):
+
+| schema | events | returns | U:D | control U:D |
+|---|---|---|---|---|
+| `intraday_rvol_breakout` | 40,001 | not promising at any horizon | **1.29** | 1.06 |
+| `early_move_continuation` | 2,683 | **worse than control at every horizon** | **1.37** | 1.08 |
+
+`rvol_breakout`'s asymmetry is confirmed three ways -- 1.31 live (115
+fires), 1.31 at 50k, 1.29 at 250k. It is a real signal that cannot be
+mechanically traded, which is what a Watch trigger should be.
+
+`early_move_continuation` (the schema behind `avoid_chase_extended`)
+settles a tension: its U:D of 1.37 beats the control, **yet it reaches
+−5% more often than +5% (70.0% vs 55.3%)**, its median is far worse than
+its mean (−3.67% vs −1.56% to the close), and it loses to a random entry
+at every horizon. The favourable mean is carried by a few large upside
+extremes only reachable with a perfect exit. **The avoid warning is
+warning about the right thing.**
+
+### Integrity check
+
+`data-integrity-check` was paging most nights on +1 changes to cumulative
+five-year counters. Critical classes are now scoped to 30 days
+(`split_scale_break_30d`, `implausible_price_30d`), full-history counts
+demoted to `info`, and `implausible_price` no longer flags BRK.A -- a raw
+threshold cannot separate it from micro-caps whose split-adjusted history
+reaches $100M/share, so a high historical close now counts only when the
+symbol's latest close is ordinary. Critical surface: 46,364 rows -> 4
+(#195). The delisting reconcile also works -- `stale_active_symbol` 19 ->
+13, and all six deactivations were genuine.
+
+### Still open
+
+1. **Layer 3 of the audit has not started** -- no independent
+   reimplementation of either study. Layers 1 and 2 are done.
+2. **The $5-$10 holdout is partly compromised.** Audit runs were made at
+   the $10 default before `--max-price` existed, and comparing them makes
+   the range inferable by subtraction. Phase A needs re-scoping.
+3. `catalyst_study.py` has no negative controls (Layer 2).
+4. `daily_trigger_study.py`, `schema_lab.py`, `tradingCosts.ts` and
+   `backtest-triggers.ts` are unaudited.
+5. **The growth question is untested.** `fundamentals` carries
+   `revenue_growth_yoy` (66% of the band), `op_cash_flow_ttm` (89%) and
+   Zacks ranks (59%), and **none of it feeds selection** -- every study
+   ever run here tests price, volume or filing events. Backtestable from
+   `research/data/edgar/edgar_facts.parquet`, point-in-time by `filed`.
+6. `bars_intraday` is still close-only (D.2). The *local warehouse* is
+   not: `research/data/minute/` holds ~2 billion SIP minute bars,
+   2016-2026, with full OHLC, `trade_count` and `vwap`. Nothing needs
+   backfilling there.
+7. Two Spotlight symbols the pipeline cannot cover: **FBDT** (22 daily
+   bars, listed 2026-08-20, so no `factor_state` at all) and **GSUN**
+   ($661.50, far outside the band).
+8. `session-bars` refuses the delayed-tape fallback outside a live
+   session, so **pre-market is invisible** every morning -- the opposite
+   of what a pre-open report needs.
+
+---
+
 ## Current state — handoff (2026-09-18)
 
 Read this, then "The alert pipeline audit (2026-09-16)" below for the
