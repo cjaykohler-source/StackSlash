@@ -46,15 +46,20 @@ const LEFT = 52; // volume labels
 const RIGHT = 68; // price labels
 const TOP = 10;
 const AXIS_H = 22;
-const PANE_GAP = 10;
-// Fixed pane heights, so resizing one never resizes the other. The candle
-// pane has been grown 15% twice (395 -> 455 -> 523px) and is left alone here
-// -- VolumeMeter pins its own height to PRICE_H. The volume pane had been
-// held at its original size through both of those and had become a thin
-// strip; 139 -> 200 gives it a readable share of the frame.
-export const PRICE_H = 523;
-export const VOL_H = 200;
-const HEIGHT = TOP + PRICE_H + PANE_GAP + VOL_H + AXIS_H;
+// Candles and volume SHARE one frame rather than sitting in two stacked
+// panes. Volume was previously boxed into a 139px strip at the bottom while
+// the candle pane was grown 15% twice; splitting the frame that way spent
+// ~150px on a divider and a pane that was mostly empty. Now both draw into
+// the same rectangle: candles on the price scale (right gutter), volume
+// bottom-aligned on its own scale (left gutter), volume behind at 0.35
+// fill-opacity so it never hides a candle.
+export const FRAME_H = 672;
+// A full-height volume bar would swamp the candles, so the tallest bar in
+// view maps to this share of the frame. At 0.35 that is 235px against the
+// old pane's 139 -- volume gets more room, not less, and a spike now rises
+// into the frame instead of saturating a strip.
+export const VOL_SHARE = 0.35;
+const HEIGHT = TOP + FRAME_H + AXIS_H;
 
 const fmtPrice = (p: number) => (p < 1 ? p.toFixed(4) : p.toFixed(2));
 const fmtVol = (v: number) =>
@@ -241,9 +246,9 @@ export function SessionCandleChart({
       return { cx: (x0 + x1) / 2, w: Math.max(1, (x1 - x0) * 0.7) };
     });
 
-    const priceH = PRICE_H;
-    const volH = VOL_H;
-    const volBase = TOP + priceH + PANE_GAP + volH;
+    const frameH = FRAME_H;
+    const volBase = TOP + frameH; // both scales share this baseline
+    const volH = frameH * VOL_SHARE;
 
     let lo = Math.min(...pts.map((p) => p.l));
     let hi = Math.max(...pts.map((p) => p.h));
@@ -254,7 +259,7 @@ export function SessionCandleChart({
     const pad = (hi - lo) * 0.05 || hi * 0.01 || 0.01;
     lo -= pad;
     hi += pad;
-    const py = (p: number) => TOP + ((hi - p) / (hi - lo)) * priceH;
+    const py = (p: number) => TOP + ((hi - p) / (hi - lo)) * frameH;
     // The typical day spread evenly over the 390-minute session, at this
     // candle size. Real intraday volume is U-shaped (heavy at the open and
     // close), so mid-day bars sitting under this line is normal; it's the
@@ -302,7 +307,7 @@ export function SessionCandleChart({
       minutesTraded: regular.length,
     };
 
-    return { pts, k, auto, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi, avgPerCandle,
+    return { pts, k, auto, sx, ticks, tickLabels, geo, frameH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi, avgPerCandle,
              d0, d1, axisOpen: axis.open, axisClose: axis.close };
   }, [bars, prevClose, width, choice, live, typicalDailyVolume]);
 

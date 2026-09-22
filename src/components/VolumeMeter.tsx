@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { PRICE_H } from "./SessionCandleChart";
+import { FRAME_H } from "./SessionCandleChart";
 
 interface Props {
   /** The session's total volume so far (all bars, extended hours included). */
@@ -69,7 +69,7 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
   return (
     <div
       className="volume-meter"
-      style={{ height: PRICE_H }}
+      style={{ height: FRAME_H }}
       aria-label="Session volume versus a typical day"
       title={`${dateLabel ?? "Session"}${live ? " so far" : ""}: volume against the median day of the prior 20 sessions (1×).`}
     >

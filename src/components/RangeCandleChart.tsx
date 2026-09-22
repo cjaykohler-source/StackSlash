@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PRICE_H, VOL_H, portalStats } from "./SessionCandleChart";
+import { FRAME_H, VOL_SHARE, portalStats } from "./SessionCandleChart";
 import type { VolumeBaseline } from "../lib/volumeBaseline";
 
 /** One split-adjusted SIP bar from the range-candles function. */
@@ -69,9 +69,10 @@ const LEFT = 52; // volume labels
 const RIGHT = 68; // price labels
 const TOP = 10;
 const AXIS_H = 22;
-const PANE_GAP = 10;
+// Candles and volume share one frame, as on the Session chart.
+const VOL_H = FRAME_H * VOL_SHARE;
 // Same pane heights as the Session chart, so switching ranges doesn't jump.
-const HEIGHT = TOP + PRICE_H + PANE_GAP + VOL_H + AXIS_H;
+const HEIGHT = TOP + FRAME_H + AXIS_H;
 const ET = "America/New_York";
 // Auto scale switches to log when the range's high is this many times its
 // low (a sub-$5 name over years can span 100x; linear flattens it).
@@ -189,12 +190,12 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline
       hi *= padF;
       const L = Math.log(lo);
       const H = Math.log(hi);
-      py = (p) => TOP + ((H - Math.log(p)) / (H - L)) * PRICE_H;
+      py = (p) => TOP + ((H - Math.log(p)) / (H - L)) * FRAME_H;
     } else {
       const pad = (hi - lo) * 0.05 || hi * 0.01 || 0.01;
       lo -= pad;
       hi += pad;
-      py = (p) => TOP + ((hi - p) / (hi - lo)) * PRICE_H;
+      py = (p) => TOP + ((hi - p) / (hi - lo)) * FRAME_H;
     }
 
     // Y ticks: 1-2-5 per decade on a log scale (thinned to 1 per decade if
@@ -215,7 +216,7 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline
       for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) if (v > 0 || !log) yTicks.push(v);
     }
 
-    const volBase = TOP + PRICE_H + PANE_GAP + VOL_H;
+    const volBase = TOP + FRAME_H; // both scales share this baseline
     const expected = pts.map((p) => (baseline ? expectedVolume(baseline, p.ms, timeframe) : null));
     const maxV = Math.max(1, ...pts.map((p) => p.v), ...expected.map((e) => (e != null ? e * 1.1 : 0)));
     const ticks = xTicks(
