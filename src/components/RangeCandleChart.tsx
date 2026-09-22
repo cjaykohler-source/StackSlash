@@ -65,7 +65,7 @@ function expectedVolume(b: VolumeBaseline, ms: number, tf: RangeTimeframe): numb
   }
 }
 
-const LEFT = 8;
+const LEFT = 52; // volume labels
 const RIGHT = 68; // price labels
 const TOP = 10;
 const AXIS_H = 22;
@@ -314,7 +314,7 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline
         {ticks.map(({ i, label }) => (
           <text key={i} x={cx(i)} y={HEIGHT - 6} textAnchor="middle" className="cc-label">{label}</text>
         ))}
-        <text x={width - RIGHT + 6} y={volBase - VOL_H + 10} className="cc-label">{fmtVol(maxV)}</text>
+        <text x={LEFT - 6} y={volBase - VOL_H + 10} textAnchor="end" className="cc-label">{fmtVol(maxV)}</text>
 
         {hp && hover != null && (
           <g className="cc-cross">

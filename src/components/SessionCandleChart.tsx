@@ -42,16 +42,18 @@ interface Props {
   controlsTarget?: HTMLElement | null;
 }
 
-const LEFT = 8;
+const LEFT = 52; // volume labels
 const RIGHT = 68; // price labels
 const TOP = 10;
 const AXIS_H = 22;
 const PANE_GAP = 10;
 // Fixed pane heights, so resizing one never resizes the other. The candle
-// pane has been grown 15% twice (395 -> 455 -> 523px) with volume held at
-// its size.
+// pane has been grown 15% twice (395 -> 455 -> 523px) and is left alone here
+// -- VolumeMeter pins its own height to PRICE_H. The volume pane had been
+// held at its original size through both of those and had become a thin
+// strip; 139 -> 200 gives it a readable share of the frame.
 export const PRICE_H = 523;
-export const VOL_H = 139;
+export const VOL_H = 200;
 const HEIGHT = TOP + PRICE_H + PANE_GAP + VOL_H + AXIS_H;
 
 const fmtPrice = (p: number) => (p < 1 ? p.toFixed(4) : p.toFixed(2));
@@ -434,7 +436,7 @@ export function SessionCandleChart({
           <g>
             <line x1={LEFT} x2={width - RIGHT} y1={volBase - (avgPerCandle / maxV) * volH}
                   y2={volBase - (avgPerCandle / maxV) * volH} className="cc-vol-avg" />
-            <text x={width - RIGHT + 6} y={volBase - (avgPerCandle / maxV) * volH + 4} className="cc-label cc-vol-avg-label">
+            <text x={LEFT - 6} y={volBase - (avgPerCandle / maxV) * volH + 4} textAnchor="end" className="cc-label cc-vol-avg-label">
               {fmtVol(avgPerCandle)}
             </text>
           </g>
@@ -458,7 +460,9 @@ export function SessionCandleChart({
         {ticks.map((u, i) => (
           <text key={u} x={m.sx(u)} y={height - 6} textAnchor={i === 0 ? "start" : "middle"} className="cc-label">{tickLabels[u]}</text>
         ))}
-        <text x={width - RIGHT + 6} y={volBase - volH + 10} className="cc-label">{fmtVol(maxV)}</text>
+        {/* Volume scale on the LEFT, price on the right: two different units
+            sharing one gutter made them easy to read as one axis. */}
+        <text x={LEFT - 6} y={volBase - volH + 10} textAnchor="end" className="cc-label">{fmtVol(maxV)}</text>
 
         {hp && hover != null && (
           <g className="cc-cross">
