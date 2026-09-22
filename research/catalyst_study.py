@@ -21,13 +21,14 @@ Events
   reverse_split      reverse split ex-date (corporate actions)
   high52w_vol        close at a new 252-session closing high on >= 2x volume
 
-Gates at entry: raw close $0.10-$10 (band widened 2026-09-21; every result
-published before that date was produced at $0.10-$5) and 20-day SIP dollar
-volume >= --floor.
-Returns: 1/5/20 sessions from the entry close, net of max(1%, one tick).
-NOTE: this cost model has no spread term, unlike bigmove_study.py, which
-charges max(1%, tick, Abdi-Ranaldo spread). Wide-spread names are therefore
-undercharged here relative to the project's headline cost model (~1.22%).
+Gates at entry: raw close $0.10 to --max-price (default 5.00, the live band)
+and 20-day SIP dollar volume >= --floor.
+Returns: 1/5/20 sessions from the entry close, net of
+max(1%, one tick, Abdi-Ranaldo spread) -- the same cost model as
+bigmove_study.py. The spread term was added 2026-09-21 (finding C1,
+docs/research-audit-plan.md 1.3b); --no-spread-cost reproduces the older
+max(1%, tick) model for comparison only, since it undercharges exactly the
+wide-spread names most likely to produce large moves.
 Variants: all | excl_flags (drop nano-cap, shares +50% YoY, <=2Q runway, or
 an offering filed in the prior 30 days). Baseline: every gated in-band day.
 Periods 2016-21 and 2022+ reported separately.
