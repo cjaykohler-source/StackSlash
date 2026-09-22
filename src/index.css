@@ -930,9 +930,16 @@ body {
 .candle-stats .down {
   color: var(--red);
 }
+.cc-ext {
+  fill: rgba(139, 147, 167, 0.07);
+}
 .cc-grid {
   stroke: var(--border);
   stroke-opacity: 0.5;
+}
+.cc-divider {
+  stroke: var(--border);
+  stroke-opacity: 0.9;
 }
 .cc-label {
   fill: var(--text-dim);
@@ -1013,6 +1020,11 @@ body {
 }
 .cc-key-vol-avg::before {
   border-top: 2px dotted #f5b942;
+}
+.cc-key-ext::before {
+  height: 8px;
+  border: none;
+  background: rgba(139, 147, 167, 0.25);
 }
 .cc-legend-note {
   margin-left: auto;

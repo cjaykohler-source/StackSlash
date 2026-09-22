@@ -98,9 +98,15 @@ function niceStep(span: number, target: number): number {
  * A full picture of one symbol-session: 1-minute candles over the fixed
  * 4:00a-8:00p ET session axis (extended hours compressed to 1/3 width,
  * same axis as the Day line chart), with volume bars bottom-aligned
- * beneath, the session VWAP (regular hours), the prior close, and shading
- * over pre-market and after-hours. Hover for a crosshair with the bar's
- * OHLC, volume, trades and running VWAP.
+ * beneath, the session VWAP (regular hours only), the prior close, and
+ * shading over pre-market and after-hours. Hover for a crosshair with the
+ * bar's OHLC, volume, trades and running VWAP.
+ *
+ * Extended-hours bars are drawn but never enter VWAP or the OHLC stats.
+ * They come from the consolidated tape (SIP), which the free data plan
+ * serves only 15+ minutes old, so a live session's most recent minutes are
+ * always missing -- `live` marks the view delayed rather than implying it
+ * is current.
  *
  * Plain SVG rather than recharts: recharts has no candlestick, and a
  * session is at most ~960 bars, so direct drawing stays light.
@@ -143,12 +149,19 @@ export function SessionCandleChart({
       const u = axis.toX(ms);
       return u >= axis.open && u < axis.close;
     };
-    // Regular session only (9:30a-4:00p): the session-candles function also
-    // returns pre-market and after-hours bars, which this view leaves out.
-    const raw = all.filter((p) => isRegular(p.ms));
-    // Minutes since 9:30 for each 1-min bar (regular-session axis units are hours).
+    // The whole 4:00a-8:00p session. Pre-market and after-hours are drawn on
+    // the compressed part of the axis (an extended hour is 1/3 the width of a
+    // regular one), shaded, and excluded from VWAP and the OHLC stats -- those
+    // stay regular-session, because a 4am print is not the day's open.
+    const raw = all;
+    const regular = all.filter((p) => isRegular(p.ms));
+    // Minutes since 9:30 for each 1-min bar (regular-session axis units are
+    // hours). Negative before the open, > 390 after the close.
     const mods = raw.map((p) => Math.round((axis.toX(p.ms) - axis.open) * 60));
-    const auto = autoInterval(mods, live && mods.length ? Math.min(SESSION_MINUTES, Math.max(...mods) + 1) : SESSION_MINUTES);
+    const regMods = regular.map((p) => Math.round((axis.toX(p.ms) - axis.open) * 60));
+    // Candle size is chosen from the regular session only, so a handful of
+    // thin pre-market prints cannot drive the whole day to a coarse interval.
+    const auto = autoInterval(regMods, live && regMods.length ? Math.min(SESSION_MINUTES, Math.max(...regMods) + 1) : SESSION_MINUTES);
     const k: Interval = choice === "auto" ? auto.k : choice;
 
     // Merge 1-min bars into k-min candles: first open, max high, min low,
@@ -189,13 +202,12 @@ export function SessionCandleChart({
           n: hasN ? n : null,
         };
       });
-    const d0 = axis.open;
-    const d1 = axis.close;
+    const [d0, d1] = axis.domain;
     const plotW = width - LEFT - RIGHT;
     const sx = (u: number) => LEFT + ((u - d0) / (d1 - d0)) * plotW;
-    // Hourly ticks inside the session, plus the 9:30 open.
-    const ticks = [d0, ...axis.ticks.filter((u) => u > d0 && u <= d1)];
-    const tickLabels: Record<number, string> = { ...axis.tickLabels, [d0]: "9:30a" };
+    // Every hour 4a-8p, plus the 9:30 open.
+    const ticks = [...axis.ticks, axis.open].sort((a, b) => a - b);
+    const tickLabels: Record<number, string> = { ...axis.tickLabels, [axis.open]: "9:30a" };
 
     // Each bar covers [t, t+60s); centre it there and size it to the local
     // minute width (regular minutes are 3x wider than extended ones).
@@ -245,23 +257,36 @@ export function SessionCandleChart({
     const yTicks: number[] = [];
     for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) yTicks.push(v);
 
+    // OHLC is the REGULAR session: the day's open is 9:30, not the first
+    // pre-market print. Volume is the whole tape, with pre and post broken
+    // out -- pre-market volume is the number a pre-open report wants.
+    const preVolume = raw.filter((p) => axis.toX(p.ms) < axis.open).reduce((s, p) => s + p.v, 0);
+    const postVolume = raw.filter((p) => axis.toX(p.ms) >= axis.close).reduce((s, p) => s + p.v, 0);
     const stats = {
-      open: pts[0]?.o ?? null,
-      high: pts.length ? Math.max(...pts.map((p) => p.h)) : null,
-      low: pts.length ? Math.min(...pts.map((p) => p.l)) : null,
-      close: pts.length ? pts[pts.length - 1].c : null,
-      volume: pts.reduce((s, p) => s + p.v, 0),
-      trades: pts.reduce((s, p) => s + (p.n ?? 0), 0),
-      minutesTraded: raw.length,
+      open: regular[0]?.o ?? null,
+      high: regular.length ? Math.max(...regular.map((p) => p.h)) : null,
+      low: regular.length ? Math.min(...regular.map((p) => p.l)) : null,
+      close: regular.length ? regular[regular.length - 1].c : null,
+      last: raw.length ? raw[raw.length - 1].c : null,
+      // Volume and trades stay REGULAR-session: prevSession carries regular-
+      // hours totals, so including extended here would compare a full day
+      // against a prior regular session. Pre/post are shown beside them.
+      volume: regular.reduce((s, p) => s + p.v, 0),
+      preVolume,
+      postVolume,
+      trades: regular.reduce((s, p) => s + (p.n ?? 0), 0),
+      minutesTraded: regular.length,
     };
 
-    return { pts, k, auto, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi, avgPerCandle };
+    return { pts, k, auto, sx, ticks, tickLabels, geo, priceH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi, avgPerCandle,
+             d0, d1, axisOpen: axis.open, axisClose: axis.close };
   }, [bars, prevClose, width, choice, live, typicalDailyVolume]);
 
   if (!bars.length) return null;
-  const { pts, k, auto, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats, avgPerCandle } = m;
+  const { pts, k, auto, sx, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats, avgPerCandle,
+          axisOpen, axisClose } = m;
   if (!pts.length) {
-    return <p className="empty-state chart-empty-state">No regular-session trades this day (extended hours only).</p>;
+    return <p className="empty-state chart-empty-state">No trades this day.</p>;
   }
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -337,6 +362,12 @@ export function SessionCandleChart({
         <span>Prev close <b>{prevClose != null ? fmtPrice(prevClose) : "—"}</b></span>
         <span title={prevTitle(prevSession && fmtVol(prevSession.volume))}>
           Volume <b className={cmp(stats.volume, prevSession?.volume)}>{fmtVol(stats.volume)}</b>
+          {(stats.preVolume > 0 || stats.postVolume > 0) && (
+            <em title="Extended-hours volume, not included in the regular-session figure beside it">
+              {stats.preVolume > 0 ? ` pre ${fmtVol(stats.preVolume)}` : ""}
+              {stats.postVolume > 0 ? ` post ${fmtVol(stats.postVolume)}` : ""}
+            </em>
+          )}
         </span>
         <span title={prevTitle(prevSession && prevSession.trades.toLocaleString())}>
           Trades <b className={cmp(stats.trades, prevSession?.trades)}>{stats.trades.toLocaleString()}</b>
@@ -347,6 +378,14 @@ export function SessionCandleChart({
       </div>)}
       <svg width={width} height={height} onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img"
            aria-label="Session candlestick chart with volume">
+        {/* extended-hours shading: 4:00-9:30a and 4:00-8:00p ET */}
+        <rect x={sx(m.d0)} y={TOP} width={sx(axisOpen) - sx(m.d0)} height={volBase - TOP} className="cc-ext" />
+        <rect x={sx(axisClose)} y={TOP} width={sx(m.d1) - sx(axisClose)} height={volBase - TOP} className="cc-ext" />
+
+        {[axisOpen, axisClose].map((u) => (
+          <line key={u} x1={sx(u)} x2={sx(u)} y1={TOP} y2={volBase} className="cc-divider" />
+        ))}
+
         {yTicks.map((v) => (
           <g key={v}>
             <line x1={LEFT} x2={width - RIGHT} y1={py(v)} y2={py(v)} className="cc-grid" />
@@ -415,7 +454,7 @@ export function SessionCandleChart({
           </span>
         )}
         {prevClose != null && <span className="cc-key cc-key-prev">prior close {fmtPrice(prevClose)}</span>}
-        <span className="cc-legend-note">regular session 9:30a–4:00p ET</span>
+        <span className="cc-key cc-key-ext">extended hours (compressed)</span>
       </div>
       {hp && hover != null && (
         <div className="candle-tip" style={{ left: Math.min(Math.max(geo[hover].cx + 12, 0), width - 190) }}>
