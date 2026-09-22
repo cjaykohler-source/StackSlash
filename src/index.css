@@ -1045,13 +1045,6 @@ body {
   background: var(--panel);
   padding: 10px 12px;
 }
-.trigger-feed-panel-title {
-  margin: 0 0 8px;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--text-dim);
-}
 .trigger-feed-panel .trigger-feed th {
   padding-top: 0;
 }
