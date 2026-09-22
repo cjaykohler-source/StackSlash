@@ -32,6 +32,28 @@ import { sendOperationalAlert } from "./lib/notify";
  * legitimately gappy symbols (halts, delistings, recent listings); that
  * number being 736 is not news, it being 900 tomorrow is. A check that
  * pages every night is a check that gets muted.
+ *
+ * That last line was true and the check was violating it. Until
+ * 2026-09-21 the two noisy critical classes counted ALL of bars_daily --
+ * 5.4M rows, five years -- so they were cumulative and monotonically
+ * increasing, gaining roughly a row per session as new bars landed. A
+ * critical class alerts on any increase, so the check paged on +1 against
+ * a 46,000-row baseline. Two fixes, both in check_data_integrity():
+ *
+ *   - The critical classes are now `split_scale_break_30d` and
+ *     `implausible_price_30d`, scoped to the last 30 days. A five-year-old
+ *     artifact is a permanent fact about the archive; a new one on this
+ *     week's bars is news. Full-history counts stay as `info` for context.
+ *   - `implausible_price` no longer flags BRK.A. A raw threshold cannot
+ *     separate it from the 132 micro-caps whose split-adjusted history was
+ *     back-adjusted through large reverse splits (SXTC and friends reach
+ *     $100M/share) -- both land in the same price buckets. What separates
+ *     them is whether the symbol is expensive TODAY, so a high historical
+ *     close only counts when the latest close is itself ordinary.
+ *
+ * Result: the critical surface went from 46,364 rows to 4 -- the reverse
+ * splits of UZX, EPOW, JAGX and NCT on 09-08/09, which are exactly the
+ * interleaved-split-scale class this check exists to catch.
  */
 
 // Issue classes that corrupt math rather than merely describing a messy
