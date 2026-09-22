@@ -101,9 +101,10 @@ function timeOnly(iso: string): string {
  *    clustered with anything.
  *
  * Split across two surfaces by `mode`:
- *  - "today"  — the dashboard. Today's fires only, in one open frame
- *               (no dropdown, no date header), the "Trigger feed" label
- *               inside the frame so it lines up with the movers column.
+ *  - "today"  — the dashboard. Today's fires only, in one open frame:
+ *               no dropdown, no date header, and no panel title — the
+ *               columns are self-describing and the heading only cost
+ *               vertical space above the fold.
  *  - "history" — the Reports page. Every earlier day, each a collapsed
  *               dropdown.
  */
@@ -471,10 +472,5 @@ export function TriggerFeed({ mode = "today" }: { mode?: "today" | "history" }) 
     body = sidedSections(todayRows, true);
   }
 
-  return (
-    <section className="trigger-feed-panel">
-      <h2 className="trigger-feed-panel-title">Trigger feed</h2>
-      {body}
-    </section>
-  );
+  return <section className="trigger-feed-panel">{body}</section>;
 }
