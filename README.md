@@ -254,11 +254,23 @@ symbol's latest close is ordinary. Critical surface: 46,364 rows -> 4
 3. `catalyst_study.py` has no negative controls (Layer 2).
 4. `daily_trigger_study.py`, `schema_lab.py`, `tradingCosts.ts` and
    `backtest-triggers.ts` are unaudited.
-5. **The growth question is untested.** `fundamentals` carries
-   `revenue_growth_yoy` (66% of the band), `op_cash_flow_ttm` (89%) and
-   Zacks ranks (59%), and **none of it feeds selection** -- every study
-   ever run here tests price, volume or filing events. Backtestable from
-   `research/data/edgar/edgar_facts.parquet`, point-in-time by `filed`.
+5. **The growth question is answered: no.** Tested 2026-09-22,
+   pre-registered in `docs/growth-prereg.md`. Point-in-time revenue
+   growth **does not rank** 8-K 2.02 candidates: Q4-Q1 net win rate
+   **-0.2pp / +1.0pp** against a 5pp bar, win rate flat across quartiles
+   in both periods, and the same null at 4x the n over all material 8-Ks.
+   `research/growth_study.py`.
+
+   Two things came out of it that matter more than the null. **The
+   measured noise floor (200 permutations) is +-8.5pp in 2016-21**, so
+   the pre-registered 5pp bar was *inside* the noise there -- the
+   pre-registration's power math used the pre-floor count and was wrong
+   by ~3x in n. Any future single-period threshold on this pool must be
+   set against a measured floor, not an assumed SE. And **operating cash
+   flow is a live lead**: same sign both periods (+3.7pp / +8.9pp), U:D
+   Q4 >= Q1 at both thresholds in both periods, but only 23%/33% coverage
+   and only one period outside its own (wider) noise floor. It needs its
+   own pre-registration and is **not** in selection.
 6. `bars_intraday` is still close-only (D.2). The *local warehouse* is
    not: `research/data/minute/` holds ~2 billion SIP minute bars,
    2016-2026, with full OHLC, `trade_count` and `vwap`. Nothing needs

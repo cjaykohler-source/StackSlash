@@ -189,4 +189,133 @@ README with the same prominence as a pass.
 
 ## RESULTS
 
-*Empty until the run. Added below this line, never above it.*
+Run 2026-09-22. `research/growth_study.py`. Nothing above this line was
+changed after the run.
+
+### Headline: the primary question is a clean null
+
+**Revenue growth does not rank catalyst candidates.**
+
+| | 2016–21 | 2022+ |
+|---|---|---|
+| Q4 − Q1 net win rate | **−0.2pp** | **+1.0pp** |
+| ≥ 5pp bar | no | no |
+| U:D Q4 ≥ Q1 (both thresholds) | no | no |
+| same sign both periods | **no** | |
+
+Population after the $2.5M floor: 5,251 events; 1,062 / 2,486 with a
+computable point-in-time YoY (64% / 69% coverage).
+
+| cell | period | n | med growth | 20d win | 20d net | ex-top1% | PF | U:D10 | U:D20 |
+|---|---|---|---|---|---|---|---|---|---|
+| Q1 | 2016–21 | 266 | −50% | 44% | +4.42% | +2.69% | 1.43 | 1.07 | 1.46 |
+| Q2 | 2016–21 | 266 | −10% | 46% | +1.38% | −0.56% | 1.14 | 1.07 | 1.42 |
+| Q3 | 2016–21 | 265 | +11% | 43% | −1.15% | −2.97% | 0.89 | 1.06 | 1.08 |
+| Q4 | 2016–21 | 265 | +120% | 44% | −1.36% | −2.95% | 0.86 | 0.93 | 1.21 |
+| Q1 | 2022+ | 622 | −39% | 35% | −4.71% | −7.02% | 0.64 | 0.97 | 1.06 |
+| Q2 | 2022+ | 622 | −5% | 37% | −2.43% | −5.06% | 0.77 | 0.85 | 1.04 |
+| Q3 | 2022+ | 621 | +11% | 39% | −2.20% | −3.86% | 0.78 | 1.00 | 1.24 |
+| Q4 | 2022+ | 621 | +101% | 36% | −4.15% | −5.91% | 0.68 | 0.90 | 0.98 |
+| no-data | 2016–21 | 607 | — | 41% | −1.34% | −2.76% | 0.87 | 0.97 | 1.14 |
+| no-data | 2022+ | 1,096 | — | 37% | −4.48% | −6.24% | 0.67 | 0.90 | 1.02 |
+| POOL | 2016–21 | 1,669 | −0% | 43% | +0.04% | −1.49% | 1.00 | 1.01 | 1.24 |
+| POOL | 2022+ | 3,582 | +1% | 37% | −3.71% | −5.62% | 0.70 | 0.92 | 1.05 |
+
+Win rate is flat across quartiles in both periods (44/46/43/44 and
+35/37/39/36). There is no ordering to exploit.
+
+### The most important result is the noise floor, and it indicts the bar
+
+200 permutations of `growth` within period, returns untouched:
+
+| | median | p05 | p95 | largest \|draw\| |
+|---|---|---|---|---|
+| 2016–21 | −0.6pp | −7.0pp | **+8.5pp** | 11.9pp |
+| 2022+ | −0.1pp | −3.6pp | **+4.7pp** | 7.0pp |
+
+**The pre-registered 5pp bar is inside the noise in 2016–21.** A pure
+shuffle clears it roughly a fifth of the time there.
+
+**The pre-registration's power statement was wrong.** It computed a
+~1.8pp standard error from 1,050 per quartile — the count *before* the
+$2.5M dollar-volume floor. The floor cut the population from 13,917 to
+5,251, giving 266 per quartile in 2016–21, and the real SE is about 3pp.
+The document did flag that the floor "will cut this further"; the SE line
+was not recomputed. **The bar was not moved after the fact** — moving it
+is exactly the discretion pre-registration exists to remove — so it
+stands as registered, with the error recorded.
+
+The conclusion is unaffected: the observed differences (−0.2pp, +1.0pp)
+are near zero, not merely under the bar. The both-period same-sign
+requirement was doing the real work.
+
+### The control also found a bug in itself
+
+The first control implementation ran `create or replace temp table ev as
+… from ev` — reading a table while replacing it. It silently fanned the
+rows out, doubling 2016–21 (POOL 2,731 against the primary's 1,669), and
+one draw produced a **+5.0pp** Q4−Q1 on shuffled data, exactly on the
+bar. Rebuilt against a pristine `ev_base` with a row-count assertion.
+Counts now match the primary exactly.
+
+### Coverage-bias check — present but mild (for growth)
+
+The no-data cell is modestly worse than the pool (41% win / −1.34% vs
+43% / +0.04%; 37% / −4.48% vs 37% / −3.71%), not dramatically so. Filing
+quality does carry a little signal, but not enough to explain away a null
+that has nothing to explain.
+
+### Secondaries
+
+| | 2016–21 | 2022+ | verdict |
+|---|---|---|---|
+| **S1** `Q−4 ≥ $1M` | −3.9pp | +2.6pp | null |
+| **S2** all material 8-K (n up to 2,298/quartile) | −1.1pp | +4.4pp | null |
+| **S3** operating cash flow ÷ revenue | **+3.7pp** | **+8.9pp** | see below |
+
+S2 is the strongest test of the primary question — four times the n, same
+answer. Growth is not a ranking input on this universe.
+
+### S3 is a real lead, and is not established
+
+Operating cash flow is the only thing in this study that moved. Q4 (least
+cash-burning) beats Q1 (median burn ~10× revenue) with the **same sign in
+both periods**, and **U:D Q4 ≥ Q1 at both thresholds in both periods** —
+U:D10 1.05/1.04/1.24/1.17 and 0.97/0.90/1.19/1.19. Q3 in 2022+ is the
+only positive-net cell anywhere in this study (+0.56%, PF 1.07).
+
+**It is not established, on three grounds:**
+
+1. **Its own noise floor, measured the same way:** 2016–21 p05/p95
+   **−11.2 / +12.2pp**. The +3.7pp there is indistinguishable from zero.
+   Only 2022+ (+8.9pp against a ±6.5pp floor) sits outside. One period
+   out of two, which is this project's standing definition of
+   not-a-result.
+2. **Coverage is 23% / 33%**, far worse than revenue's 64% / 69%, and the
+   no-data cell is clearly worse than the pool in both periods. Companies
+   filing quarterly cash-flow detail are the better-governed ones. This
+   is finding C2's failure mode and it is live here.
+3. **It is a declared secondary**, which this document committed in
+   advance has no bearing on the decision. Promoting it now would be the
+   exact move pre-registration exists to prevent.
+
+**Recommendation:** S3 earns its own pre-registration, with the coverage
+problem addressed first (annual `NetCashProvidedByUsedInOperatingActivities`
+would lift coverage materially) and quartile sizes chosen against a
+measured noise floor rather than an assumed SE. It does **not** enter
+`selection-logic.md` Step 4 on this evidence.
+
+### Consequences
+
+- **`selection-logic.md` M.1 is answered for growth: no.** Step 4.4
+  ("relative quality") gains nothing from revenue growth and should not
+  be built around it.
+- **The `revenue_growth_yoy` display flag stays amber.** It was demoted
+  from green on 2026-09-22 (#200) on the grounds that it was unmeasured.
+  It is now measured, and it did not earn green back.
+- **The last untested direction is closed for revenue growth**, and
+  re-opened, narrowly, on cash flow.
+- A directional hint worth one line: Q4 has the lowest U:D10 in 2016–21
+  in all three growth variants (0.93, 0.91, 0.91). Fastest-growth names
+  may be slightly *worse* directionally. **Not claimed as a finding** —
+  no noise floor was computed for U:D.
