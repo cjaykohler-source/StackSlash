@@ -84,6 +84,16 @@ def build_days(con, P: float = 10.0) -> pa.Table:
     for h in HORIZONS:
         out[f"r{h}"] = np.full(N, np.nan)   # from close t
         out[f"rn{h}"] = np.full(N, np.nan)  # from close t+1
+        # Maximum favourable / adverse excursion over the same window, from
+        # true daily highs and lows. Additive -- nothing existing reads them.
+        # Needed for U:D, which selection-logic.md rule 1 requires of any
+        # component. Highs and lows cannot be ordered within a session, so
+        # these bound what was REACHABLE, not what a path-dependent exit
+        # would have captured.
+        out[f"mfe{h}"] = np.full(N, np.nan)
+        out[f"mfen{h}"] = np.full(N, np.nan)
+        out[f"mae{h}"] = np.full(N, np.nan)
+        out[f"maen{h}"] = np.full(N, np.nan)
 
     starts = np.flatnonzero(np.r_[True, sym[1:] != sym[:-1]])
     ends = np.r_[starts[1:], N]
@@ -130,6 +140,20 @@ def build_days(con, P: float = 10.0) -> pa.Table:
             rn = np.full(n, np.nan)
             rn[:-1] = r[1:]
             out[f"rn{h}"][a:b] = rn
+            # MFE/MAE over sessions t+1..t+h, under the same validity mask as
+            # r{h} so a voided return never carries a live excursion.
+            mfe = np.full(n, np.nan)
+            mae = np.full(n, np.nan)
+            if n > h:
+                ok_r = np.isfinite(r[: n - h]) & (c[: n - h] > 0)
+                hw = swv(hh[1:], h).max(axis=1)
+                lw = swv(ll[1:], h).min(axis=1)
+                mfe[: n - h] = np.where(ok_r, hw / c[: n - h] - 1, np.nan)
+                mae[: n - h] = np.where(ok_r, lw / c[: n - h] - 1, np.nan)
+            out[f"mfe{h}"][a:b] = mfe
+            out[f"mae{h}"][a:b] = mae
+            mfn = np.full(n, np.nan); mfn[:-1] = mfe[1:]; out[f"mfen{h}"][a:b] = mfn
+            man = np.full(n, np.nan); man[:-1] = mae[1:]; out[f"maen{h}"][a:b] = man
         out["dollar20"][a:b] = dollar20
         out["vol_ratio"][a:b] = vol_ratio
         out["gap"][a:b] = gap

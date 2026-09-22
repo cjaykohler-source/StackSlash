@@ -194,6 +194,21 @@ present these as setups. See `overhaul-plan.md` B.4.
 candidates, did top-quartile-runway names outperform bottom-quartile on a
 *direction-aware* target? If not, drop Step 4.4.
 
+**Answered for revenue growth on 2026-09-22: no.** Pre-registered in
+`docs/growth-prereg.md`, run by `research/growth_study.py`. Q4-Q1 net win
+rate **-0.2pp / +1.0pp**, win rate flat across quartiles, same null over
+all material 8-Ks at 4x the n. Revenue growth does **not** enter Step 4.
+
+Still open for the other quality inputs. **Operating cash flow is the
+live lead** (+3.7pp / +8.9pp, same sign, U:D Q4 >= Q1 in both periods)
+but is not established -- 23%/33% coverage, and only 2022+ clears its own
+noise floor. It gets its own pre-registration before it touches Step 4.
+
+The run also measured the thing this section most needed: **the noise
+floor of a Q4-Q1 win-rate difference on this pool is +-8.5pp in 2016-21
+and +-4.7pp in 2022+** (200 permutations). Any weight fixed here must be
+justified against that, not against an assumed standard error.
+
 **M.2 — Does the catalyst path hold at $5–$10?** `overhaul-plan.md` A.3,
 now the single most important open question: the catalyst path is the
 whole pool. **Phase A must be re-pre-registered around `8k_2.02` and U:D,
