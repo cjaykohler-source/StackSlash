@@ -193,6 +193,7 @@ export function SessionCandleChart({
         return {
           t: arr[0].t,
           ms: openMs + b * k * 60_000,
+          ext: !isRegular(arr[0].ms),
           o: arr[0].o,
           h: Math.max(...arr.map((p) => p.h)),
           l: Math.min(...arr.map((p) => p.l)),
@@ -205,8 +206,22 @@ export function SessionCandleChart({
     const [d0, d1] = axis.domain;
     const plotW = width - LEFT - RIGHT;
     const sx = (u: number) => LEFT + ((u - d0) / (d1 - d0)) * plotW;
-    // Every hour 4a-8p, plus the 9:30 open.
-    const ticks = [...axis.ticks, axis.open].sort((a, b) => a - b);
+    // Every hour 4a-8p, plus the 9:30 open -- thinned so labels cannot
+    // overlap. On the compressed axis 9:00a sits only half an extended hour
+    // from 9:30a (~32px at full width, narrower than the "9:30a" label itself), so they ran
+    // together. Greedy left-to-right with a minimum gap; 9:30 wins any
+    // collision, being the open and the most useful label on this axis.
+    const MIN_TICK_GAP_PX = 42;
+    const toPx = (u: number) => ((u - d0) / (d1 - d0)) * plotW;
+    const ticks: number[] = [];
+    for (const u of [...axis.ticks, axis.open].sort((a, b) => a - b)) {
+      const last = ticks[ticks.length - 1];
+      if (last != null && toPx(u) - toPx(last) < MIN_TICK_GAP_PX) {
+        if (u === axis.open) ticks.pop();
+        else continue;
+      }
+      ticks.push(u);
+    }
     const tickLabels: Record<number, string> = { ...axis.tickLabels, [axis.open]: "9:30a" };
 
     // Each bar covers [t, t+60s); centre it there and size it to the local
@@ -450,7 +465,7 @@ export function SessionCandleChart({
         <span className="cc-key cc-key-vwap">VWAP (regular session)</span>
         {avgPerCandle != null && (
           <span className="cc-key cc-key-vol-avg" title="Median daily volume over the prior 20 sessions, spread evenly across the 390-minute session at this candle size. The median, so one spike day can't inflate it.">
-            typical volume per {k}-min, prior 20 sessions
+            typical volume per {k}-min, prior 20 regular sessions
           </span>
         )}
         {prevClose != null && <span className="cc-key cc-key-prev">prior close {fmtPrice(prevClose)}</span>}
@@ -464,7 +479,14 @@ export function SessionCandleChart({
           <div>vs prev close {change(hp.c)}</div>
           <div>
             Vol {fmtVol(hp.v)}
-            {avgPerCandle != null ? ` · ${(hp.v / avgPerCandle).toFixed(1)}× typical` : ""}
+            {/* `typical` is a REGULAR-session rate (a typical day spread over
+                390 minutes), so on an extended-hours bar it is a cross-scale
+                comparison and has to say so. Pre-market volume against a
+                normal session minute is the number a pre-open read wants --
+                worth keeping, not worth showing unlabelled. */}
+            {avgPerCandle != null
+              ? ` · ${(hp.v / avgPerCandle).toFixed(1)}× ${hp.ext ? "a regular-session " + k + "-min" : "typical"}`
+              : ""}
             {hp.n != null ? ` · ${hp.n.toLocaleString()} trades` : ""}
           </div>
           {vwap[hover] != null && <div>VWAP {fmtPrice(vwap[hover]!)}</div>}
