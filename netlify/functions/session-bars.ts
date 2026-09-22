@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "./lib/supabaseAdmin";
 import { fetchIntradayBarsRange, fetchDelayedSipMinutesToday } from "./lib/alpaca";
+import { etDateString, etWallClock } from "./lib/etTime";
 
 /**
  * On-demand: fetch the most recent trading session's 1-minute bars for a
@@ -17,12 +18,19 @@ import { fetchIntradayBarsRange, fetchDelayedSipMinutesToday } from "./lib/alpac
  *   -> { symbol, session_date, bars: [{ ts, price }], delayed? }
  *      (bars: [] if none)
  *
- * IEX-only names: if a session is running and IEX has nothing for today,
- * it falls back to the consolidated tape delayed ~15 minutes and sets
- * `delayed: true`. Those bars are returned but NOT stored — bars_intraday
- * is the IEX real-time series the factor and trigger layers read, and
- * mixing feeds into it would repeat the volume distortion the 2026-09-17
- * SIP reload just fixed.
+ * IEX-only names: any time within 4:00a–8:05p ET, if IEX has nothing for
+ * today, it falls back to the consolidated tape delayed ~16 minutes and
+ * sets `delayed: true`. Those bars are returned but NOT stored —
+ * bars_intraday is the IEX real-time series the factor and trigger layers
+ * read, and mixing feeds into it would repeat the volume distortion the
+ * 2026-09-17 SIP reload just fixed.
+ *
+ * The fallback window is the whole extended session, so pre-market and
+ * after-hours reach the chart. That is as close to real time as this data
+ * gets: the free plan refuses SIP newer than 15 minutes, and IEX — the
+ * feed that would be live — sees almost nothing on a thin sub-$5 name
+ * outside regular hours. Extended-hours bars are therefore always ~16
+ * minutes behind, and `delayed` says so.
  */
 export default async (req: Request) => {
   const json = (body: unknown, status = 200) =>
@@ -45,9 +53,23 @@ export default async (req: Request) => {
   //   - market closed AND has bars from the last ~4 days -> that IS the
   //     most recent session and it won't change until the next open
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
-  const utcHM = now.getUTCHours() * 100 + now.getUTCMinutes();
-  const marketOpen = now.getUTCDay() >= 1 && now.getUTCDay() <= 5 && utcHM >= 1330 && utcHM < 2005;
+  // ET, not UTC. The old form compared UTC hours against fixed 1330/2005
+  // bounds, which only line up with 9:30a-4:05p ET under EDT -- in EST it
+  // made the window 8:30a-3:05p, admitting an hour of pre-market and
+  // dropping the last hour of the session. It also took the session date
+  // from the UTC date, which rolls over at 8:00p ET (EDT) -- exactly the
+  // end of the extended session this now has to serve.
+  const todayStr = etDateString(now);
+  const weekday = new Date(`${todayStr}T12:00:00Z`).getUTCDay();
+  // 4:00a-8:05p ET: the whole extended session, not just regular hours.
+  // Before this, the delayed-tape fallback below was gated to regular
+  // hours, so a thin name had no pre-market at all -- the opposite of what
+  // a pre-open report needs (README "Still open" 8).
+  const sessionActive =
+    weekday >= 1 &&
+    weekday <= 5 &&
+    now.getTime() >= etWallClock(todayStr, 4, 0) &&
+    now.getTime() < etWallClock(todayStr, 20, 5);
 
   const { data: existing } = await db
     .from("bars_intraday")
@@ -67,7 +89,7 @@ export default async (req: Request) => {
     Date.now() - Date.parse(todayStored[todayStored.length - 1].ts) < STALE_BAR_MS;
   if (existingRows.length >= 2) {
     const lastDay = existingRows[existingRows.length - 1].ts.slice(0, 10);
-    if ((lastDay === todayStr && (storedIsCurrent || !marketOpen)) || (!marketOpen && lastDay !== todayStr)) {
+    if ((lastDay === todayStr && (storedIsCurrent || !sessionActive)) || (!sessionActive && lastDay !== todayStr)) {
       return json({
         symbol: ticker,
         session_date: lastDay,
@@ -98,9 +120,15 @@ export default async (req: Request) => {
     rows.reduce((mx, b) => (b.t.slice(0, 10) > mx ? b.t.slice(0, 10) : mx), "");
 
   // A running session with no IEX print today: ask the tape instead of
-  // handing back yesterday labelled as the latest session.
+  // handing back yesterday labelled as the latest session. In pre-market
+  // and after-hours this is the ONLY source -- IEX is near-blind on thin
+  // sub-$5 names at the best of times and routinely silent outside regular
+  // hours. These bars are returned but never stored: bars_intraday is the
+  // IEX real-time series the factor and trigger layers read, and mixing
+  // feeds into it would repeat the volume distortion the 2026-09-17 SIP
+  // reload fixed.
   const iexToday = bars.filter((b) => b.t.slice(0, 10) === todayStr);
-  if (marketOpen && (iexToday.length < 2 || !storedIsCurrent)) {
+  if (sessionActive && (iexToday.length < 2 || !storedIsCurrent)) {
     try {
       const sip = await fetchDelayedSipMinutesToday(ticker);
       // Only worth swapping in if the tape actually sees more than IEX did.

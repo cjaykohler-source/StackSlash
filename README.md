@@ -278,9 +278,26 @@ symbol's latest close is ordinary. Critical surface: 46,364 rows -> 4
 7. Two Spotlight symbols the pipeline cannot cover: **FBDT** (22 daily
    bars, listed 2026-08-20, so no `factor_state` at all) and **GSUN**
    ($661.50, far outside the band).
-8. `session-bars` refuses the delayed-tape fallback outside a live
-   session, so **pre-market is invisible** every morning -- the opposite
-   of what a pre-open report needs.
+8. ~~`session-bars` refuses the delayed-tape fallback outside a live
+   session, so pre-market is invisible every morning.~~ **Fixed
+   2026-09-22.** The fallback window is now the whole extended session
+   (4:00a-8:05p ET), so pre-market and after-hours reach the Day chart,
+   and the Session candles draw them again -- that data was never
+   missing, `session-candles` had always fetched 04:00-20:00 and the
+   2026-09-11 change removed only the display.
+
+   The same fix caught a live DST defect: the gate compared **UTC**
+   hours against fixed 1330/2005 bounds, which only line up with ET
+   under EDT. Under EST it ran 8:30a-3:05p ET, so for five months of
+   the year the delayed-tape fallback was **off for the last 65 minutes
+   of every regular session** and on during an hour of pre-market. Now
+   ET wall-clock throughout.
+
+   Extended-hours bars are SIP and therefore ~16 minutes delayed --
+   the free plan refuses anything fresher, and IEX (the live feed) is
+   near-blind on thin sub-$5 names outside regular hours. They are
+   returned with `delayed: true` and **never stored**, so `bars_intraday`
+   stays a pure IEX series.
 
 ---
 
