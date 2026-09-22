@@ -151,31 +151,20 @@ function TrackedCard({
         return;
       }
 
-      // 3. No print today anywhere: the most recent prior session, labelled
-      //    with its date so it can't be mistaken for today.
-      const priorSource = rows.length >= 2 ? rows : onDemand.length >= 2 ? onDemand : [];
-      if (priorSource.length >= 2) {
-        const targetDay = dayOf(priorSource[priorSource.length - 1].ts);
-        setIntraday(true);
-        setDelayed(false);
-        setSessionLabel(new Date(`${targetDay}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" }));
-        setSeries(fromIntradayRows(priorSource.filter((r) => dayOf(r.ts) === targetDay)));
-        return;
-      }
-
-      // 4. Truly no intraday data (delisted / no IEX prints) — daily line.
-      const { data: daily } = await supabase
-        .from("bars_daily")
-        .select("date, close")
-        .eq("symbol_id", tracked.symbol_id)
-        .order("date", { ascending: false })
-        .limit(30);
-      if (cancelledRef.current) return;
-      const drows = (daily as { date: string; close: number }[] | null) ?? [];
-      setIntraday(false);
+      // 3. No print today anywhere: show nothing. The card zeroes out when
+      //    the ET session date rolls over, which is the same boundary the
+      //    trigger feed uses to clear itself, so the dashboard presents one
+      //    consistent "today" instead of a feed that has reset sitting
+      //    above charts still drawing yesterday.
+      //
+      //    This deliberately drops two older fallbacks: a labelled
+      //    prior-session line, and a ~30-day daily line for names with no
+      //    intraday data at all. Both kept a card looking populated across
+      //    the day boundary, which is exactly what we no longer want.
+      setIntraday(true);
       setSessionLabel(null);
       setDelayed(false);
-      setSeries(drows.reverse().map((r) => ({ t: new Date(`${r.date}T00:00:00Z`).getTime(), price: Number(r.close) })));
+      setSeries([]);
     }
 
     loadSeries();
