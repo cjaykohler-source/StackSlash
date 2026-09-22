@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type React from "react";
-import { etTimeLabel, sessionAxis } from "../lib/marketTime";
+import { etDateString, etTimeLabel, etWallClock, sessionAxis } from "../lib/marketTime";
 
 /** One SIP 1-minute bar, as returned by the session-candles function. */
 export interface Candle {
@@ -155,10 +155,18 @@ export function SessionCandleChart({
     // stay regular-session, because a 4am print is not the day's open.
     const raw = all;
     const regular = all.filter((p) => isRegular(p.ms));
-    // Minutes since 9:30 for each 1-min bar (regular-session axis units are
-    // hours). Negative before the open, > 390 after the close.
-    const mods = raw.map((p) => Math.round((axis.toX(p.ms) - axis.open) * 60));
-    const regMods = regular.map((p) => Math.round((axis.toX(p.ms) - axis.open) * 60));
+    // Minutes since 9:30, from REAL elapsed time against the session's own
+    // 9:30 ET. It cannot come from the axis: `toX` returns layout units, and
+    // an extended hour is 1/3 of one, so `(toX - open) * 60` equals minutes
+    // only inside the regular session. Feeding extended bars through that
+    // form squashed pre-market into a third of its width and put the whole
+    // anchor at 5:50 AM -- 4:00a read as 110 minutes before the open rather
+    // than 330.
+    const sessionDate = etDateString(all[0]?.ms ?? Date.now());
+    const openMs = etWallClock(sessionDate, 9, 30);
+    const minutesFromOpen = (ms: number) => Math.round((ms - openMs) / 60_000);
+    const mods = raw.map((p) => minutesFromOpen(p.ms));
+    const regMods = regular.map((p) => minutesFromOpen(p.ms));
     // Candle size is chosen from the regular session only, so a handful of
     // thin pre-market prints cannot drive the whole day to a coarse interval.
     const auto = autoInterval(regMods, live && regMods.length ? Math.min(SESSION_MINUTES, Math.max(...regMods) + 1) : SESSION_MINUTES);
@@ -167,7 +175,6 @@ export function SessionCandleChart({
     // Merge 1-min bars into k-min candles: first open, max high, min low,
     // last close, summed volume/trades, volume-weighted VWAP (a vendor-garbage
     // bar vwap far outside its range falls back to the close).
-    const openMs = raw.length ? raw[0].ms - mods[0] * 60_000 : 0;
     const groups = new Map<number, typeof raw>();
     raw.forEach((p, i) => {
       const b = Math.floor(mods[i] / k);
