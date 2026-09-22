@@ -3,6 +3,8 @@
  * against this — data access is identical on the free/IEX tier regardless
  * of account type. See: https://docs.alpaca.markets/reference/stockbars
  */
+import { etDateString } from "./etTime";
+
 
 function dataBaseUrl(): string {
   const url = process.env.ALPACA_BASE_URL;
@@ -252,12 +254,20 @@ export async function fetchDelayedSipToday(
  * into it would repeat the volume distortion the SIP reload just fixed.
  */
 export async function fetchDelayedSipMinutesToday(symbol: string): Promise<{ t: string; c: number }[]> {
-  const todayEt = new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10);
+  // ET, not a fixed UTC-4 offset, and the bar filter is on the bar's ET
+  // date too: bars are stamped UTC, so in EST the 7:00-8:00p ET part of
+  // after-hours carries the NEXT UTC date and a UTC-date filter silently
+  // dropped it. Only reachable now that this serves extended hours.
+  const todayEt = etDateString(Date.now());
+  // The free plan refuses SIP data newer than 15 minutes. Clamp the end,
+  // as fetchSipBars's callers do; the previous `new Date()` end was the
+  // unclamped form this function's own docstring said it did not use.
+  const cap = new Date(Date.now() - 16 * 60_000).toISOString();
   const rows: { t: string; c: number }[] = [];
   let pageToken: string | undefined;
   do {
-    const res = await fetchBars([symbol], "1Min", todayEt, new Date().toISOString(), pageToken, "sip");
-    for (const b of res.bars[symbol] ?? []) if (b.t.slice(0, 10) === todayEt) rows.push({ t: b.t, c: b.c });
+    const res = await fetchBars([symbol], "1Min", todayEt, cap, pageToken, "sip");
+    for (const b of res.bars[symbol] ?? []) if (etDateString(Date.parse(b.t)) === todayEt) rows.push({ t: b.t, c: b.c });
     pageToken = res.nextPageToken ?? undefined;
   } while (pageToken);
   return rows;
