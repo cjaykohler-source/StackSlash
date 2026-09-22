@@ -14,7 +14,14 @@
  *           either way (news, earnings of any recency, unusual volume
  *           below 25x, parabolic run, biotech / crypto-AI catalyst risk).
  *           Recency goes in the label, not the colour.
- *   green — a positive: well-capitalised, growing, or analyst-favoured.
+ *   green — a *measured* positive on this universe. Reserved, and
+ *           currently unused: no fundamental or analyst input has been
+ *           tested here. Every study this project has run tests price,
+ *           volume or filing events, so the three quality signals below
+ *           (Zacks rank, revenue growth, net cash) are amber — shown,
+ *           described, and explicitly marked untested. Promote one to
+ *           green when a direction-aware study earns it; see
+ *           `docs/selection-logic.md` M.1.
  */
 
 export interface RiskInput {
@@ -188,26 +195,34 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
     });
   }
 
-  // --- positives ---
+  // --- quality signals: shown, but untested on this universe ---
+  // These were green until 2026-09-22. Green asserts a measured positive,
+  // and none of the three has ever been measured here: every study in
+  // research/ tests price, volume or filing events, and `revenue` is
+  // loaded into research/data/edgar/edgar_facts.parquet by load_edgar.py
+  // without a single study reading it. Amber is the honest colour for an
+  // untested condition, and it matters more for these than for most: a
+  // green tick on an unmeasured input is the display asserting the
+  // conclusion that `docs/selection-logic.md` M.1 exists to test.
   if (typeof x.zacks_rank === "number" && x.zacks_rank >= 1 && x.zacks_rank <= 2) {
     f.push({
-      level: "green",
+      level: "amber",
       label: x.zacks_rank === 1 ? "Zacks Strong Buy" : "Zacks Buy",
-      note: "Zacks rank in the top two tiers — driven mainly by upward earnings-estimate revisions.",
+      note: "Zacks rank in the top two tiers — driven mainly by upward earnings-estimate revisions. Untested on this universe: no study here has measured whether the rank predicts anything in the $0.10-$5 band.",
     });
   }
   if (typeof x.revenue_growth_yoy === "number" && x.revenue_growth_yoy >= 0.25) {
     f.push({
-      level: "green",
+      level: "amber",
       label: `Revenue +${Math.round(x.revenue_growth_yoy * 100)}% YoY`,
-      note: "Latest quarter's sales well above the year-ago quarter — real growth behind the move, not just a chart.",
+      note: "Latest quarter's sales well above the year-ago quarter. Untested on this universe: growth has never been measured against returns here, and on a micro-cap a large percentage rise often comes off a tiny base.",
     });
   }
   if (typeof x.net_cash_to_mktcap === "number" && x.net_cash_to_mktcap >= 0.35) {
     f.push({
-      level: "green",
+      level: "amber",
       label: `Net cash ${Math.round(x.net_cash_to_mktcap * 100)}% of cap`,
-      note: "Cash minus debt covers a large share of the market cap — well funded, low near-term dilution risk, and a downside cushion.",
+      note: "Cash minus debt covers a large share of the market cap — lower near-term dilution risk and a downside cushion. Untested on this universe: the related runway evidence is one-regime only and is not an exclusion.",
     });
   }
   return f;
