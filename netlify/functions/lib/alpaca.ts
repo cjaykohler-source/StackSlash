@@ -252,6 +252,55 @@ export async function fetchDelayedSipToday(
 }
 
 /**
+ * The previous session's CONSOLIDATED-TAPE (SIP) close for a batch of
+ * symbols — the base the day's change is measured from.
+ *
+ * It cannot come from the snapshot's `prevDailyBar`: snapshots are fetched
+ * with feed=iex, so that bar is IEX's own slice of the tape. On a thin
+ * sub-$5 name the two disagree materially — NCPL's 2026-09-22 close was
+ * 0.9405 on IEX and 0.97 on the tape, which is 3.6pp of difference in the
+ * headline percentage and puts the quote at odds with the chart beneath
+ * it, whose prior-close line is SIP.
+ *
+ * Yesterday's close is a settled number, so the 15-minute SIP restriction
+ * is irrelevant here, and fetchBars sets adjustment=split so a split
+ * ex-date cannot corrupt the base. Memoised per ET date: it cannot change
+ * during a session, and quotes is polled.
+ */
+const prevCloseCache = new Map<string, { day: string; close: number }>();
+
+export async function fetchSipPrevCloses(symbols: string[]): Promise<Record<string, number>> {
+  if (!symbols.length) return {};
+  const todayEt = etDateString(Date.now());
+  const out: Record<string, number> = {};
+  const missing: string[] = [];
+  for (const sym of symbols) {
+    const hit = prevCloseCache.get(sym);
+    if (hit && hit.day === todayEt) out[sym] = hit.close;
+    else missing.push(sym);
+  }
+  if (!missing.length) return out;
+
+  const start = new Date(Date.now() - 12 * 86_400_000).toISOString();
+  const CHUNK = 100;
+  for (let i = 0; i < missing.length; i += CHUNK) {
+    const chunk = missing.slice(i, i + CHUNK);
+    const { bars } = await fetchBars(chunk, "1Day", start, new Date().toISOString(), undefined, "sip");
+    for (const [sym, rows] of Object.entries(bars)) {
+      // The most recent session STRICTLY BEFORE today. Taking rows[len-2]
+      // would be wrong on a day the symbol has not traded yet.
+      const prior = (rows ?? []).filter((b) => etDateString(Date.parse(b.t)) < todayEt);
+      const close = prior[prior.length - 1]?.c;
+      if (close && close > 0) {
+        out[sym] = close;
+        prevCloseCache.set(sym, { day: todayEt, close });
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Today's SIP 1-minute bars for ONE symbol, delayed ~15 minutes. Same
  * reason as fetchDelayedSipToday: it is the only view of a thin name's
  * actual session. NOT written to bars_intraday — that table is the IEX

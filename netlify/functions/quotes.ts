@@ -1,4 +1,4 @@
-import { fetchSnapshots, fetchDelayedSipToday } from "./lib/alpaca";
+import { fetchSnapshots, fetchDelayedSipToday, fetchSipPrevCloses } from "./lib/alpaca";
 
 /**
  * Live-ish price + intraday change for a batch of tickers, for the UI.
@@ -18,6 +18,14 @@ import { fetchSnapshots, fetchDelayedSipToday } from "./lib/alpaca";
  * gaps and catalysts, a metric that zeroes the gap at 9:30 is the wrong
  * one. `open` is still returned so a caller can show the intraday move
  * separately.
+ *
+ * The base is the previous session's CONSOLIDATED-TAPE close, not the
+ * snapshot's `prevDailyBar`. Snapshots are feed=iex, so that bar is IEX's
+ * own slice: NCPL's 2026-09-22 close was 0.9405 on IEX against 0.97 on the
+ * tape, 3.6pp of headline difference and a quote that disagrees with the
+ * SIP prior-close line on the chart below it. Price stays real-time IEX;
+ * only the base is SIP, and yesterday's close is settled so the 15-minute
+ * restriction does not apply to it.
  *
  * Outside market hours the snapshot's dailyBar is the last session's, so
  * this reports that session's prev-close->close move.
@@ -94,13 +102,19 @@ export default async (req: Request) => {
     price: number; changePct: number; prevClose: number; open?: number; asOf: string;
   }>();
   let anyOk = false;
-  const results = await Promise.allSettled(chunks.map((c) => fetchSnapshots(c)));
+  // Fetched alongside the snapshots, memoised per ET date inside the lib.
+  const [snapResults, sipPrev] = await Promise.all([
+    Promise.allSettled(chunks.map((c) => fetchSnapshots(c))),
+    fetchSipPrevCloses(symbols).catch(() => ({} as Record<string, number>)),
+  ]);
+  const results = snapResults;
   for (const res of results) {
     if (res.status !== "fulfilled") continue;
     anyOk = true;
     for (const [sym, snap] of Object.entries(res.value)) {
       const open = snap.dailyBar?.o;
-      const prevClose = snap.prevDailyBar?.c;
+      // Tape close first; IEX's own prior bar only if the tape had none.
+      const prevClose = sipPrev[sym] ?? snap.prevDailyBar?.c;
       const price = snap.latestTrade?.p ?? snap.dailyBar?.c ?? null;
       const barDay = snap.dailyBar?.t?.slice(0, 10) ?? null;
       // "Today" is not enough: a single early IEX print (FBDT traded 313
@@ -133,11 +147,12 @@ export default async (req: Request) => {
     try {
       const sip = await fetchDelayedSipToday(stale);
       for (const [sym, bar] of Object.entries(sip)) {
-        if (!bar.prevClose || bar.prevClose <= 0) continue; // no base, no honest percentage
+        const base = sipPrev[sym] ?? bar.prevClose;
+        if (!base || base <= 0) continue; // no base, no honest percentage
         out[sym] = {
           price: bar.price,
-          changePct: (bar.price - bar.prevClose) / bar.prevClose,
-          prevClose: bar.prevClose,
+          changePct: (bar.price - base) / base,
+          prevClose: base,
           open: bar.open,
           delayed: true,
         };
