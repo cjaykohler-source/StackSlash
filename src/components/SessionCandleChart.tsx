@@ -344,6 +344,9 @@ export function SessionCandleChart({
 
   const hp = hover != null ? pts[hover] : null;
   const change = (p: number | null) => (p != null && prevClose ? fmtPct(p / prevClose - 1) : "—");
+  /** up / down / flat against the prior close, for colouring the tooltip. */
+  const chgDir = (p: number | null) =>
+    p == null || !prevClose || p === prevClose ? "flat" : p > prevClose ? "up" : "down";
   // "up" when this session's value beats the prior one, "down" when worse.
   const cmp = (a: number | null, b: number | null | undefined) =>
     a == null || b == null || a === b ? "" : a > b ? "up" : "down";
@@ -488,24 +491,40 @@ export function SessionCandleChart({
         <span className="cc-key cc-key-ext">extended hours (compressed)</span>
       </div>
       {hp && hover != null && (
-        <div className="candle-tip" style={{ left: Math.min(Math.max(geo[hover].cx + 12, 0), width - 190) }}>
-          <div className="candle-tip-when">{etTimeLabel(hp.ms)}{k > 1 ? ` · ${k}-min` : ""}</div>
-          <div>O {fmtPrice(hp.o)} · H {fmtPrice(hp.h)}</div>
-          <div>L {fmtPrice(hp.l)} · C {fmtPrice(hp.c)}</div>
-          <div>vs prev close {change(hp.c)}</div>
-          <div>
-            Vol {fmtVol(hp.v)}
-            {/* `typical` is a REGULAR-session rate (a typical day spread over
-                390 minutes), so on an extended-hours bar it is a cross-scale
-                comparison and has to say so. Pre-market volume against a
-                normal session minute is the number a pre-open read wants --
-                worth keeping, not worth showing unlabelled. */}
-            {avgPerCandle != null
-              ? ` · ${(hp.v / avgPerCandle).toFixed(1)}× ${hp.ext ? "a regular-session " + k + "-min" : "typical"}`
-              : ""}
-            {hp.n != null ? ` · ${hp.n.toLocaleString()} trades` : ""}
+        <div className="candle-tip" style={{ left: Math.min(Math.max(geo[hover].cx + 12, 0), width - 230) }}>
+          <div className="candle-tip-when">
+            {etTimeLabel(hp.ms)}
+            {k > 1 ? ` · ${k}-min` : ""}
+            {hp.ext ? " · extended" : ""}
           </div>
-          {vwap[hover] != null && <div>VWAP {fmtPrice(vwap[hover]!)}</div>}
+          {/* The close and its move off the prior close are what the eye is
+              looking for; everything else is supporting detail. */}
+          <div className="candle-tip-hero">
+            <span className="candle-tip-last">{fmtPrice(hp.c)}</span>
+            <span className={`candle-tip-chg ${chgDir(hp.c)}`}>{change(hp.c)}</span>
+          </div>
+          {/* Two label/value pairs per row, values right-aligned and tabular,
+              so the digits line up in a column and can be read at a glance
+              instead of parsed out of a run-on sentence. */}
+          <dl className="candle-tip-grid">
+            <dt>Open</dt><dd>{fmtPrice(hp.o)}</dd>
+            <dt>High</dt><dd>{fmtPrice(hp.h)}</dd>
+            <dt>Low</dt><dd>{fmtPrice(hp.l)}</dd>
+            {vwap[hover] != null ? <><dt>VWAP</dt><dd>{fmtPrice(vwap[hover]!)}</dd></> : <><dt /><dd /></>}
+          </dl>
+          <dl className="candle-tip-grid">
+            <dt>Vol</dt><dd>{fmtVol(hp.v)}</dd>
+            {hp.n != null ? <><dt>Trades</dt><dd>{hp.n.toLocaleString()}</dd></> : <><dt /><dd /></>}
+          </dl>
+          {/* `typical` is a REGULAR-session rate (a typical day spread over
+              390 minutes), so on an extended-hours bar it is a cross-scale
+              comparison and has to say so. On its own line now rather than
+              wrapping mid-sentence with a dangling separator. */}
+          {avgPerCandle != null && (
+            <div className="candle-tip-note">
+              {(hp.v / avgPerCandle).toFixed(1)}× {hp.ext ? `a regular-session ${k}-min` : "typical"}
+            </div>
+          )}
         </div>
       )}
     </div>
