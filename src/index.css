@@ -2369,8 +2369,24 @@ h1 .quote-tag {
   align-items: center;
   gap: 8px;
 }
-.candle-scope button {
+.candle-style button {
   font-size: 0.78rem;
+}
+/* Basic view: the closes as one line, coloured against the prior close. */
+.cc-line {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.cc-line.up {
+  stroke: var(--brand-green);
+}
+.cc-line.down {
+  stroke: var(--red);
+}
+.cc-line.flat {
+  stroke: var(--text-dim);
 }
 .interval-slot:empty {
   display: none;
