@@ -399,9 +399,11 @@ export function SymbolDetail() {
 /** Prominent last-price + intraday change for the symbol header. */
 function SymbolQuote({ quote }: { quote: Quote | undefined }) {
   if (!quote) return <div className="symbol-quote symbol-quote-empty">—</div>;
-  const { price, changePct } = quote;
-  const open = changePct > -1 ? price / (1 + changePct) : price;
-  const abs = price - open;
+  const { price, changePct, prevClose } = quote;
+  // The dollar change comes from the previous close directly. It used to be
+  // reconstructed as price / (1 + changePct), which silently inherited
+  // whatever base changePct happened to use.
+  const abs = price - prevClose;
   const pctRounded = Number((changePct * 100).toFixed(2));
   const dir = pctRounded > 0 ? "up" : pctRounded < 0 ? "down" : "flat";
   const arrow = dir === "up" ? "▲" : dir === "down" ? "▼" : "";
