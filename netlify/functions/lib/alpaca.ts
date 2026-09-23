@@ -228,19 +228,24 @@ export async function fetchIntradayBarsRange(
  */
 export async function fetchDelayedSipToday(
   symbols: string[],
-): Promise<Record<string, { open: number; price: number; asOf: string }>> {
+): Promise<Record<string, { open: number; price: number; asOf: string; prevClose: number | null }>> {
   if (!symbols.length) return {};
-  // ET session date; the daily bar's own timestamp is midnight ET (04:00Z).
-  const todayEt = new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10);
-  const out: Record<string, { open: number; price: number; asOf: string }> = {};
+  const todayEt = etDateString(Date.now());
+  // Ten calendar days back, not just today: the day's change is measured
+  // from the PREVIOUS close, which needs the prior session's bar. fetchBars
+  // sets adjustment=split, so that close is already restated into today's
+  // terms and a split ex-date cannot corrupt the comparison.
+  const start = new Date(Date.now() - 10 * 86_400_000).toISOString();
+  const out: Record<string, { open: number; price: number; asOf: string; prevClose: number | null }> = {};
   const CHUNK = 100;
   for (let i = 0; i < symbols.length; i += CHUNK) {
     const chunk = symbols.slice(i, i + CHUNK);
-    const { bars } = await fetchBars(chunk, "1Day", todayEt, new Date().toISOString(), undefined, "sip");
+    const { bars } = await fetchBars(chunk, "1Day", start, new Date().toISOString(), undefined, "sip");
     for (const [sym, rows] of Object.entries(bars)) {
       const bar = rows?.[rows.length - 1];
-      if (!bar || bar.t.slice(0, 10) !== todayEt || !(bar.o > 0)) continue;
-      out[sym] = { open: bar.o, price: bar.c, asOf: bar.t };
+      if (!bar || etDateString(Date.parse(bar.t)) !== todayEt || !(bar.o > 0)) continue;
+      const prev = rows[rows.length - 2];
+      out[sym] = { open: bar.o, price: bar.c, asOf: bar.t, prevClose: prev?.c ?? null };
     }
   }
   return out;
@@ -320,10 +325,24 @@ export async function fetchSipBars(
   return out;
 }
 
-/** Latest trade/quote snapshot for a batch of symbols — used by intraday-scan. */
+/**
+ * Latest trade/quote snapshot for a batch of symbols — used by intraday-scan
+ * and by `quotes`, which needs `prevDailyBar` to measure the day's change
+ * from the previous close.
+ *
+ * Caveat: snapshot bars are as-traded. On a split ex-date `prevDailyBar.c`
+ * is in pre-split terms and a change measured against it is wrong by the
+ * split ratio. `data-integrity-check`'s `split_scale_break_30d` catches the
+ * stored series; this one call cannot be adjusted, so callers that care
+ * should prefer a split-adjusted source (fetchBars sets adjustment=split).
+ */
 export async function fetchSnapshots(
   symbols: string[],
-): Promise<Record<string, { latestTrade: { p: number; t: string } | null; dailyBar: DailyBar | null }>> {
+): Promise<Record<string, {
+  latestTrade: { p: number; t: string } | null;
+  dailyBar: DailyBar | null;
+  prevDailyBar: DailyBar | null;
+}>> {
   const params = new URLSearchParams({ symbols: symbols.join(","), feed: "iex" });
   const res = await fetch(`${dataBaseUrl()}/v2/stocks/snapshots?${params.toString()}`, {
     headers: authHeaders(),
@@ -335,12 +354,20 @@ export async function fetchSnapshots(
 
   const json = (await res.json()) as Record<
     string,
-    { latestTrade?: { p: number; t: string }; dailyBar?: DailyBar }
+    { latestTrade?: { p: number; t: string }; dailyBar?: DailyBar; prevDailyBar?: DailyBar }
   >;
 
-  const out: Record<string, { latestTrade: { p: number; t: string } | null; dailyBar: DailyBar | null }> = {};
+  const out: Record<string, {
+    latestTrade: { p: number; t: string } | null;
+    dailyBar: DailyBar | null;
+    prevDailyBar: DailyBar | null;
+  }> = {};
   for (const [sym, snap] of Object.entries(json)) {
-    out[sym] = { latestTrade: snap.latestTrade ?? null, dailyBar: snap.dailyBar ?? null };
+    out[sym] = {
+      latestTrade: snap.latestTrade ?? null,
+      dailyBar: snap.dailyBar ?? null,
+      prevDailyBar: snap.prevDailyBar ?? null,
+    };
   }
   return out;
 }

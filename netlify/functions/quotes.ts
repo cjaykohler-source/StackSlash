@@ -6,10 +6,21 @@ import { fetchSnapshots, fetchDelayedSipToday } from "./lib/alpaca";
  * GET /.netlify/functions/quotes?symbols=AAPL,MSFT,NVDA
  *   -> { "AAPL": { "price": 14.89, "changePct": -0.003 }, ... }
  *
- * `changePct` is measured from today's official open (Alpaca snapshot
- * `dailyBar.o`), i.e. the same "since the open" delta a broker app shows
- * during the session. Outside market hours the snapshot's dailyBar is
- * the last session's, so this reports that session's open->close move.
+ * `changePct` is measured from the PREVIOUS CLOSE — the day's change, as
+ * every broker, quote site and this app's own charts mean it.
+ *
+ * It used to be measured from today's open, labelled "today". On a gap day
+ * that inverts the headline: on 2026-09-23 NCPL closed 0.97, opened ~1.29
+ * and traded 1.18, so the header read -8.3% while the stock was up 21.6%
+ * on the day. It also contradicted the chart directly beneath it, whose
+ * prior-close line, `Gap` stat and `vs prev close` tooltip all measure
+ * from the previous close. For a tool whose whole purpose is overnight
+ * gaps and catalysts, a metric that zeroes the gap at 9:30 is the wrong
+ * one. `open` is still returned so a caller can show the intraday move
+ * separately.
+ *
+ * Outside market hours the snapshot's dailyBar is the last session's, so
+ * this reports that session's prev-close->close move.
  *
  * Snapshots are IEX (the only real-time feed this plan has). For a thin
  * name IEX can see nothing all session while the tape trades: the
@@ -53,7 +64,12 @@ export default async (req: Request) => {
 
   const out: Record<string, {
     price: number;
+    /** fraction, from the previous close */
     changePct: number;
+    /** the previous close `changePct` is measured from */
+    prevClose: number;
+    /** today's official open, for callers that also want the intraday move */
+    open?: number;
     delayed?: boolean;
     /** no trade today on either feed: this is the last session's close */
     stale?: boolean;
@@ -74,7 +90,9 @@ export default async (req: Request) => {
   // short enough that a stalled IEX view can't sit wrong for long. The
   // tape itself is ~15 min behind, so anything under that is pointless.
   const STALE_TRADE_MS = 20 * 60_000;
-  const staleSnapshot = new Map<string, { price: number; changePct: number; asOf: string }>();
+  const staleSnapshot = new Map<string, {
+    price: number; changePct: number; prevClose: number; open?: number; asOf: string;
+  }>();
   let anyOk = false;
   const results = await Promise.allSettled(chunks.map((c) => fetchSnapshots(c)));
   for (const res of results) {
@@ -82,6 +100,7 @@ export default async (req: Request) => {
     anyOk = true;
     for (const [sym, snap] of Object.entries(res.value)) {
       const open = snap.dailyBar?.o;
+      const prevClose = snap.prevDailyBar?.c;
       const price = snap.latestTrade?.p ?? snap.dailyBar?.c ?? null;
       const barDay = snap.dailyBar?.t?.slice(0, 10) ?? null;
       // "Today" is not enough: a single early IEX print (FBDT traded 313
@@ -95,12 +114,16 @@ export default async (req: Request) => {
         // Keep the last session as a fallback-of-the-fallback: a name that
         // has not traded on any feed today (halted, or simply nothing yet)
         // is better shown as "$0.09 · Sep 17 close" than as a blank "—".
-        if (open && price && open > 0 && barDay) {
-          staleSnapshot.set(sym, { price, changePct: (price - open) / open, asOf: barDay });
+        if (prevClose && price && prevClose > 0 && barDay) {
+          staleSnapshot.set(sym, {
+            price, changePct: (price - prevClose) / prevClose, prevClose, open, asOf: barDay,
+          });
         }
         continue;
       }
-      if (open && price && open > 0) out[sym] = { price, changePct: (price - open) / open };
+      if (prevClose && price && prevClose > 0) {
+        out[sym] = { price, changePct: (price - prevClose) / prevClose, prevClose, open };
+      }
     }
   }
   if (!anyOk) return json({ error: "all snapshot chunks failed" }, 502);
@@ -110,7 +133,14 @@ export default async (req: Request) => {
     try {
       const sip = await fetchDelayedSipToday(stale);
       for (const [sym, bar] of Object.entries(sip)) {
-        out[sym] = { price: bar.price, changePct: (bar.price - bar.open) / bar.open, delayed: true };
+        if (!bar.prevClose || bar.prevClose <= 0) continue; // no base, no honest percentage
+        out[sym] = {
+          price: bar.price,
+          changePct: (bar.price - bar.prevClose) / bar.prevClose,
+          prevClose: bar.prevClose,
+          open: bar.open,
+          delayed: true,
+        };
       }
     } catch {
       /* tape unavailable — fall through to the last-close labelling below */

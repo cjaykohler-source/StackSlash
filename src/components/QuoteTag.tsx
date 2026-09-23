@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 
 export interface Quote {
   price: number;
-  changePct: number; // fraction, measured from today's open
+  changePct: number; // fraction, measured from the PREVIOUS CLOSE — the day's change
+  /** the previous close changePct is measured from */
+  prevClose: number;
+  /** today's official open, for the intraday move alongside the day's */
+  open?: number;
   /** from the consolidated tape, ~15 min behind: IEX had no print today */
   delayed?: boolean;
   /** no trade today on any feed — price/change are the session in `asOf` */
