@@ -2321,7 +2321,9 @@ h1 .quote-tag {
 .chart-with-meter {
   display: flex;
   gap: 12px;
-  align-items: flex-start;
+  /* stretch, not flex-start: the meter matches the chart's height instead of
+     carrying a copy of the chart's pane constant. */
+  align-items: stretch;
 }
 .chart-body {
   flex: 1;
@@ -2381,28 +2383,17 @@ h1 .quote-tag {
 .vm-track {
   fill: color-mix(in srgb, var(--border) 45%, transparent);
 }
-.vm-fill.under {
-  fill: var(--text-dim);
-  fill-opacity: 0.55;
+.vm-fill.low {
+  fill: var(--red);
+  fill-opacity: 0.8;
 }
-.vm-fill.over {
-  fill: var(--brand-green);
-  fill-opacity: 0.75;
-}
-.vm-fill.warm {
+.vm-fill.mid {
   fill: #f5b942;
   fill-opacity: 0.85;
 }
-.vm-fill.hot {
-  fill: var(--red);
-  fill-opacity: 0.85;
-}
-.vm-overflow {
-  fill: none;
-  stroke: var(--text);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.vm-fill.high {
+  fill: var(--brand-green);
+  fill-opacity: 0.8;
 }
 .vm-line {
   stroke: var(--text-dim);
@@ -2423,17 +2414,14 @@ h1 .quote-tag {
   fill: #f5b942;
   font-weight: 600;
 }
-.volume-meter-mult.under {
-  color: var(--text-dim);
+.volume-meter-mult.low {
+  color: var(--red);
 }
-.volume-meter-mult.over {
-  color: var(--brand-green);
-}
-.volume-meter-mult.warm {
+.volume-meter-mult.mid {
   color: #f5b942;
 }
-.volume-meter-mult.hot {
-  color: var(--red);
+.volume-meter-mult.high {
+  color: var(--brand-green);
 }
 @media (max-width: 900px) {
   .chart-with-meter {
@@ -2442,7 +2430,6 @@ h1 .quote-tag {
   .volume-meter {
     width: 100%;
     flex-basis: auto;
-    height: auto !important;
   }
 }
 
