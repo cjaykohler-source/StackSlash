@@ -2363,6 +2363,15 @@ h1 .quote-tag {
 
 /* Candle-size picker, riding the controls row right of "Since 2016". Sized
    like the range buttons it sits beside. */
+/* Hours toggle + candle size share the controls slot. */
+.interval-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.candle-scope button {
+  font-size: 0.78rem;
+}
 .interval-slot:empty {
   display: none;
 }

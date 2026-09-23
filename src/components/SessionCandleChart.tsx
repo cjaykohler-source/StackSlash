@@ -128,6 +128,26 @@ export function SessionCandleChart({
   controlsTarget = null,
 }: Props) {
   const height = HEIGHT;
+  // Thin names print sporadically before the open, which makes the extended
+  // part of the session look like noise. "Regular" gives the 9:30-4:00 view
+  // the chart had before extended hours came back. Remembered per viewer;
+  // storage can throw in a private window, so every access is guarded.
+  const [extended, setExtended] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("riot.chart.extended") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const chooseScope = (next: boolean) => {
+    setExtended(next);
+    setHover(null);
+    try {
+      localStorage.setItem("riot.chart.extended", next ? "1" : "0");
+    } catch {
+      /* private window / blocked storage: the choice just won't persist */
+    }
+  };
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<number | null>(null);
@@ -160,8 +180,8 @@ export function SessionCandleChart({
     // the compressed part of the axis (an extended hour is 1/3 the width of a
     // regular one), shaded, and excluded from VWAP and the OHLC stats -- those
     // stay regular-session, because a 4am print is not the day's open.
-    const raw = all;
     const regular = all.filter((p) => isRegular(p.ms));
+    const raw = extended ? all : regular;
     // Minutes since 9:30, from REAL elapsed time against the session's own
     // 9:30 ET. It cannot come from the axis: `toX` returns layout units, and
     // an extended hour is 1/3 of one, so `(toX - open) * 60` equals minutes
@@ -217,7 +237,8 @@ export function SessionCandleChart({
           n: hasN ? n : null,
         };
       });
-    const [d0, d1] = axis.domain;
+    const d0 = extended ? axis.domain[0] : axis.open;
+    const d1 = extended ? axis.domain[1] : axis.close;
     const plotW = width - LEFT - RIGHT;
     const sx = (u: number) => LEFT + ((u - d0) / (d1 - d0)) * plotW;
     // Every hour 4a-8p, plus the 9:30 open -- thinned so labels cannot
@@ -228,7 +249,10 @@ export function SessionCandleChart({
     const MIN_TICK_GAP_PX = 42;
     const toPx = (u: number) => ((u - d0) / (d1 - d0)) * plotW;
     const ticks: number[] = [];
-    for (const u of [...axis.ticks, axis.open].sort((a, b) => a - b)) {
+    const tickPool = extended
+      ? [...axis.ticks, axis.open]
+      : [axis.open, ...axis.ticks.filter((u) => u > axis.open && u <= axis.close)];
+    for (const u of tickPool.sort((a, b) => a - b)) {
       const last = ticks[ticks.length - 1];
       if (last != null && toPx(u) - toPx(last) < MIN_TICK_GAP_PX) {
         if (u === axis.open) ticks.pop();
@@ -309,13 +333,17 @@ export function SessionCandleChart({
 
     return { pts, k, auto, sx, ticks, tickLabels, geo, frameH, volH, volBase, py, maxV, vwap, yTicks, stats, lo, hi, avgPerCandle,
              d0, d1, axisOpen: axis.open, axisClose: axis.close };
-  }, [bars, prevClose, width, choice, live, typicalDailyVolume]);
+  }, [bars, prevClose, width, choice, live, typicalDailyVolume, extended]);
 
   if (!bars.length) return null;
   const { pts, k, auto, sx, ticks, tickLabels, geo, volH, volBase, py, maxV, vwap, yTicks, stats, avgPerCandle,
           axisOpen, axisClose } = m;
   if (!pts.length) {
-    return <p className="empty-state chart-empty-state">No trades this day.</p>;
+    return (
+      <p className="empty-state chart-empty-state">
+        {extended ? "No trades this day." : "No regular-session trades this day (extended hours only)."}
+      </p>
+    );
   }
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -375,10 +403,32 @@ export function SessionCandleChart({
     </select>
   );
 
+  const controls = (
+    <>
+      <div className="range-toggle candle-scope" role="group" aria-label="Session hours">
+        <button
+          className={extended ? "active" : ""}
+          onClick={() => chooseScope(true)}
+          title="4:00a-8:00p ET. Extended hours are compressed to a third of the width and shaded."
+        >
+          Extended
+        </button>
+        <button
+          className={!extended ? "active" : ""}
+          onClick={() => chooseScope(false)}
+          title="Regular session only, 9:30a-4:00p ET. Thin names print sporadically before the open; this drops that noise."
+        >
+          Regular
+        </button>
+      </div>
+      {intervalPicker}
+    </>
+  );
+
   return (
     <div className="candle-chart" ref={wrapRef}>
-      {/* Candle size sits in the page's controls row, right of the range buttons. */}
-      {controlsTarget ? createPortal(intervalPicker, controlsTarget) : intervalPicker}
+      {/* Hours + candle size sit in the page's controls row, right of the range buttons. */}
+      {controlsTarget ? createPortal(controls, controlsTarget) : controls}
       {portalStats(statsTarget,
       <div className="candle-stats">
         {/* Green = better than the prior session, red = worse: prices vs the
@@ -411,12 +461,15 @@ export function SessionCandleChart({
       <svg width={width} height={height} onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img"
            aria-label="Session candlestick chart with volume">
         {/* extended-hours shading: 4:00-9:30a and 4:00-8:00p ET */}
-        <rect x={sx(m.d0)} y={TOP} width={sx(axisOpen) - sx(m.d0)} height={volBase - TOP} className="cc-ext" />
-        <rect x={sx(axisClose)} y={TOP} width={sx(m.d1) - sx(axisClose)} height={volBase - TOP} className="cc-ext" />
-
-        {[axisOpen, axisClose].map((u) => (
-          <line key={u} x1={sx(u)} x2={sx(u)} y1={TOP} y2={volBase} className="cc-divider" />
-        ))}
+        {extended && (
+          <>
+            <rect x={sx(m.d0)} y={TOP} width={sx(axisOpen) - sx(m.d0)} height={volBase - TOP} className="cc-ext" />
+            <rect x={sx(axisClose)} y={TOP} width={sx(m.d1) - sx(axisClose)} height={volBase - TOP} className="cc-ext" />
+            {[axisOpen, axisClose].map((u) => (
+              <line key={u} x1={sx(u)} x2={sx(u)} y1={TOP} y2={volBase} className="cc-divider" />
+            ))}
+          </>
+        )}
 
         {yTicks.map((v) => (
           <g key={v}>
@@ -488,7 +541,9 @@ export function SessionCandleChart({
           </span>
         )}
         {prevClose != null && <span className="cc-key cc-key-prev">prior close {fmtPrice(prevClose)}</span>}
-        <span className="cc-key cc-key-ext">extended hours (compressed)</span>
+        {extended
+          ? <span className="cc-key cc-key-ext">extended hours (compressed)</span>
+          : <span className="cc-legend-note">regular session 9:30a–4:00p ET</span>}
       </div>
       {hp && hover != null && (
         <div className="candle-tip" style={{ left: Math.min(Math.max(geo[hover].cx + 12, 0), width - 230) }}>
