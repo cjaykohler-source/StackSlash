@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { FRAME_H } from "./SessionCandleChart";
 
 interface Props {
   /** The session's total volume so far (all bars, extended hours included). */
@@ -28,13 +27,19 @@ const fmtVol = (v: number) =>
   v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}K` : `${Math.round(v)}`;
 
 /**
- * Session volume against a typical day, as one vertical bar the height of
- * the candle pane. The scale runs 0 to 4x the typical (median) day of the
+ * Session volume against a typical day, as one vertical bar that stretches
+ * to the height of the chart beside it. The scale runs 0 to 4x the typical (median) day of the
  * prior 20 sessions; 1x sits a quarter of the way up, so crossing it means
  * a full normal day has already traded, and the bar keeps climbing through
  * 2x/3x/4x. At 4x the scale doubles to 0-8x (lines at 1/2/4/6/8x) so the
- * bar has room to keep growing; past 8x it pins to the top and the label
- * carries the real multiple.
+ * bar has room to keep growing; past 8x it pins to the top and the header's
+ * multiple carries the real figure.
+ *
+ * Colour is a magnitude scale, not a verdict: red below 1x (less than a
+ * normal day has traded), amber past 1x, green from 2x. Note this is not
+ * the risk-flag convention -- a very heavy day is not automatically good,
+ * and this project's own finding is that >=25x is the worst entry
+ * condition in the band.
  *
  * Volume is the whole session including extended hours, which is how the
  * daily bars it is compared with are built (SNAP 09-17: 49.70M daily vs
@@ -61,7 +66,8 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
   const shown = Math.min(x, maxX);
   const fillH = (shown / maxX) * trackH;
   const yOf = (mult: number) => TRACK_TOP + trackH - (mult / maxX) * trackH;
-  const tone = x >= 3 ? "hot" : x >= 2 ? "warm" : x >= 1 ? "over" : "under";
+  // red under a typical day, amber past it, green once a second one trades.
+  const tone = x >= 2 ? "high" : x >= 1 ? "mid" : "low";
   const dateLabel = sessionDate
     ? new Date(`${sessionDate}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric" })
     : null;
@@ -69,7 +75,6 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
   return (
     <div
       className="volume-meter"
-      style={{ height: FRAME_H }}
       aria-label="Session volume versus a typical day"
       title={`${dateLabel ?? "Session"}${live ? " so far" : ""}: volume against the median day of the prior 20 sessions (1×).`}
     >
@@ -95,9 +100,6 @@ export function VolumeMeter({ volume, typical, sessionDate, live }: Props) {
         {ready && fillH > 0 && (
           <rect x={0} y={TRACK_TOP + trackH - fillH} width={BAR_W} height={fillH} rx={4} className={`vm-fill ${tone}`} />
         )}
-        {/* past the top of the scale: a cap marker; the header has the real figure */}
-        {ready && x > maxX && <path d={`M4,${TRACK_TOP + 10} L${BAR_W / 2},${TRACK_TOP + 2} L${BAR_W - 4},${TRACK_TOP + 10}`} className="vm-overflow" />}
-
         {/* scale lines; 1x is the one that matters most */}
         {lines.map((m) => (
           <g key={m}>
