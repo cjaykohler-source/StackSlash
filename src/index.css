@@ -2425,8 +2425,22 @@ h1 .quote-tag {
 .volume-meter-track {
   flex: 1;
   min-height: 0;
+  /* Anchor for the SVG below. */
+  position: relative;
 }
 .volume-meter-svg {
+  /* Taken OUT of flow. The track measures itself with a ResizeObserver and
+     the SVG is rendered at that pixel height, so while the SVG was in flow
+     its height fed back into the meter's own intrinsic height: the meter
+     grew the flex row past the chart, the observer measured the taller
+     track, and the pair latched one footer-height too tall (measured: 87px
+     with the "0-8x scale" footer showing). Absolute positioning breaks the
+     loop -- the track's height now comes only from the flex row, and the
+     observer just reports it. Measured 0px difference after. */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: block;
   overflow: visible;
 }
