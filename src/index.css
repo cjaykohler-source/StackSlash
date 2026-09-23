@@ -1032,21 +1032,78 @@ body {
 .candle-tip {
   position: absolute;
   top: 44px;
-  width: 180px;
+  /* 180px forced "· 1,447 trades" onto its own line behind a dangling
+     separator. Wide enough for two label/value pairs, and nothing wraps. */
+  width: 220px;
   pointer-events: none;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 7px 10px 8px;
   font-size: 0.75rem;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 .candle-tip-when {
   color: var(--text-dim);
-  font-size: 0.72rem;
-  margin-bottom: 2px;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+.candle-tip-hero {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 1px 0 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.candle-tip-last {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.candle-tip-chg {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.candle-tip-chg.up {
+  color: var(--brand-green);
+}
+.candle-tip-chg.down {
+  color: var(--red);
+}
+.candle-tip-chg.flat {
+  color: var(--text-dim);
+}
+/* Two label/value pairs per row; values right-aligned so the digits form
+   a column the eye can run down. */
+.candle-tip-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content 1fr;
+  column-gap: 6px;
+  row-gap: 2px;
+  margin: 0;
+}
+.candle-tip-grid + .candle-tip-grid {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+.candle-tip-grid dt {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+.candle-tip-grid dd {
+  margin: 0;
+  text-align: right;
+}
+.candle-tip-note {
+  margin-top: 5px;
+  color: var(--text-dim);
+  font-size: 0.7rem;
 }
 
 /* Dashboard "today" feed: one open frame, header inside, sized to line
