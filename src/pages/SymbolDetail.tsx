@@ -271,7 +271,9 @@ export function SymbolDetail() {
               </button>
             ))}
           </div>
-          {/* Candle size (Session view only; longer ranges pick their own). */}
+          {/* Session: candle-size picker + Candles/Basic toggle. Other
+              ranges: just the Candles/Basic toggle (they pick their own
+              candle size). */}
           <div className="interval-slot" ref={setIntervalEl} />
           {range === "session" && (
             <div className="session-picker">
@@ -330,6 +332,7 @@ export function SymbolDetail() {
             bars={rangeCandles.bars}
             timeframe={rangeCandles.timeframe}
             statsTarget={statsEl}
+            controlsTarget={intervalEl}
             baseline={baseline}
           />
         )}
