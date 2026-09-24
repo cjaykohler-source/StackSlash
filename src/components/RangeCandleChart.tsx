@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FRAME_H, VOL_SHARE, portalStats } from "./SessionCandleChart";
 import type { VolumeBaseline } from "../lib/volumeBaseline";
 
@@ -31,6 +32,8 @@ interface Props {
    * every volume bar reads as above or below a normal pace.
    */
   baseline?: VolumeBaseline | null;
+  /** Controls row element to render the Candles/Basic toggle into. */
+  controlsTarget?: HTMLElement | null;
 }
 
 const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -152,11 +155,31 @@ function niceStep(span: number, target: number): number {
  * nights, weekends and holidays leave no gaps. Linear or log price scale;
  * Auto goes log when the range spans AUTO_LOG_RATIO x or more.
  */
-export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline = null }: Props) {
+export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline = null, controlsTarget = null }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<number | null>(null);
   const [scale, setScale] = useState<"auto" | "linear" | "log">("auto");
+  // Week through Since 2016 default to Basic: a candle body is barely
+  // visible once hundreds of them are compressed into one view, and at
+  // Since-2016 zoom the wicks are mostly noise. Candles stay one click away.
+  // Stored separately from the Session chart's own toggle (riot.chart.style)
+  // since the sensible default differs by view.
+  const [basic, setBasic] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("riot.chart.style.range") !== "candles";
+    } catch {
+      return true;
+    }
+  });
+  const chooseStyle = (next: boolean) => {
+    setBasic(next);
+    try {
+      localStorage.setItem("riot.chart.style.range", next ? "basic" : "candles");
+    } catch {
+      /* private window / blocked storage: the choice just won't persist */
+    }
+  };
 
   useEffect(() => setHover(null), [bars]);
 
@@ -234,11 +257,17 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline
       change: first && last && first.o ? last.c / first.o - 1 : null,
       volume: pts.reduce((s, p) => s + p.v, 0),
     };
-    return { pts, n, slot, cx, bodyW, py, yTicks, volBase, maxV, ticks, stats, log, autoLog, expected };
+    // Basic view: the closes as one line, same treatment as the Session
+    // chart's Basic mode. Not just cosmetic here -- a candle body all but
+    // disappears once hundreds of bars are compressed into one view.
+    const linePath = pts.map((p, i) => `${i ? "L" : "M"}${cx(i).toFixed(1)},${py(p.c).toFixed(1)}`).join("");
+    const lineDir = n >= 2 ? (pts[n - 1].c >= pts[0].c ? "up" : "down") : "flat";
+
+    return { pts, n, slot, cx, bodyW, py, yTicks, volBase, maxV, ticks, stats, log, autoLog, expected, linePath, lineDir };
   }, [bars, timeframe, width, scale, baseline]);
 
   if (!m.n) return null;
-  const { pts, cx, bodyW, py, yTicks, volBase, maxV, ticks, stats, log, autoLog, expected, slot } = m;
+  const { pts, cx, bodyW, py, yTicks, volBase, maxV, ticks, stats, log, autoLog, expected, slot, linePath, lineDir } = m;
   // Stepped: flat across each candle's slot, stepping between candles, and
   // broken where there isn't a month of history to average.
   const vy = (v: number) => volBase - (v / maxV) * VOL_H;
@@ -258,9 +287,32 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline
   };
   const hp = hover != null ? pts[hover] : null;
   const prevClose = hover != null && hover > 0 ? pts[hover - 1].c : null;
+  const change = (p: number | null) => (p != null && prevClose != null ? fmtPct(p / prevClose - 1) : "—");
+  const chgDir = (p: number | null) =>
+    p == null || prevClose == null || p === prevClose ? "flat" : p > prevClose ? "up" : "down";
+
+  const styleToggle = (
+    <div className="range-toggle candle-style" role="group" aria-label="Chart style">
+      <button
+        className={!basic ? "active" : ""}
+        onClick={() => chooseStyle(false)}
+        title="Candles: open / high / low / close for every bar."
+      >
+        Candles
+      </button>
+      <button
+        className={basic ? "active" : ""}
+        onClick={() => chooseStyle(true)}
+        title="Basic: the closes as one line. Easier to read once many bars are compressed into one view."
+      >
+        Basic
+      </button>
+    </div>
+  );
 
   return (
     <div className="candle-chart" ref={wrapRef}>
+      {controlsTarget ? createPortal(styleToggle, controlsTarget) : styleToggle}
       {portalStats(statsTarget,
       <div className="candle-stats">
         <select
@@ -301,16 +353,20 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline
 
         {avgPath && <path d={avgPath} className="cc-vol-avg" />}
 
-        {pts.map((p, i) => {
-          const top = py(Math.max(p.o, p.c));
-          const bodyH = Math.max(1, Math.abs(py(p.o) - py(p.c)));
-          return (
-            <g key={`c${p.ms}`} className={p.c >= p.o ? "cc-up" : "cc-down"}>
-              <line x1={cx(i)} x2={cx(i)} y1={py(p.h)} y2={py(p.l)} />
-              <rect x={cx(i) - bodyW / 2} y={top} width={bodyW} height={bodyH} />
-            </g>
-          );
-        })}
+        {basic ? (
+          <path d={linePath} className={`cc-line ${lineDir}`} />
+        ) : (
+          pts.map((p, i) => {
+            const top = py(Math.max(p.o, p.c));
+            const bodyH = Math.max(1, Math.abs(py(p.o) - py(p.c)));
+            return (
+              <g key={`c${p.ms}`} className={p.c >= p.o ? "cc-up" : "cc-down"}>
+                <line x1={cx(i)} x2={cx(i)} y1={py(p.h)} y2={py(p.l)} />
+                <rect x={cx(i) - bodyW / 2} y={top} width={bodyW} height={bodyH} />
+              </g>
+            );
+          })
+        )}
 
         {ticks.map(({ i, label }) => (
           <text key={i} x={cx(i)} y={HEIGHT - 6} textAnchor="middle" className="cc-label">{label}</text>
@@ -337,15 +393,30 @@ export function RangeCandleChart({ bars, timeframe, statsTarget = null, baseline
         </span>
       </div>
       {hp && hover != null && (
-        <div className="candle-tip" style={{ left: Math.min(Math.max(cx(hover) + 12, 0), width - 190) }}>
+        <div className="candle-tip" style={{ left: Math.min(Math.max(cx(hover) + 12, 0), width - 230) }}>
           <div className="candle-tip-when">{whenLabel(hp.ms, timeframe)}</div>
-          <div>O {fmtPrice(hp.o)} · H {fmtPrice(hp.h)}</div>
-          <div>L {fmtPrice(hp.l)} · C {fmtPrice(hp.c)}</div>
-          {prevClose != null && <div>vs prior candle {fmtPct(hp.c / prevClose - 1)}</div>}
-          <div>
-            Vol {fmtVol(hp.v)}
-            {expected[hover] != null ? ` · ${(hp.v / expected[hover]!).toFixed(1)}× typical` : ""}
+          {/* The close and its move off the prior candle are what the eye is
+              looking for; everything else is supporting detail. Same
+              hierarchy as the Session chart's tooltip (#212). */}
+          <div className="candle-tip-hero">
+            <span className="candle-tip-last">{fmtPrice(hp.c)}</span>
+            <span className={`candle-tip-chg ${chgDir(hp.c)}`}>{change(hp.c)}</span>
           </div>
+          <dl className="candle-tip-grid">
+            <dt>Open</dt><dd>{fmtPrice(hp.o)}</dd>
+            <dt>High</dt><dd>{fmtPrice(hp.h)}</dd>
+            <dt>Low</dt><dd>{fmtPrice(hp.l)}</dd>
+            <dt />
+            <dd />
+          </dl>
+          <dl className="candle-tip-grid">
+            <dt>Vol</dt><dd>{fmtVol(hp.v)}</dd>
+            <dt />
+            <dd />
+          </dl>
+          {expected[hover] != null && (
+            <div className="candle-tip-note">{(hp.v / expected[hover]!).toFixed(1)}× typical</div>
+          )}
         </div>
       )}
     </div>
