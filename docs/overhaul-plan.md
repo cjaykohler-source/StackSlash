@@ -83,6 +83,25 @@ homework, which means there is no need to pay the opening spread.
 
 ---
 
+## Status note — 2026-09-24
+
+Stage 3's inputs now exist. The pre-open report needs "overnight 8-Ks,
+pre-market gap and pre-market volume", and **pre-market was invisible
+until 2026-09-22**: `session-bars` gated its delayed-tape fallback to
+regular hours, and that gate was additionally wrong under EST for five
+months a year. Both fixed; the window is 4:00a-8:05p ET in real ET
+wall-clock, and the Session chart draws extended hours again.
+
+The constraint to design Stage 3 around: **extended-hours data is ~16
+minutes delayed and cannot be made live on this plan.** IEX is the
+real-time feed and is near-blind on thin sub-$5 names outside regular
+hours; SIP sees them and the free tier refuses anything newer than 15
+minutes. A pre-open report is the one product where that does not matter
+-- it is written before the open -- but nothing downstream should treat
+those bars as current.
+
+---
+
 ## Phase A — The holdout test (~5h) — GATES THE ARCHITECTURE
 
 **Why this is first.** The architecture above concentrates everything on

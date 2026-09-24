@@ -694,7 +694,37 @@ for by a deliberate, documented change.
 | | reproduces | Layer 1 | Layer 2 |
 |---|---|---|---|
 | `bigmove_study.py` | exact | 7 findings | passes |
-| `catalyst_study.py` | exact | 7 findings, C1 resolved | not built |
+| `catalyst_study.py` | exact | 7 findings, C1 resolved | **not built** |
+| `growth_study.py` | n/a (new) | n/a | **built in from run 1** |
+
+`catalyst_study.py` re-reproduced its published numbers on 2026-09-22
+after `build_days` gained additive MFE/MAE columns: baseline +1.85% /
+-3.20%, `8k_earnings` excl_flags +4.24% / +0.40%.
+
+### Layer 2 has a better instrument now
+
+`research/growth_study.py` (2026-09-22, `docs/growth-prereg.md`) is the
+first study here written with its negative control from the start rather
+than retrofitted, and it added the thing Layer 2 was always missing: a
+**measured noise floor** rather than a pass/fail on one shuffle.
+
+`--control-reps N` repeats the permutation and prints the distribution of
+the exact statistic the threshold is stated in. On the 8-K 2.02 pool at
+<=$5, the Q4-Q1 net win rate under pure shuffle spans **-7.0 to +8.5pp in
+2016-21** and -3.6 to +4.7pp in 2022+.
+
+Two consequences for this audit:
+
+1. **A single control draw is not a control.** The first run of that
+   study's control produced +5.0pp on shuffled data -- exactly its
+   pre-registered bar -- and that draw was also what exposed a
+   self-referential `create or replace temp table ev as ... from ev`
+   that had silently fanned the rows out. One draw could have been read
+   either as a pass or as a finding.
+2. **Every existing threshold in this project was set against an assumed
+   effect size, not a measured floor.** Phase A's 2.5x, the 5pp bar, and
+   any weight fixed in `selection-logic.md` all qualify. Rebasing them
+   is cheap now and belongs before the next pre-registered run.
 
 ### What this cost the holdout
 
