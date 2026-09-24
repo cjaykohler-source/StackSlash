@@ -98,6 +98,267 @@ so the next attempt doesn't re-discover the same dead ends.
 > and the current operational state. This file is the strategy, the
 > research derivations and the open decisions.
 
+## Session 2026-09-22/24 — the growth null, and the display layer
+
+Read this before every section below it; where they disagree, this wins.
+
+### Why it happened
+
+The session began by executing the previous one's recommended next moves
+-- the unmeasured flag colours, a docstring drift, and the growth study
+-- and then turned into display-layer correctness work the moment a chart
+was actually looked at. **Every research number in this project was
+sound while the page on top of it was showing the wrong sign.**
+
+### The growth question is answered: no
+
+Pre-registered in `docs/growth-prereg.md` **before any return was
+computed**, run by `research/growth_study.py`. Point-in-time revenue
+growth does **not** rank 8-K 2.02 candidates.
+
+| | 2016-21 | 2022+ |
+|---|---|---|
+| Q4-Q1 net win rate | **-0.2pp** | **+1.0pp** |
+| bar: >= 5pp, same sign | no | no |
+| U:D Q4 >= Q1 | no | no |
+
+Win rate is flat across quartiles in both periods (44/46/43/44 and
+35/37/39/36). Secondary S2 asks the same question over all material 8-Ks
+at four times the n and gets the same answer. That closes the last
+genuinely untested direction this project had.
+
+**Two results matter more than the null.**
+
+**1. The measured noise floor, and what it says about thresholds.** 200
+permutations of the feature with returns untouched:
+
+| | p05 | p95 | largest \|draw\| |
+|---|---|---|---|
+| 2016-21 | -7.0pp | **+8.5pp** | 11.9pp |
+| 2022+ | -3.6pp | **+4.7pp** | 7.0pp |
+
+The pre-registered 5pp bar is **inside the noise** in 2016-21 -- a pure
+shuffle clears it about a fifth of the time. The pre-registration's power
+math computed its SE from the pre-floor count of 13,917; the $2.5M floor
+cut the population to 5,251, so the real per-quartile n is 266, not
+~1,050. **The bar was not moved after the fact**; it stands as registered
+with the error recorded. The conclusion is unaffected -- the observed
+differences are near zero, not merely under the bar -- and the
+both-period same-sign condition was doing the real work.
+
+`--control-reps N` is now a reusable instrument: it prints the
+distribution of the exact statistic a threshold is stated in. **No future
+threshold on this pool should be set against an assumed standard error.**
+
+**2. Operating cash flow is a live lead, and is deliberately not
+adopted.** S3 was the only thing that moved: same sign both periods
+(+3.7pp / +8.9pp) and U:D Q4 >= Q1 at both thresholds in both periods.
+Q3 in 2022+ is the only positive-net cell anywhere in the study. Not
+established on three grounds -- its own noise floor is +-12pp in 2016-21
+so the +3.7pp there is zero; coverage is 23%/33% with a clearly worse
+no-data cell (finding C2's failure mode, live); and it is a declared
+secondary the pre-registration committed in advance has no bearing on the
+decision. **It gets its own pre-registration before it touches
+selection.**
+
+### The display layer was wrong in ways no research audit would catch
+
+Five defects, all in what the page showed rather than what the pipeline
+computed. Three were live for months.
+
+- **The headline quote measured the wrong thing.** `changePct` came from
+  today's **open** while being labelled `today`. On a gap day that
+  inverts the sign: NCPL on 2026-09-23 closed 0.97, opened ~1.29 and
+  traded 1.18, so the header read **-8.3% while the stock was up 21.6%**.
+  It also contradicted the chart directly beneath it, whose prior-close
+  line, `Gap` stat and `vs prev close` tooltip all measure from the
+  previous close. Now measured from the previous close (#209).
+- **And then from the wrong feed.** The first fix took the base from the
+  snapshot's `prevDailyBar` -- but snapshots are `feed=iex`, so that is
+  IEX's own daily bar. NCPL's 09-22 close was **0.9405 on IEX against
+  0.97 on the tape**: 3.6pp of headline difference, and the header would
+  still have disagreed with the chart. The base is now SIP (#210).
+- **Pre-market was invisible every morning.** `session-bars` gated its
+  delayed-tape fallback to regular hours. The window is now 4:00a-8:05p
+  ET (#205).
+- **A live DST defect, five months a year.** That gate compared **UTC**
+  hours against fixed 1330/2005 bounds, which only line up with ET under
+  EDT. Under EST it ran 8:30a-3:05p, so the delayed-tape fallback was
+  **off for the last 65 minutes of every regular session**. Now ET
+  wall-clock throughout, via `etTime.ts` (#205).
+- **Two more in `fetchDelayedSipMinutesToday`**, both only reachable once
+  extended hours were served: its bar filter compared a bar's **UTC**
+  date to the session date, silently dropping the 7-8p ET hour under EST;
+  and it passed an **unclamped** end to a SIP request while the
+  neighbouring docstring said clamping is what makes SIP legal on the
+  free plan (#205).
+
+### The charts
+
+- **Pre-market and after-hours are drawn again** (#204). The data was
+  never missing -- `session-candles` had always fetched 04:00-20:00 and
+  the 2026-09-11 change removed only the display. OHLC, VWAP, volume and
+  trades stay regular-session; pre/post volume is shown beside them.
+- **Candles and volume now share one frame** (#208). Two stacked panes
+  spent 149px on a divider and the empty top of each; out of the same
+  704px total, the candle area went 523 -> 672 (+28%) and the volume max
+  bar 139 -> 235 (+69%). `VOL_SHARE` caps the tallest bar at 35% of the
+  frame.
+- **Volume labels moved to the left gutter**, price keeps the right --
+  two units sharing one gutter read as one axis (#208).
+- **The tooltip was rebuilt** (#212). It was five lines of prose in a
+  180px box that wrapped and stranded a separator. Now the close and its
+  move off the prior close are the hero, coloured, with everything else
+  in an aligned label/value grid.
+- **Candles / Basic toggle** (#215). A bar that traded once is a candle
+  with no body, so a thin name's pre-market renders as confetti; Basic
+  draws the closes as one line. Remembered per viewer.
+- **The volume meter** matches the chart's height, lost its overflow
+  caret, and is retoned red < 1x, amber >= 1x, green >= 2x (#211, #213).
+
+### New instrumentation
+
+- **`research/growth_study.py`** -- the M.1 harness, with the negative
+  control built in from its first run rather than retrofitted, a
+  mandatory coverage-bias cell, and `--control-reps N` for the noise
+  floor.
+- **`catalyst_study.py` MFE/MAE columns** (`mfe{h}`/`mae{h}` and the
+  `n` variants), additive, for U:D. The study was re-run afterwards and
+  still reproduces its published numbers exactly: baseline +1.85% /
+  -3.20%, `8k_earnings` excl_flags +4.24% / +0.40%.
+- **`fetchSipPrevCloses`** -- the tape's previous close, memoised per ET
+  date, split-adjusted by `fetchBars`.
+
+### Four regressions shipped and then fixed in-session
+
+Recorded because the pattern is the lesson, not the individual bugs.
+
+| shipped | broke | caught by | fixed |
+|---|---|---|---|
+| #204 extended hours | candle placement: `mods` used axis **layout units** as minutes, valid only inside the regular session. 4:00a read as 110 minutes before the open, not 330; the anchor landed at 5:50 AM; error grew to 0.89 units | the user, from a screenshot | #207 |
+| #209 prev-close basis | took it from IEX, not the tape | verifying the live endpoint against `session-candles` | #210 |
+| #211 meter height | a `ResizeObserver` feedback loop latched the meter 87px taller than the chart | the user, from a screenshot | #213 |
+| #214 hours toggle | misread the ask -- the toggle wanted was between chart styles | the user | #215 |
+
+**#204 is the instructive one.** Its verification checked the axis
+mapping and the OHLC guards, and both were genuinely fine. It never
+checked the *placement pipeline* that turns a bar into an x coordinate --
+the axis was right, the thing feeding it was not.
+
+**#213 is the second.** The obvious check -- comparing `.chart-body` to
+`.volume-meter` -- reports 0px difference in **both** the broken and
+fixed cases, because `.chart-body` is `flex: 1` and stretches with the
+row. Only comparing the chart *content* shows the gap.
+
+### Open items — the consolidated list (2026-09-24)
+
+This supersedes every earlier "Still open" / "Open items" list in this
+file. Nothing here is started.
+
+**Research — audit debt**
+
+1. **Layer 3 has not started** for either study: no independent
+   reimplementation of `bigmove_study.py` or `catalyst_study.py`. The
+   anti-anchoring rule and the disagreement protocol are already written
+   down in `docs/research-audit-plan.md`.
+2. **`catalyst_study.py` has no negative controls** (Layer 2).
+   `growth_study.py` now has the pattern to copy, including
+   `--control-reps`.
+3. **Unaudited entirely**: `daily_trigger_study.py`, `schema_lab.py`,
+   `tradingCosts.ts`, `backtest-triggers.ts`.
+4. **`bigmove_study.py` Layer 1 findings still unresolved**: F1 (the 8-K
+   window is 5 days in the study, 1 session in production), F2
+   (`dollar20` includes the current day, biasing the floor filter toward
+   candidates), F3 (`f_offer` lumps registration with pricing, and
+   `selection-logic.md` inherits that in a hard exclusion), F6
+   (survivorship claimed but unverified), F7 (ASOF join direction needs a
+   hand-checked runtime example).
+5. **`catalyst_study.py` C2 unresolved**: unknown fundamentals are
+   `coalesce(..., false)` and so read as verified-clean in `excl_flags`.
+   Report how many rows are unknowns rather than clean.
+6. **Every threshold on the 8-K pool needs rebasing against a measured
+   noise floor**, not an assumed SE. The instrument exists now.
+
+**Research — open questions**
+
+7. **Operating cash flow needs its own pre-registration.** Fix coverage
+   first (23%/33%; annual `NetCashProvidedByUsedInOperatingActivities`
+   would lift it materially), and size the quartiles against a measured
+   floor.
+8. **The $5-$10 holdout is partly compromised** -- audit runs at the $10
+   default before `--max-price` existed make the range inferable by
+   subtraction, and it is already known that widening the band dilutes
+   the catalyst edge. **Phase A must be re-scoped and re-pre-registered
+   around `8k_2.02` and U:D, not `score>=3` and `abs10`.**
+9. **M.3** -- the real Tier A/B/C pool size per session at <=$5, by
+   period. Determines whether `limit` is a cut or the whole pool.
+10. **M.4** -- is `8k_any_quiet` robust? It is the only above-baseline
+    U:D result and carries the most design weight of any single finding.
+
+**Build — the shortlist and the stages**
+
+11. **`getShortlist()`** -- Steps 1-2 (exclusions + catalyst pool), then
+    3-5 (annotation, ranking, tiers). `docs/selection-logic.md` is the
+    spec.
+12. **B.1** list-agnostic boundary for Stages 2 and 3; **B.3** standing
+    lift scoreboard; **B.4** the floor case written down.
+13. **Phase D**: D.1 tests for `evaluateTrigger` and `filterByCooldown`
+    in CI; D.2 full OHLC in `bars_intraday` (still close-only -- the
+    local warehouse at `research/data/minute/` is not, and needs no
+    backfill); D.3 re-baseline the affected thresholds.
+14. **Phase E** -- Stage 1 analysis pass, Stage 2 overnight enrichment,
+    Stage 3 pre-open report. Gated by Phase A's decision rule.
+15. **Phase F** monitoring tier, **Phase G** trade journal and
+    live-vs-backtest panel.
+
+**Build — Phase C leftovers** (C.1, C.2, C.3 are done)
+
+16. **C.4** replace the category guard with `opens_position` --
+    verified absent from the codebase 2026-09-24.
+17. **C.5** clean up dead and sentinel `exit_rules` -- status
+    unverified.
+18. **C.6** retire `sim-intraday-flips` -- the function is still
+    present.
+
+**Display and data presentation** (new, from this session)
+
+19. **The volume pane's scale is the largest bar in view**, so a single
+    spike compresses every other bar toward the baseline -- NCPL's
+    52.1K against a 9.5K typical put the rest of the session in the
+    bottom fifth. A taller pane helped legibility but not the
+    proportion. Changing it changes how volume reads, so it was left
+    alone deliberately.
+20. **The volume meter is green above 2x**, which conflicts with this
+    project's own finding that **>=25x is the worst measured entry
+    condition in the band** (mean -10%, median -16% over 18 sessions, PF
+    0.489). On the 0-8x scale that pins to the top in green. One
+    threshold, if the top of the scale should warn instead.
+21. **The typical-volume reference line spans the full 4a-8p axis**
+    although it is a regular-session rate. Left full-width because it
+    makes the pre-market comparison readable, but it is a cross-scale
+    line on screen.
+22. **Extended-hours bars are ~16 minutes delayed and always will be**
+    on this data plan -- IEX is near-blind on thin sub-$5 names outside
+    regular hours, and the free tier refuses SIP newer than 15 minutes.
+    Genuine real-time pre-market is a paid SIP subscription, not a code
+    change.
+
+**Coverage gaps**
+
+23. Two Spotlight symbols the pipeline cannot cover: **FBDT** (22 daily
+    bars, listed 2026-08-20, so no `factor_state` at all) and **GSUN**
+    ($661.50, far outside the band).
+
+**Standing decisions, unchanged**
+
+24. `catalyst_momentum` stays disabled (net PF 0.779). Re-enable only on
+    new evidence.
+25. The free-tier Supabase downgrade is still not started; research no
+    longer depends on Supabase, so it is purely a cost call.
+26. IBKR read-only on the paper login -- not set up.
+
+---
+
 ## Session 2026-09-21/22 — the audit, and what it changed
 
 The longest single change in this project's history. Read this before the
@@ -244,7 +505,7 @@ symbol's latest close is ordinary. Critical surface: 46,364 rows -> 4
 (#195). The delisting reconcile also works -- `stale_active_symbol` 19 ->
 13, and all six deactivations were genuine.
 
-### Still open
+### Still open (as of 2026-09-22 — superseded by the consolidated list in the newer session section above)
 
 1. **Layer 3 of the audit has not started** -- no independent
    reimplementation of either study. Layers 1 and 2 are done.

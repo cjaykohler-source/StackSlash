@@ -296,20 +296,27 @@ next steps" for the full list of what is pending and why.
 
 Read in this order:
 
-1. **`README.md` -> "Session 2026-09-21/22 — the audit, and what it
-   changed"**. It is the current state of the evidence and supersedes
-   older sections. Everything below it is history.
+1. **`README.md` -> "Session 2026-09-22/24 — the growth null, and the
+   display layer"**. It is the current state and supersedes every
+   section below it, including the 2026-09-21/22 audit section. Its
+   **"Open items — the consolidated list"** replaces every earlier
+   to-do list in that file.
 2. **`docs/research-audit-plan.md`** — what has and has not been verified.
-   Layers 1 and 2 are done for `bigmove_study.py` and
-   `catalyst_study.py`; Layer 3 (independent reimplementation) has not
-   started, and four other studies are unaudited.
-3. **`docs/overhaul-plan.md`** — the architecture: EOD analysis after
+   Layer 1 is done for `bigmove_study.py` and `catalyst_study.py` and
+   Layer 2 for `bigmove_study.py`; Layer 3 (independent
+   reimplementation) has not started, `catalyst_study.py` still has no
+   negative controls, and four other studies are unaudited.
+3. **`docs/growth-prereg.md`** — the growth question, pre-registered and
+   answered (no). Its RESULTS section also carries the measured noise
+   floor for this pool, which any future threshold has to be set
+   against.
+4. **`docs/overhaul-plan.md`** — the architecture: EOD analysis after
    22:30, overnight enrichment of a shortlist, a pre-open report,
    intraday monitoring of names already listed.
-4. **`docs/selection-logic.md`** — how the daily target list is chosen.
+5. **`docs/selection-logic.md`** — how the daily target list is chosen.
    Catalyst-primary; `bigmove_score` is an annotation and a
    de-prioritiser, not a source of candidates.
-5. This file for logistics, and `docs/ACCESS.md` for credentials.
+6. This file for logistics, and `docs/ACCESS.md` for credentials.
 
 ### Working rules learned the hard way
 
@@ -331,3 +338,22 @@ Read in this order:
   after that exact failure was written up as an audit finding.
 - Research runs default to `--max-price 5`. Above that leaves the traded
   band.
+- **Set a threshold against a measured noise floor, never an assumed
+  standard error.** The growth study's pre-registered 5pp bar turned out
+  to sit inside a +-8.5pp shuffle floor, because its power math used a
+  count from before the liquidity filter. `growth_study.py
+  --control-reps N` prints the distribution of the statistic a threshold
+  is stated in; use it before fixing the threshold, not after.
+- **Verify the rendered result, not the inputs to it.** The extended-hours
+  chart shipped with correct axis maths and correct OHLC guards, and
+  candles in the wrong place, because the pipeline that turns a bar into
+  an x coordinate was never checked. Check true-value-in against
+  drawn-value-out.
+- **Check the comparison you are actually making.** The volume meter's
+  height bug reports a 0px difference when you compare the two flex
+  children, in both the broken and the fixed state, because one of them
+  stretches. Only the chart *content* shows the gap.
+- **When you change a number, find every other place that shows it.** The
+  quote fix was right about the metric and wrong about the feed, and the
+  tell was that the header still disagreed with the chart's own
+  prior-close line.
