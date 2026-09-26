@@ -111,6 +111,15 @@
 [functions."prune-bars-daily"]
   schedule = "25 22 * * 1-5"
 
+# sync-corporate-actions: once daily, before the trading day and ahead of
+# sec-filings-sync's 07:30 ET run -- persists Alpaca's reverse-split feed
+# (fetched fresh, cheap, one call) into corporate_actions so
+# upcoming_catalysts and any future report can query real ex-dates instead
+# of nothing. eod-scan.ts's own live fetch for avoid_reverse_split is
+# unchanged; this is a separate, queryable mirror of the same feed.
+[functions."sync-corporate-actions"]
+  schedule = "0 11 * * 1-5"
+
 # fundamentals-sync: moved to launchd 2026-09-18 (02:00 + 17:00 ET). Netlify
 # cut it at ~30 s and re-invoked it, leaving a `running` row each slot and
 # doubling its FMP calls (the free tier's daily quota ran out).
