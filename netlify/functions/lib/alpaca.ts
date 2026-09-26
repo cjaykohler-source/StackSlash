@@ -502,8 +502,18 @@ export async function fetchNewsFeed(
  * catalyst study a reverse split in the $0.10-$5 band returned -17% to -22%
  * over the next 20 sessions in both 2016-21 and 2022+.
  */
-export async function fetchReverseSplits(start: string, end: string): Promise<{ symbol: string; ex_date: string }[]> {
-  const out: { symbol: string; ex_date: string }[] = [];
+export interface ReverseSplit {
+  symbol: string;
+  ex_date: string;
+  process_date?: string | null;
+  record_date?: string | null;
+  payable_date?: string | null;
+  old_rate?: number | null;
+  new_rate?: number | null;
+}
+
+export async function fetchReverseSplits(start: string, end: string): Promise<ReverseSplit[]> {
+  const out: ReverseSplit[] = [];
   let token: string | undefined;
   do {
     const params = new URLSearchParams({ types: "reverse_split", start, end, limit: "1000" });
@@ -511,10 +521,20 @@ export async function fetchReverseSplits(start: string, end: string): Promise<{ 
     const res = await fetch(`${dataBaseUrl()}/v1/corporate-actions?${params.toString()}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`Alpaca corporate actions failed: ${res.status} ${await res.text()}`);
     const body = (await res.json()) as {
-      corporate_actions?: { reverse_splits?: { symbol: string; ex_date: string }[] };
+      corporate_actions?: { reverse_splits?: ReverseSplit[] };
       next_page_token?: string | null;
     };
-    for (const r of body.corporate_actions?.reverse_splits ?? []) out.push({ symbol: r.symbol, ex_date: r.ex_date });
+    for (const r of body.corporate_actions?.reverse_splits ?? []) {
+      out.push({
+        symbol: r.symbol,
+        ex_date: r.ex_date,
+        process_date: r.process_date ?? null,
+        record_date: r.record_date ?? null,
+        payable_date: r.payable_date ?? null,
+        old_rate: r.old_rate ?? null,
+        new_rate: r.new_rate ?? null,
+      });
+    }
     token = body.next_page_token ?? undefined;
   } while (token);
   return out;
