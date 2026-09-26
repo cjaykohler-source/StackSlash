@@ -18,7 +18,7 @@ import { etDateString, etWallClock } from "./lib/etTime";
 const TOP_N = 15;
 const BUY_COLOR = 0x2ecc71;
 
-type DigestResult = { sent: boolean; reason?: string; targets?: number; qualified?: number; avoid?: number; watch?: number };
+type DigestResult = { sent: boolean; reason?: string; targets?: number; qualified?: number; avoid?: number; watch?: number; catalysts?: number };
 
 type Row = {
   id: number;
@@ -57,7 +57,30 @@ export default async () => {
       .order("ts", { ascending: true });
     if (error) throw error;
     const rows = (data as unknown as Row[] | null) ?? [];
-    if (!rows.length) return { rowsProcessed: 0, result: { sent: false, reason: "no digest events today" } };
+
+    // Upcoming catalysts within the next few sessions: earnings (FMP
+    // calendar) and reverse splits (corporate_actions, synced daily from
+    // Alpaca — see sync-corporate-actions.ts). Independent of whether any
+    // trigger fired today, so it's fetched before the "nothing today"
+    // bail below. Charter-filing (8-K 5.03/3.03) is deliberately left out
+    // here: measured 2026-09-26 against full EDGAR history, it only
+    // covers ~21% of splits and has a median 5-day lead when it leads at
+    // all — too weak to post daily, still shown on the symbol page as a
+    // low-confidence flag.
+    const { data: upcoming } = await db
+      .from("upcoming_catalysts")
+      .select("ticker, close, days_to_earnings, days_to_reverse_split")
+      .or("days_to_earnings.lte.5,days_to_reverse_split.lte.10")
+      .order("days_to_earnings", { ascending: true, nullsFirst: false });
+    const catalystLines = ((upcoming as { ticker: string; close: number | null; days_to_earnings: number | null; days_to_reverse_split: number | null }[] | null) ?? [])
+      .map((r) => {
+        const notes: string[] = [];
+        if (r.days_to_earnings != null && r.days_to_earnings <= 5) notes.push(`earnings in ${r.days_to_earnings}d`);
+        if (r.days_to_reverse_split != null && r.days_to_reverse_split <= 10) notes.push(`reverse split in ${r.days_to_reverse_split}d`);
+        return `[**${r.ticker}**](${symbolUrl(r.ticker)})${r.close != null ? ` $${Number(r.close).toFixed(2)}` : ""} · ${notes.join(", ")}`;
+      });
+
+    if (!rows.length && !catalystLines.length) return { rowsProcessed: 0, result: { sent: false, reason: "no digest events or catalysts today" } };
 
     const priceOf = (r: Row): number | null => {
       const p = r.dossiers?.[0]?.analysis?.price as unknown;
@@ -114,6 +137,7 @@ export default async () => {
     const watchLines = [...watches.values()].sort((a, b) => b.score - a.score).slice(0, TOP_N);
     if (watchLines.length) sections.push(`👀 **Watch** (setup, but a red flag or unproven direction)\n${watchLines.map(fmt).join("\n")}`);
     if (avoidLines.length) sections.push(`🔴 **Avoid**\n${avoidLines.map(fmt).join("\n")}`);
+    if (catalystLines.length) sections.push(`📅 **Upcoming catalysts**\n${catalystLines.join("\n")}`);
 
     const embed: DiscordEmbed = {
       title: `Next-day targets · ${today}`,
@@ -127,8 +151,8 @@ export default async () => {
     const sent = await sendDigest(text, embed);
 
     return {
-      rowsProcessed: sent === "sent" ? top.length + avoidLines.length + watchLines.length : 0,
-      result: { sent: sent === "sent", targets: top.length, qualified: ranked.length, avoid: avoidLines.length, watch: watchLines.length },
+      rowsProcessed: sent === "sent" ? top.length + avoidLines.length + watchLines.length + catalystLines.length : 0,
+      result: { sent: sent === "sent", targets: top.length, qualified: ranked.length, avoid: avoidLines.length, watch: watchLines.length, catalysts: catalystLines.length },
     };
   });
 
