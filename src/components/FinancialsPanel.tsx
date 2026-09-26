@@ -22,6 +22,7 @@ type BalanceSheet = {
 type ShortInterest = { settlement_date: string; short_shares: number; change_pct: number | null; days_to_cover: number | null };
 type Broker = { as_of: string; float_shares: number | null; shares_outstanding: number | null; financial_status: string | null };
 type Borrow = { captured_at: string; shortable_shares: number | null; shortable_tier: number | null };
+type Charter = { charter_filing_date: string | null; charter_filing_count: number | null };
 
 export default function FinancialsPanel({ symbolId }: { symbolId: number }) {
   const [bs, setBs] = useState<BalanceSheet | null>(null);
@@ -29,6 +30,7 @@ export default function FinancialsPanel({ symbolId }: { symbolId: number }) {
   const [borrow, setBorrow] = useState<Borrow | null>(null);
   const [broker, setBroker] = useState<Broker | null>(null);
   const [sharesFallback, setSharesFallback] = useState<number | null>(null);
+  const [charter, setCharter] = useState<Charter | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,20 +40,22 @@ export default function FinancialsPanel({ symbolId }: { symbolId: number }) {
       supabase.from("short_availability").select("captured_at,shortable_shares,shortable_tier").eq("symbol_id", symbolId).order("captured_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("broker_snapshot").select("as_of,float_shares,shares_outstanding,financial_status").eq("symbol_id", symbolId).order("as_of", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("fundamentals").select("shares_outstanding").eq("symbol_id", symbolId).order("as_of", { ascending: false }).limit(1).maybeSingle(),
-    ]).then(([b, s, a, r, f]) => {
+      supabase.from("upcoming_catalysts").select("charter_filing_date,charter_filing_count").eq("symbol_id", symbolId).maybeSingle(),
+    ]).then(([b, s, a, r, f, c]) => {
       if (cancelled) return;
       setBs((b.data as BalanceSheet) ?? null);
       setSi((s.data as ShortInterest) ?? null);
       setBorrow((a.data as Borrow) ?? null);
       setBroker((r.data as Broker) ?? null);
       setSharesFallback((f.data?.shares_outstanding as number | null) ?? null);
+      setCharter((c.data as Charter) ?? null);
     });
     return () => {
       cancelled = true;
     };
   }, [symbolId]);
 
-  if (!bs && !si && !borrow && !broker) return null;
+  if (!bs && !si && !borrow && !broker && !charter?.charter_filing_date) return null;
 
   const shares = bs?.shares_outstanding ?? sharesFallback;
   const currentRatio =
@@ -75,6 +79,17 @@ export default function FinancialsPanel({ symbolId }: { symbolId: number }) {
             value={currentRatio != null ? currentRatio.toFixed(2) : "—"}
           />
           <Metric label="Equity" value={money(bs.stockholders_equity)} />
+        </Group>
+      )}
+
+      {charter?.charter_filing_date && (
+        <Group title="Corporate filings" asOf={shortDate(charter.charter_filing_date)}>
+          <Metric
+            label="Charter / shareholder-rights filing"
+            tip="An 8-K item 5.03 (charter amendment) or 3.03 (shareholder-rights modification) in the last 45 days -- companies often file one of these around a reverse split. Measured against 2016-2026 EDGAR history: only ~21% of reverse splits show a matching filing at all, and the median lead is ~5 days when it leads the split rather than following it. A weak, low-confidence lead, not a confirmed early warning."
+            value={`${charter.charter_filing_count} filing${charter.charter_filing_count === 1 ? "" : "s"}, last ${shortDate(charter.charter_filing_date)}`}
+            className="financials-amber"
+          />
         </Group>
       )}
 
