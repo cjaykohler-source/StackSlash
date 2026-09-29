@@ -1,0 +1,230 @@
+[
+  {
+    "strategy": "Risk Management and Stop-Loss Discipline",
+    "files": ["The Option Trader Handbook - Strategies And Trade Adjustments.[2004.Isbn0471567078].txt", "Managing_your_money.txt", "Wyckoff, Richard D - The Day Trader's Bible - Or My Secret In Day Trading Of Stocks.txt", "T2W_Trading_Plan_Template_2005-asb.txt", "Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Position Sizing and Capital Preservation",
+    "files": ["The Option Trader Handbook - Strategies And Trade Adjustments.[2004.Isbn0471567078].txt", "Managing_your_money.txt", "T2W_Trading_Plan_Template_2005-asb.txt"]
+  },
+  {
+    "strategy": "Trading Psychology and Emotion Control",
+    "files": ["The Option Trader Handbook - Strategies And Trade Adjustments.[2004.Isbn0471567078].txt", "Mark Crisp - 7 Habits Of A Higly Sucsessfull Trader.txt", "Wyckoff, Richard D - The Day Trader's Bible - Or My Secret In Day Trading Of Stocks.txt", "T2W_Trading_Plan_Template_2005-asb.txt"]
+  },
+  {
+    "strategy": "Predefined Exit Plans",
+    "files": ["The Option Trader Handbook - Strategies And Trade Adjustments.[2004.Isbn0471567078].txt", "T2W_Trading_Plan_Template_2005-asb.txt"]
+  },
+  {
+    "strategy": "Candlestick Pattern Recognition",
+    "files": ["Candlesticks Fibonacci and Chart Pattern Trading Tools.txt", "Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Fibonacci Retracements and Ratios",
+    "files": ["Candlesticks Fibonacci and Chart Pattern Trading Tools.txt", "Basic_Guide_To_Understanding_Elliot_Wave.txt", "Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Chart Pattern Trading",
+    "files": ["Candlesticks Fibonacci and Chart Pattern Trading Tools.txt"]
+  },
+  {
+    "strategy": "Support and Resistance Levels",
+    "files": ["Candlesticks Fibonacci and Chart Pattern Trading Tools.txt", "gimmibar.txt", "Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Trend Following",
+    "files": ["Candlesticks Fibonacci and Chart Pattern Trading Tools.txt", "Wyckoff, Richard D - The Day Trader's Bible - Or My Secret In Day Trading Of Stocks.txt", "Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Trading Discipline and System Adherence",
+    "files": ["Mark Crisp - 7 Habits Of A Higly Sucsessfull Trader.txt", "T2W_Trading_Plan_Template_2005-asb.txt"]
+  },
+  {
+    "strategy": "Revenge Trading Avoidance",
+    "files": ["Mark Crisp - 7 Habits Of A Higly Sucsessfull Trader.txt"]
+  },
+  {
+    "strategy": "Trading Journaling and Record Keeping",
+    "files": ["Mark Crisp - 7 Habits Of A Higly Sucsessfull Trader.txt", "T2W_Trading_Plan_Template_2005-asb.txt", "Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Pre-Market Planning and Preparation",
+    "files": ["T2W_Trading_Plan_Template_2005-asb.txt", "Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "System Backtesting and Validation",
+    "files": ["T2W_Trading_Plan_Template_2005-asb.txt", "UsingProcessResults.txt"]
+  },
+  {
+    "strategy": "Divergence Analysis",
+    "files": ["Barbara Star - Hidden Divergence.txt"]
+  },
+  {
+    "strategy": "Momentum Indicators and Oscillators",
+    "files": ["Barbara Star - Hidden Divergence.txt", "Etheebookoftechnicalmarketindicators.txt", "Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Elliott Wave Principles",
+    "files": ["Basic_Guide_To_Understanding_Elliot_Wave.txt"]
+  },
+  {
+    "strategy": "Wave Counting Rules",
+    "files": ["Basic_Guide_To_Understanding_Elliot_Wave.txt"]
+  },
+  {
+    "strategy": "Multiple Timeframe Analysis",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Andrews Price Objectives",
+    "files": ["Congestion_Markets_-_Estimating_a_Breakout_Target.txt"]
+  },
+  {
+    "strategy": "Congestion Range Trading",
+    "files": ["Congestion_Markets_-_Estimating_a_Breakout_Target.txt"]
+  },
+  {
+    "strategy": "Breakout Target Calculation",
+    "files": ["Congestion_Markets_-_Estimating_a_Breakout_Target.txt"]
+  },
+  {
+    "strategy": "Bollinger Bands Trading",
+    "files": ["gimmibar.txt"]
+  },
+  {
+    "strategy": "Gimmee Bar Strategy",
+    "files": ["gimmibar.txt"]
+  },
+  {
+    "strategy": "Reversal Bar Patterns",
+    "files": ["gimmibar.txt"]
+  },
+  {
+    "strategy": "Market Breadth Indicators",
+    "files": ["Etheebookoftechnicalmarketindicators.txt"]
+  },
+  {
+    "strategy": "Advance-Decline Line Analysis",
+    "files": ["Etheebookoftechnicalmarketindicators.txt"]
+  },
+  {
+    "strategy": "Volatility Index (VIX) Trading",
+    "files": ["Etheebookoftechnicalmarketindicators.txt"]
+  },
+  {
+    "strategy": "Put-Call Ratio Analysis",
+    "files": ["Etheebookoftechnicalmarketindicators.txt"]
+  },
+  {
+    "strategy": "Market Sentiment Analysis",
+    "files": ["Etheebookoftechnicalmarketindicators.txt"]
+  },
+  {
+    "strategy": "Short Sales Statistics",
+    "files": ["Etheebookoftechnicalmarketindicators.txt"]
+  },
+  {
+    "strategy": "Fading the Double Zeros",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Inside Day Breakout Play",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Fader Strategy",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Filtering False Breakouts",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Channel Strategy",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Perfect Order Strategy",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Carry Trade Strategy",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Macroeconomic Event Trading",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Commodity Prices as Leading Indicator",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Bond Spreads as Leading Indicator",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Risk Reversals Strategy",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Option Volatility Timing",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Intervention Trading",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Currency Correlation Trading",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Trading Session Timing",
+    "files": ["Day Trading the Currency Market.txt"]
+  },
+  {
+    "strategy": "Block Trading Execution",
+    "files": ["Bessembinder And Venkataraman-Does An Electronic Stock Exchange Need An Upstairs Market.txt"]
+  },
+  {
+    "strategy": "Upstairs Market Trading",
+    "files": ["Bessembinder And Venkataraman-Does An Electronic Stock Exchange Need An Upstairs Market.txt"]
+  },
+  {
+    "strategy": "Order Exposure Management",
+    "files": ["Bessembinder And Venkataraman-Does An Electronic Stock Exchange Need An Upstairs Market.txt"]
+  },
+  {
+    "strategy": "Information Leakage Reduction",
+    "files": ["Bessembinder And Venkataraman-Does An Electronic Stock Exchange Need An Upstairs Market.txt"]
+  },
+  {
+    "strategy": "Execution Cost Optimization",
+    "files": ["Bessembinder And Venkataraman-Does An Electronic Stock Exchange Need An Upstairs Market.txt"]
+  },
+  {
+    "strategy": "Weekend Effect Trading",
+    "files": ["Brooks And Kim-The Individual Investor And The Weekend Effect - A Reexamination With Intraday Dat.txt"]
+  },
+  {
+    "strategy": "Individual Investor Behavior Analysis",
+    "files": ["Brooks And Kim-The Individual Investor And The Weekend Effect - A Reexamination With Intraday Dat.txt"]
+  },
+  {
+    "strategy": "Trading Volume Analysis by Trade Size",
+    "files": ["Brooks And Kim-The Individual Investor And The Weekend Effect - A Reexamination With Intraday Dat.txt"]
+  },
+  {
+    "strategy": "Selling Pressure Analysis",
+    "files": ["Brooks And Kim-The Individual Investor And The Weekend Effect - A Reexamination With Intraday Dat.txt"]
+  },
+  {
+    "strategy": "Best Execution Practices",
+    "files": ["Latest Developments At The Fwb - Xetra Best Slide 13.txt"]
+  },
+  {
+    "strategy": "Order Routing and Liquidity Management",
+    "files": ["Latest Developments At The Fwb - Xetra Best Slide 13.txt"]
+  }
+]

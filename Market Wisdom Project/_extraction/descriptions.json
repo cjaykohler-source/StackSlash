@@ -1,0 +1,434 @@
+{
+ "Follow the Trend / Trade With the Trend": {
+  "display_name": "Follow the Trend / Trade With the Trend",
+  "description": "Take positions in the direction of the prevailing trend rather than fighting it. \"The trend is your friend\" is the single most repeated rule in the corpus."
+ },
+ "Always Use a Stop-Loss": {
+  "display_name": "Always Use a Stop-Loss",
+  "description": "Set a price where you exit a losing trade before you enter it. It caps the damage from any single mistake."
+ },
+ "Control Emotions: Avoid Fear and Greed": {
+  "display_name": "Control Emotions: Avoid Fear and Greed",
+  "description": "Fear makes traders exit winners early and greed makes them hold or oversize. Mechanical rules and self-awareness keep both in check."
+ },
+ "Follow Your Trading Plan/System Without Deviation": {
+  "display_name": "Follow Your Trading Plan Without Deviation",
+  "description": "Plan the trade, then trade the plan. Deviating mid-trade turns a tested system into guesswork."
+ },
+ "Support and Resistance Levels": {
+  "display_name": "Support and Resistance Levels",
+  "description": "Prices tend to stall at levels where buyers or sellers stepped in before. Those levels frame entries, stops and targets."
+ },
+ "Momentum Indicators (RSI, MACD, Stochastics)": {
+  "display_name": "Momentum Indicators (RSI, MACD, Stochastics)",
+  "description": "Oscillators gauge the speed of price moves and flag overbought or oversold conditions."
+ },
+ "Cut Losses Short, Let Winners Run": {
+  "display_name": "Cut Losses Short, Let Winners Run",
+  "description": "Small losses and large gains make a system profitable even with a win rate under 50%."
+ },
+ "Use Moving Averages to Identify Trend": {
+  "display_name": "Use Moving Averages to Identify Trend",
+  "description": "Price above a rising average signals an uptrend; crossovers of fast and slow averages mark changes."
+ },
+ "Position Sizing Based on Risk": {
+  "display_name": "Position Sizing Based on Risk",
+  "description": "Size each position by the distance to your stop and the capital at risk, not by conviction."
+ },
+ "Breakout Trading Above Resistance/Below Support": {
+  "display_name": "Breakout Trading",
+  "description": "Enter when price clears resistance or breaks support on strength, and filter out false breakouts."
+ },
+ "Have a Predefined Exit Plan Before Entering": {
+  "display_name": "Have a Predefined Exit Plan",
+  "description": "Know your profit target and your stop before entry, so exits aren't decided under pressure."
+ },
+ "Continuous Education and Self-Improvement": {
+  "display_name": "Continuous Education and Self-Improvement",
+  "description": "Markets change; successful traders keep studying, reviewing mistakes and refining skills."
+ },
+ "Avoid Overleveraging / Excessive Margin": {
+  "display_name": "Avoid Overleveraging / Excessive Margin",
+  "description": "Leverage magnifies losses as much as gains and is the most common cause of blown accounts."
+ },
+ "Chart Patterns (Head and Shoulders, Triangles, Flags)": {
+  "display_name": "Chart Patterns",
+  "description": "Head-and-shoulders, triangles, flags and channels signal likely continuation or reversal."
+ },
+ "Discipline Beats Intelligence in Trading": {
+  "display_name": "Discipline Beats Intelligence",
+  "description": "Consistent execution of simple rules outperforms clever analysis applied erratically."
+ },
+ "Risk-Reward Ratio Before Entering a Trade": {
+  "display_name": "Risk-Reward Ratio Before Entering",
+  "description": "Only take trades where the potential gain is a multiple of the risk, and know the system's expectancy."
+ },
+ "Backtest a Trading System Before Using Real Money": {
+  "display_name": "Backtest Before Using Real Money",
+  "description": "Test a system on historical data, including its maximum drawdown, before committing capital."
+ },
+ "Diversify Across Uncorrelated Assets": {
+  "display_name": "Diversify Across Uncorrelated Assets",
+  "description": "Holding assets that don't move together reduces portfolio volatility without equally reducing return."
+ },
+ "Patience: Wait for High-Probability Setups": {
+  "display_name": "Patience: Wait for High-Probability Setups",
+  "description": "Most of trading is waiting. When in doubt, stay out."
+ },
+ "Fibonacci Retracement Levels": {
+  "display_name": "Fibonacci Retracement Levels",
+  "description": "Pullbacks often stall near 38.2%, 50% or 61.8% of the prior move, which gives candidate entries and targets."
+ },
+ "Liquidity Matters When Entering/Exiting Positions": {
+  "display_name": "Liquidity Matters When Entering and Exiting",
+  "description": "Thinly traded markets mean wide spreads and slippage; trade where you can get in and out cleanly."
+ },
+ "Markets Are Cyclical (Bull and Bear Cycles)": {
+  "display_name": "Markets Are Cyclical",
+  "description": "Bull and bear phases recur with the business cycle and crowd psychology."
+ },
+ "Understand Implied Volatility Before Trading Options": {
+  "display_name": "Understand Implied Volatility Before Trading Options",
+  "description": "An option's price depends heavily on expected volatility; buying when it is high can lose money even if direction is right."
+ },
+ "Volume Confirms Price Action": {
+  "display_name": "Volume Confirms Price Action",
+  "description": "Moves on rising volume are more trustworthy; accumulation and distribution show up in volume first."
+ },
+ "Keep a Trading Journal": {
+  "display_name": "Keep a Trading Journal",
+  "description": "Recording every trade and your reasoning exposes recurring mistakes and real edge."
+ },
+ "Manage Expectations: Trading Is Not Gambling": {
+  "display_name": "Manage Expectations: Trading Is Not Gambling",
+  "description": "Aim for consistent modest returns and treat get-rich-quick claims as warning signs."
+ },
+ "Never Risk More Than 1-2% of Capital Per Trade": {
+  "display_name": "Never Risk More Than 1–2% Per Trade",
+  "description": "A fixed small risk per trade lets you survive long losing streaks."
+ },
+ "Long-Term Investing Beats Market Timing": {
+  "display_name": "Long-Term Investing Beats Market Timing",
+  "description": "Staying invested usually beats trying to call tops and bottoms, which few do reliably."
+ },
+ "Currency Pairs Move on Interest Rate Differentials and News": {
+  "display_name": "Currencies Move on Rate Differentials and News",
+  "description": "Forex prices respond to interest-rate gaps, carry, central-bank action and data surprises."
+ },
+ "Keep Trading Systems Simple": {
+  "display_name": "Keep Trading Systems Simple",
+  "description": "Few rules and few indicators hold up better out of sample; there is no holy-grail indicator."
+ },
+ "Candlestick Patterns Signal Reversals/Continuations": {
+  "display_name": "Candlestick Patterns",
+  "description": "Dojis, hammers, engulfing and star patterns signal short-term reversals or continuation."
+ },
+ "Interest Rates Affect Asset Prices": {
+  "display_name": "Interest Rates Affect Asset Prices",
+  "description": "Rising rates pressure bond and stock valuations; falling rates support them."
+ },
+ "Hedge Positions With Options/Futures": {
+  "display_name": "Hedge With Options or Futures",
+  "description": "Protective puts, collars and offsetting futures limit downside on existing holdings."
+ },
+ "Use Multiple Timeframes for Confirmation": {
+  "display_name": "Use Multiple Timeframes for Confirmation",
+  "description": "Check the higher timeframe's trend before acting on a signal from a shorter one."
+ },
+ "Preserve Capital First, Profit Second": {
+  "display_name": "Preserve Capital First, Profit Second",
+  "description": "Only risk money you can afford to lose; staying in the game matters more than any single gain."
+ },
+ "Don't Let Ego Affect Trading Decisions": {
+  "display_name": "Don't Let Ego Affect Decisions",
+  "description": "Take responsibility, admit when you're wrong and don't marry a position."
+ },
+ "Contrarian Investing: Be Fearful When Others Are Greedy": {
+  "display_name": "Contrarian Investing",
+  "description": "Be fearful when others are greedy; crowd extremes and manias often mark turning points."
+ },
+ "Analyze Financial Statements Before Investing": {
+  "display_name": "Analyze Financial Statements",
+  "description": "Read the income statement, balance sheet and cash flows before buying a company."
+ },
+ "Supply and Demand Drive Price": {
+  "display_name": "Supply and Demand Drive Price",
+  "description": "Every price move reflects an imbalance between buyers and sellers."
+ },
+ "Buy Low, Sell High (Value Investing)": {
+  "display_name": "Buy Low, Sell High (Value Investing)",
+  "description": "Buy assets below their intrinsic value; a cheap price alone is not value."
+ },
+ "Accept Losses as a Cost of Doing Business": {
+  "display_name": "Accept Losses as a Cost of Business",
+  "description": "Losses are inevitable and expected; treating them as failures leads to worse decisions."
+ },
+ "Adapt Strategy to Market Conditions": {
+  "display_name": "Adapt Strategy to Market Conditions",
+  "description": "Trending, ranging and volatile markets reward different approaches; filter for regime first."
+ },
+ "Diversify Across Asset Classes": {
+  "display_name": "Diversify Across Asset Classes",
+  "description": "Spread capital across stocks, bonds, cash and others, and rebalance to target weights."
+ },
+ "Avoid Overtrading": {
+  "display_name": "Avoid Overtrading",
+  "description": "Too many trades or markets raise costs and lower quality; take breaks."
+ },
+ "Earnings Growth Drives Stock Price": {
+  "display_name": "Earnings Growth Drives Stock Price",
+  "description": "Over time, share prices follow the growth of company earnings."
+ },
+ "Assess Management Quality and Competitive Advantage (Moat)": {
+  "display_name": "Assess Management and Competitive Moat",
+  "description": "Durable advantages and capable, honest management protect long-term returns."
+ },
+ "Don't Average Down on a Losing Position": {
+  "display_name": "Don't Average Down on Losers",
+  "description": "Adding to a losing position compounds the mistake instead of fixing it."
+ },
+ "Invest in Companies You Understand": {
+  "display_name": "Invest in Companies You Understand",
+  "description": "Stay within your circle of competence so you can judge the business."
+ },
+ "Compound Interest / Reinvest Returns": {
+  "display_name": "Compound Interest / Reinvest Returns",
+  "description": "Reinvested gains grow exponentially; time in the market is the key input."
+ },
+ "Time Decay (Theta) Erodes Option Value": {
+  "display_name": "Time Decay (Theta) Erodes Option Value",
+  "description": "Options lose value each day, faster near expiry, which favors sellers over time."
+ },
+ "Avoid Revenge Trading After a Loss": {
+  "display_name": "Avoid Revenge Trading",
+  "description": "Trying to win back a loss right away leads to oversized, unplanned trades."
+ },
+ "Set Clear Financial Goals": {
+  "display_name": "Set Clear Financial Goals",
+  "description": "Know why you invest or trade and what you are aiming for."
+ },
+ "Live Below Your Means / Save Consistently": {
+  "display_name": "Live Below Your Means / Save Consistently",
+  "description": "Steady saving builds the capital that investing then compounds."
+ },
+ "Dollar-Cost Averaging": {
+  "display_name": "Dollar-Cost Averaging",
+  "description": "Invest a fixed amount at regular intervals to smooth out entry prices."
+ },
+ "Margin of Safety When Valuing a Stock": {
+  "display_name": "Margin of Safety",
+  "description": "Buy well below estimated value so errors in your estimate don't cause losses."
+ },
+ "Avoid High-Interest Consumer Debt": {
+  "display_name": "Avoid High-Interest Consumer Debt",
+  "description": "Paying off expensive debt is a guaranteed return few investments beat."
+ },
+ "Elliott Wave Analysis": {
+  "display_name": "Elliott Wave Analysis",
+  "description": "Markets move in five-wave impulses and three-wave corrections, which some use to forecast turns."
+ },
+ "Build an Emergency Fund": {
+  "display_name": "Build an Emergency Fund",
+  "description": "Cash reserves prevent forced selling at bad times."
+ },
+ "Avoid Curve-Fitting / Over-Optimizing a System": {
+  "display_name": "Avoid Curve-Fitting a System",
+  "description": "Over-optimized backtests fit past noise and fail live; distrust unverified results."
+ },
+ "Pay Yourself First": {
+  "display_name": "Pay Yourself First",
+  "description": "Save before spending, not from what is left over."
+ },
+ "Seasonal and Calendar Patterns": {
+  "display_name": "Seasonal and Calendar Patterns",
+  "description": "Effects like \"Sell in May,\" the January effect and the presidential cycle show recurring tendencies."
+ },
+ "Use Trailing Stops to Lock In Profits": {
+  "display_name": "Use Trailing Stops",
+  "description": "Move the stop with price to lock in gains while giving the trade room."
+ },
+ "Be Skeptical of Gurus, Tips and Hype": {
+  "display_name": "Be Skeptical of Gurus, Tips and Hype",
+  "description": "Think independently; tips, newsletters and brokers often have conflicts."
+ },
+ "Match Your Trading Method to Your Personality": {
+  "display_name": "Match Your Method to Your Personality",
+  "description": "A system you can't follow comfortably will be abandoned at the worst moment."
+ },
+ "Understand and Manage Credit Scores": {
+  "display_name": "Understand and Manage Credit Scores",
+  "description": "Good credit lowers borrowing costs."
+ },
+ "Market Breadth and Sentiment Indicators": {
+  "display_name": "Market Breadth and Sentiment Indicators",
+  "description": "Advance-decline lines, put/call ratios and the VIX confirm trends or flag extremes."
+ },
+ "Pyramid Into Winning Positions": {
+  "display_name": "Pyramid Into Winning Positions",
+  "description": "Add to winners in smaller increments, never to losers."
+ },
+ "Quantify Portfolio Risk (VaR, Std Dev, Stress Tests)": {
+  "display_name": "Quantify Portfolio Risk",
+  "description": "Use standard deviation, value-at-risk and stress tests to measure exposure."
+ },
+ "Understand Order Types; Prefer Limit Orders": {
+  "display_name": "Understand Order Types; Prefer Limit Orders",
+  "description": "Order choice and routing affect fill prices and costs."
+ },
+ "Arbitrage and Market-Neutral Strategies": {
+  "display_name": "Arbitrage and Market-Neutral Strategies",
+  "description": "Pairs, merger and convertible arbitrage profit from price gaps between related assets."
+ },
+ "Bollinger Bands for Volatility Extremes": {
+  "display_name": "Bollinger Bands",
+  "description": "Volatility bands flag stretched prices and volatility squeezes."
+ },
+ "Follow Insider and Institutional Activity": {
+  "display_name": "Follow Insider and Institutional Activity",
+  "description": "Insider buying, buybacks and commercial positioning (COT) hint at informed views."
+ },
+ "Kelly Criterion / Optimal f Position Sizing": {
+  "display_name": "Kelly Criterion / Optimal f",
+  "description": "Formulas that size bets by edge and odds to maximize long-run growth."
+ },
+ "Price Action Over Indicators; Use Multiple Confirmations": {
+  "display_name": "Price Action Over Indicators; Seek Confirmation",
+  "description": "Require several tools to agree rather than trusting one signal."
+ },
+ "Scale In and Out of Positions": {
+  "display_name": "Scale In and Out of Positions",
+  "description": "Enter and take profits in parts to reduce timing risk."
+ },
+ "Sector Rotation With the Economic Cycle": {
+  "display_name": "Sector Rotation With the Economic Cycle",
+  "description": "Different sectors lead at different cycle stages; analyze top-down."
+ },
+ "Divergence Between Price and Indicators Signals Reversal": {
+  "display_name": "Price–Indicator Divergence Signals Reversal",
+  "description": "When price makes a new high but momentum doesn't, the trend may be tiring."
+ },
+ "Minimize Fees, Costs and Taxes": {
+  "display_name": "Minimize Fees, Costs and Taxes",
+  "description": "Costs compound against you as surely as returns compound for you."
+ },
+ "Avoid Trading Around High-Volatility News": {
+  "display_name": "Avoid Trading Around High-Volatility News",
+  "description": "Releases cause erratic spikes; \"buy the rumor, sell the news.\""
+ },
+ "Concentrate in High-Conviction Ideas": {
+  "display_name": "Concentrate in High-Conviction Ideas",
+  "description": "Some argue few well-researched positions beat over-diversification."
+ },
+ "Guard Against Cognitive Biases": {
+  "display_name": "Guard Against Cognitive Biases",
+  "description": "Overconfidence, anchoring, hindsight and loss aversion distort decisions."
+ },
+ "Know and Define Your Trading Edge": {
+  "display_name": "Know and Define Your Trading Edge",
+  "description": "Be able to state why your setup should make money."
+ },
+ "Avoid Choppy / Range-Bound Markets": {
+  "display_name": "Avoid Choppy, Range-Bound Markets",
+  "description": "Trend systems bleed in sideways markets."
+ },
+ "Reflexivity: Markets Can Stay Irrational": {
+  "display_name": "Reflexivity: Markets Can Stay Irrational",
+  "description": "Perceptions feed back into fundamentals, and mispricing can outlast your capital."
+ },
+ "Relative Strength: Buy Market Leaders": {
+  "display_name": "Relative Strength: Buy Market Leaders",
+  "description": "Stocks outperforming the market tend to keep doing so."
+ },
+ "Tactical Asset Allocation on Valuation": {
+  "display_name": "Tactical Asset Allocation on Valuation",
+  "description": "Shift allocations based on valuation or index timing signals."
+ },
+ "Time Trades to the Best Market Sessions": {
+  "display_name": "Time Trades to the Best Sessions",
+  "description": "Liquidity and movement concentrate in certain hours."
+ },
+ "Treat Each Trade as Statistically Independent": {
+  "display_name": "Treat Each Trade as Independent",
+  "description": "Past outcomes don't change the next trade's odds; avoid martingale doubling."
+ },
+ "Evaluate Fund Managers and Performance Properly": {
+  "display_name": "Evaluate Fund Managers Properly",
+  "description": "Use time-weighted total returns and due diligence when choosing managers."
+ },
+ "Maintain Physical and Mental Health": {
+  "display_name": "Maintain Physical and Mental Health",
+  "description": "Sleep, exercise and stress control support decision quality."
+ },
+ "Mean Reversion and Fading Moves": {
+  "display_name": "Mean Reversion and Fading Moves",
+  "description": "Bet on stretched prices returning toward the average."
+ },
+ "Practice With Paper Trading First": {
+  "display_name": "Practice With Paper Trading First",
+  "description": "Use a demo account before risking real money."
+ },
+ "Price Gaps and Gap Trading": {
+  "display_name": "Price Gaps and Gap Trading",
+  "description": "Gaps often fill, or signal continuation or exhaustion."
+ },
+ "Short Selling": {
+  "display_name": "Short Selling",
+  "description": "Profit from falling prices by selling borrowed shares."
+ },
+ "Swing Trading": {
+  "display_name": "Swing Trading",
+  "description": "Hold positions for days to capture short-term swings."
+ },
+ "Valuation Models (DCF, Real Options)": {
+  "display_name": "Valuation Models (DCF, Real Options)",
+  "description": "Value a business on discounted future cash flows and the worth of its flexibility."
+ },
+ "Acting In Your Own Best Interest": {
+  "display_name": "Acting in Your Own Best Interest",
+  "description": "a trading-psychology principle about self-sabotage."
+ },
+ "Automated Trading Systems": {
+  "display_name": "Automated Trading Systems",
+  "description": "letting code execute rules to remove discretion."
+ },
+ "Avoid Trading in Contract Delivery Months": {
+  "display_name": "Avoid Trading in Contract Delivery Months",
+  "description": "futures liquidity and delivery risk rise near expiry."
+ },
+ "Basic Options Strategies (Calls, Puts, Spreads, Covered Writes)": {
+  "display_name": "Basic Options Strategies",
+  "description": "long calls and puts, covered writes, and bull and bear spreads."
+ },
+ "Day Trading Systems": {
+  "display_name": "Day Trading Systems",
+  "description": "intraday rule sets."
+ },
+ "E.A.S.Y Method": {
+  "display_name": "E.A.S.Y Method",
+  "description": "a named proprietary entry system."
+ },
+ "Ladder Bond Maturities to Manage Reinvestment Risk": {
+  "display_name": "Ladder Bond Maturities",
+  "description": "stagger maturities to manage reinvestment risk."
+ },
+ "Market Profile and Value-Area Analysis": {
+  "display_name": "Market Profile and Value-Area Analysis",
+  "description": "reading where volume clusters by price."
+ },
+ "Master Trader Principles": {
+  "display_name": "Master Trader Principles",
+  "description": "a book-specific rule set."
+ },
+ "Small-Cap Return Premiums May Be Illusory After Costs and Liquidity": {
+  "display_name": "Small-Cap Premium May Be Illusory",
+  "description": "the size premium can vanish after costs and liquidity."
+ },
+ "Special Situations: Reverse Mergers and Shell Companies": {
+  "display_name": "Special Situations: Reverse Mergers and Shell Companies",
+  "description": "event-driven plays on corporate restructurings."
+ },
+ "Tradetables System": {
+  "display_name": "Tradetables System",
+  "description": "a named proprietary system."
+ }
+}

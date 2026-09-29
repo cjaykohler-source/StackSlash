@@ -20,3 +20,6 @@ supabase/.temp/
 # but the linked project ref and temp state are machine-local.
 supabase/.temp/
 supabase/.branches/
+
+# Market Wisdom Project source texts (~150 MB)
+Market Wisdom Project/books/
