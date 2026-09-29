@@ -1,0 +1,231 @@
+[
+  {
+    "strategy": "Always Use a Stop-Loss",
+    "files": [
+      "LBR_Scalp_setups.txt",
+      "FundamentalsOfTradingPlan_2.txt",
+      "FX10.txt"
+    ]
+  },
+  {
+    "strategy": "Avoid Overleveraging / Excessive Margin",
+    "files": [
+      "KENNETH L. FISHER - Super Stocks.txt",
+      "FuturesIntro.txt"
+    ]
+  },
+  {
+    "strategy": "Avoid Overtrading",
+    "files": [
+      "FundamentalsOfTradingPlan_2.txt"
+    ]
+  },
+  {
+    "strategy": "Avoid Trading Against the Prevailing Trend",
+    "files": [
+      "Elliott Waves Principle.txt"
+    ]
+  },
+  {
+    "strategy": "Breakout Trading Above Resistance/Below Support",
+    "files": [
+      "The_Forex_Chartist_Companion.txt",
+      "Trading - Forex - Predicting Price Movement.txt",
+      "John L Person - Swing Trading Using Candlestick Charting With Pivot Point.txt",
+      "LBR_Scalp_setups.txt"
+    ]
+  },
+  {
+    "strategy": "Buy Low, Sell High (Value Investing)",
+    "files": [
+      "The Superstock Investor - Profiting From Wall Streets Best Undervalued Companies.txt"
+    ]
+  },
+  {
+    "strategy": "Candlestick Patterns Signal Reversals/Continuations",
+    "files": [
+      "John L Person - Swing Trading Using Candlestick Charting With Pivot Point.txt"
+    ]
+  },
+  {
+    "strategy": "Chart Patterns (Head and Shoulders, Triangles, Flags)",
+    "files": [
+      "Elliott Waves Principle.txt",
+      "LBR_Scalp_setups.txt",
+      "picking_tops.txt"
+    ]
+  },
+  {
+    "strategy": "Control Emotions: Avoid Fear and Greed",
+    "files": [
+      "Crash Profits Make Money When Stocks Sink And Soar Martin Weiss.txt",
+      "KENNETH L. FISHER - Super Stocks.txt"
+    ]
+  },
+  {
+    "strategy": "Contrarian Investing: Be Fearful When Others Are Greedy",
+    "files": [
+      "LBR_Scalp_setups.txt",
+      "picking_tops.txt"
+    ]
+  },
+  {
+    "strategy": "Cut Losses Short, Let Winners Run",
+    "files": [
+      "THE 1HR TUNNEL METHOD.txt",
+      "FundamentalsOfTradingPlan_2.txt"
+    ]
+  },
+  {
+    "strategy": "Discipline Beats Intelligence in Trading",
+    "files": [
+      "Miracle_of_Discipline.txt"
+    ]
+  },
+  {
+    "strategy": "Diversify Across Uncorrelated Assets",
+    "files": [
+      "FuturesIntro.txt",
+      "FundamentalsOfTradingPlan_2.txt"
+    ]
+  },
+  {
+    "strategy": "Dollar-Cost Averaging",
+    "files": [
+      "Crash Profits Make Money When Stocks Sink And Soar Martin Weiss.txt"
+    ]
+  },
+  {
+    "strategy": "Earnings Growth Drives Stock Price",
+    "files": [
+      "Crash Profits Make Money When Stocks Sink And Soar Martin Weiss.txt",
+      "The Superstock Investor - Profiting From Wall Streets Best Undervalued Companies.txt",
+      "KENNETH L. FISHER - Super Stocks.txt"
+    ]
+  },
+  {
+    "strategy": "Fibonacci Retracement Levels",
+    "files": [
+      "The_Forex_Chartist_Companion.txt",
+      "William N. Goetzmann - Fibonacci and the Financial Revolution.txt",
+      "THE 1HR TUNNEL METHOD.txt"
+    ]
+  },
+  {
+    "strategy": "Follow the Trend / Trade With the Trend",
+    "files": [
+      "The Superstock Investor - Profiting From Wall Streets Best Undervalued Companies.txt",
+      "KENNETH L. FISHER - Super Stocks.txt",
+      "The_Forex_Chartist_Companion.txt",
+      "Elliott Waves Principle.txt",
+      "Electronic Trading Systems In Europe And Development Potentialities For Russia.txt",
+      "LBR_Scalp_setups.txt",
+      "FundamentalsOfTradingPlan_2.txt",
+      "FX10.txt"
+    ]
+  },
+  {
+    "strategy": "Follow Your Trading Plan/System Without Deviation",
+    "files": [
+      "Elliott Waves Principle.txt",
+      "FuturesIntro.txt",
+      "THE 1HR TUNNEL METHOD.txt",
+      "Miracle_of_Discipline.txt",
+      "FundamentalsOfTradingPlan_2.txt"
+    ]
+  },
+  {
+    "strategy": "Have a Predefined Exit Plan Before Entering",
+    "files": [
+      "FundamentalsOfTradingPlan_2.txt"
+    ]
+  },
+  {
+    "strategy": "Interest Rates Affect Asset Prices",
+    "files": [
+      "William N. Goetzmann - Fibonacci and the Financial Revolution.txt"
+    ]
+  },
+  {
+    "strategy": "Liquidity Matters When Entering/Exiting Positions",
+    "files": [
+      "Foucault And Kadan-Limit Order Book As A Market For Liquidity.txt"
+    ]
+  },
+  {
+    "strategy": "Margin of Safety When Valuing a Stock",
+    "files": [
+      "KENNETH L. FISHER - Super Stocks.txt",
+      "William N. Goetzmann - Fibonacci and the Financial Revolution.txt"
+    ]
+  },
+  {
+    "strategy": "Momentum Indicators (RSI, MACD, Stochastics)",
+    "files": [
+      "The_Forex_Chartist_Companion.txt",
+      "John L Person - Swing Trading Using Candlestick Charting With Pivot Point.txt",
+      "FX10.txt"
+    ]
+  },
+  {
+    "strategy": "Never Risk More Than 1-2% of Capital Per Trade",
+    "files": [
+      "Foucault And Kadan-Limit Order Book As A Market For Liquidity.txt",
+      "FuturesIntro.txt",
+      "THE 1HR TUNNEL METHOD.txt",
+      "LBR_Scalp_setups.txt",
+      "FundamentalsOfTradingPlan_2.txt"
+    ]
+  },
+  {
+    "strategy": "Plan the Trade, Trade the Plan",
+    "files": [
+      "Foucault And Kadan-Limit Order Book As A Market For Liquidity.txt"
+    ]
+  },
+  {
+    "strategy": "Risk-Reward Ratio Before Entering a Trade",
+    "files": [
+      "Trading - Forex - Predicting Price Movement.txt"
+    ]
+  },
+  {
+    "strategy": "Support and Resistance Levels",
+    "files": [
+      "The_Forex_Chartist_Companion.txt",
+      "John L Person - Swing Trading Using Candlestick Charting With Pivot Point.txt",
+      "picking_tops.txt"
+    ]
+  },
+  {
+    "strategy": "Time Decay (Theta) Erodes Option Value",
+    "files": [
+      "Crash Profits Make Money When Stocks Sink And Soar Martin Weiss.txt"
+    ]
+  },
+  {
+    "strategy": "Understand Implied Volatility Before Trading Options",
+    "files": [
+      "Electronic Trading Systems In Europe And Development Potentialities For Russia.txt"
+    ]
+  },
+  {
+    "strategy": "Use Moving Averages to Identify Trend",
+    "files": [
+      "FuturesIntro.txt",
+      "THE 1HR TUNNEL METHOD.txt",
+      "picking_tops.txt",
+      "FX10.txt"
+    ]
+  },
+  {
+    "strategy": "Volume Confirms Price Action",
+    "files": [
+      "KENNETH L. FISHER - Super Stocks.txt",
+      "The_Forex_Chartist_Companion.txt",
+      "FuturesIntro.txt",
+      "FundamentalsOfTradingPlan_2.txt",
+      "picking_tops.txt"
+    ]
+  }
+]

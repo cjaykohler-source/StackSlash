@@ -1,0 +1,134 @@
+You are extracting recurring trading/investing/finance strategies, tips, and lessons from a batch of 21 plain-text book/ebook files, as part of a larger project analyzing 727 files total (this is one of 40 batches, processed by separate agents).
+
+## Files in your batch (read every one):
+- "/Users/ckohler/Desktop/Market Books/TXTs/Alan Farley - The Master Swing Trader.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Mcgraw-Hill - 2002 - Trading On Momentum Advanced Techniques For High Percentage Day Trading - Is.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Forex Misc - Money Management - Ryan Jones.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/The Complete TurtleTrader - The Legend, the Lessons, the Results.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Harry D Schultz - Bear Market Investing Strategies.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Bass - The Basics of Financial Mathematics.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/How Large Is Liquidity Risk In An Automated.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Ito And Hashimoto-High-Frequency Contagion Of Currency Crises In Asia.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/turtlerules.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Jorda And Marcellino-Modeling High-Frequency Fx Data Dynamics.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/How The Stock Market Works.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/FairyGoodTrader.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Big_Ben_Breakout.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/241FOREX.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/chart_formations.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/King_Keltner_Trading_Strategy.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Bars.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Place Of Insurance.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Barry Rudd - Stock Patterns For Day Trading And Swing Trading.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Gann, W D - New Stock Trend Detector.txt"
+- "/Users/ckohler/Desktop/Market Books/TXTs/Speculative Investor Behavior In A Stock Market.txt"
+
+## Task
+For EACH file above, read through it (it's OK to skim boilerplate like title pages, tables of contents, legal disclaimers, and repeated headers/footers, but read the substantive content thoroughly — for very large files, read in sequential chunks with the Read tool's offset/limit parameters, e.g. 2000-3000 lines at a time, until you reach the end; for extremely long academic/reference texts (>15,000 lines) it's acceptable to sample representative sections plus targeted grep for canonical-list keywords rather than reading every line, but do this only for genuinely huge files). If a file is empty, corrupted/garbled, or contains no trading/investing/finance content (e.g. a pure textbook on an unrelated subject), note that and contribute nothing for it — don't fabricate content.
+
+Identify the distinct trading/investing/money-management strategies, tips, and lessons each file teaches or advocates. A "strategy/tip/lesson" is a piece of actionable or principle-level advice (e.g. "cut your losses short", "diversify your portfolio", "use stop-losses", "the trend is your friend") — not just a topic mention.
+
+### Canonical naming (IMPORTANT for merging results across batches)
+# Preferred canonical strategy/tip/lesson names
+
+Use these EXACT strings (verbatim) whenever a book's content matches one of these concepts, even if the book's wording differs. This is critical so results merge cleanly across many parallel reviewers. If a concept doesn't fit any of these, invent a new short canonical name (Title Case, 3-8 words, e.g. "Diversify Across Uncorrelated Assets") and use that consistently.
+
+## Risk management
+- Cut Losses Short, Let Winners Run
+- Always Use a Stop-Loss
+- Never Risk More Than 1-2% of Capital Per Trade
+- Position Sizing Based on Risk
+- Diversify Across Uncorrelated Assets
+- Avoid Overleveraging / Excessive Margin
+- Risk-Reward Ratio Before Entering a Trade
+- Don't Average Down on a Losing Position
+- Preserve Capital First, Profit Second
+- Have a Predefined Exit Plan Before Entering
+
+## Trading psychology / discipline
+- Control Emotions: Avoid Fear and Greed
+- Follow Your Trading Plan/System Without Deviation
+- Avoid Revenge Trading After a Loss
+- Patience: Wait for High-Probability Setups
+- Keep a Trading Journal
+- Avoid Overtrading
+- Accept Losses as a Cost of Doing Business
+- Discipline Beats Intelligence in Trading
+- Don't Let Ego Affect Trading Decisions
+- Manage Expectations: Trading Is Not Gambling
+
+## Technical analysis
+- Follow the Trend / Trade With the Trend
+- Use Moving Averages to Identify Trend
+- Support and Resistance Levels
+- Volume Confirms Price Action
+- Chart Patterns (Head and Shoulders, Triangles, Flags)
+- Candlestick Patterns Signal Reversals/Continuations
+- Use Multiple Timeframes for Confirmation
+- Momentum Indicators (RSI, MACD, Stochastics)
+- Breakout Trading Above Resistance/Below Support
+- Avoid Trading Against the Prevailing Trend
+- Fibonacci Retracement Levels
+
+## Fundamental analysis / investing
+- Buy Low, Sell High (Value Investing)
+- Invest in Companies You Understand
+- Margin of Safety When Valuing a Stock
+- Analyze Financial Statements Before Investing
+- Long-Term Investing Beats Market Timing
+- Dollar-Cost Averaging
+- Earnings Growth Drives Stock Price
+- Assess Management Quality and Competitive Advantage (Moat)
+- Diversify Across Asset Classes
+- Compound Interest / Reinvest Returns
+
+## Money management / personal finance
+- Live Below Your Means / Save Consistently
+- Build an Emergency Fund
+- Avoid High-Interest Consumer Debt
+- Pay Yourself First
+- Understand and Manage Credit Scores
+- Set Clear Financial Goals
+
+## Market behavior / macro
+- Markets Are Cyclical (Bull and Bear Cycles)
+- Interest Rates Affect Asset Prices
+- Supply and Demand Drive Price
+- Contrarian Investing: Be Fearful When Others Are Greedy
+- Don't Try to Time the Market Perfectly
+- Liquidity Matters When Entering/Exiting Positions
+
+## Options / derivatives / forex specific
+- Understand Implied Volatility Before Trading Options
+- Hedge Positions With Options/Futures
+- Time Decay (Theta) Erodes Option Value
+- Currency Pairs Move on Interest Rate Differentials and News
+
+## Process / systems
+- Backtest a Trading System Before Using Real Money
+- Keep Trading Systems Simple
+- Adapt Strategy to Market Conditions
+- Continuous Education and Self-Improvement
+- Plan the Trade, Trade the Plan
+
+(This list is a starting point, not exhaustive — many books will contain concepts not listed here. Add new canonical entries as needed, but check this list first and reuse an existing entry whenever the content is a reasonable match, even if the exact wording differs.)
+
+
+### Counting rule
+For each file, determine the SET of distinct canonical strategies it contains (dedupe within a file — if a file repeats "cut losses short" 50 times, it still only counts ONCE for that file). Do not count a strategy for a file unless the file meaningfully discusses/advocates it (a single passing word doesn't count).
+
+### Output
+Write your results as JSON to this exact path using the Write tool:
+/private/tmp/claude-501/-Users-ckohler-Desktop-Market-Books-TXTs/c79f296e-ca15-4b75-8f82-e01ba1072dfa/scratchpad/results/batch_30.json
+
+JSON schema:
+[
+  {"strategy": "Canonical Strategy Name", "files": ["exact filename1.txt", "exact filename2.txt"]},
+  ...
+]
+
+Use just the base filename (not full path) in the "files" arrays, exactly as given above. Include EVERY distinct strategy you found across the batch, each with the list of which of your batch's files mention it. Do not omit anything for brevity — this is a research extraction task, completeness matters more than brevity.
+
+IMPORTANT: Do NOT spawn further subagents/sub-tasks for this work — read and process the files yourself directly. Subagent concurrency is shared and limited across this whole project; spawning more will fail or starve other batches.
+
+After writing the JSON file, respond with a brief summary: how many files you processed, how many distinct strategies you found, and confirm the JSON was written successfully. Do not include the full JSON in your chat response (it's already saved to the file).
