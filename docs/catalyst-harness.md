@@ -145,9 +145,33 @@ reversion or momentum. p-values rise because only ~1/5 of rotated dates
 match (a noisier null), so use `--match-ret` to check effect size, and
 the plain full run for q.
 
+## Form 4 at full sample (2026-09-30, full run, 65 types)
+
+316k Form 4 filings parsed (`form4_crawl.py`, 1 parse error), open-market
+buys (code P) and sales (S) only. 2016-21, gap vs random dates, BH q
+across 65 types:
+
+| type | n | gap (20d) | q |
+|---|---|---|---|
+| any open-market buy | 10,578 | +0.57% | 0.18 |
+| 10% holder buy | 3,001 | +0.91% | 0.25 |
+| officer buy | 4,978 | +0.64% | 0.25 |
+| cluster buying (2+ insiders, 14d) | 4,165 | +0.58% | 0.29 |
+| director buy | 4,524 | +0.43% | 0.29 |
+| large buy ($100k+) | 4,483 | +0.18% | 0.40 |
+| sales (any / officer / large) | 4-10k | -0.08% to -0.27% | 0.33-0.44 |
+
+Buys point the right way but none clears the multiple-testing bar; sales
+carry nothing. The headline-derived "insider buy" (+3.0%, n=379) was
+selection by newsworthiness. With more types in the family, 13G
+amendments and earnings big beats dropped just below the bar; the list of
+candidates is now: halt, partnership PR, 10-K (avoid); earnings beat, 8-K
+2.02, 10-Q, PT cut (positive, PT cut suspect).
+
 ## Open
 
-1. Form 4: crawl running (`form4_crawl.py`); then add buy/sell event types.
+1. Form 4 follow-up: condition buys on size vs market cap and on role /
+   track record before dropping the family (README item 43).
 2. Reddit: collecting hourly since 2026-09-30; test once there are months of snapshots.
 3. Holdout (2022+) for the final forms of: earnings beat, earnings
    reporting (2.02/10-Q), 10-K.

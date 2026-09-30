@@ -1,6 +1,6 @@
 # StackSlash / RIOT — logistics handoff
 
-Written 2026-09-21. Where everything lives and how it runs today. This is
+Written 2026-09-21, updated 2026-09-30. Where everything lives and how it runs today. This is
 the "what is plugged into what" document; `README.md` holds the strategy,
 the research derivations and the open decisions.
 
@@ -12,11 +12,12 @@ the research derivations and the open decisions.
 |---|---|
 | Repo | `~/StackSlash` on host **stackslash-worker-host** (macOS, Apple Silicon). GitHub: `cjaykohler-source/StackSlash`, default branch `main` |
 | The only machine anything runs on | stackslash-worker-host. Nothing runs on a laptop, in CI or in the cloud except Netlify and Supabase |
-| Site | Netlify, https://r10t.netlify.app (auto-deploys from `main`) |
+| Site | Netlify site **r10t**, https://r10t.netlify.app (auto-deploys from `main`). `stackslash.netlify.app` is dead (404) since the rename — never use it |
 | Database | Supabase project `wnzxvdfskmivbyqadtll` (org StackSlash), **Pro plan**, ~2.4 GB of 8 GB |
 | Access / credential map | `docs/ACCESS.md` — accounts to be invited to, credential names, what each key can do, handover checklist |
 | Secrets | `~/StackSlash/.env` (not in git). Netlify has its own copy of the same vars in site settings |
-| Local backups | `~/StackSlashBackups/` — one file, 2026-09-11. Not scheduled (see §8) |
+| Local backups | `~/StackSlashBackups/` — nightly 21:15 (`supabase-backup`, keeps 14). Was silently writing empty files 09-21..09-29; fixed #224, verified 227 MB dumps on 09-30 |
+| Tailscale | Tailnet `tail3d8cea.ts.net`: this Mac is `stackslash-worker-host` (100.111.124.95), plus the owner's iPhone. **Tailscale Serve** exposes the Charter API at `https://stackslash-worker-host.tail3d8cea.ts.net` **to tailnet devices only** (`tailscale serve --bg --https=443 http://127.0.0.1:8787`). Funnel (public) is NOT enabled |
 | Logs | `~/Library/Logs/stackslash-<job>/` , one directory per job |
 | launchd units | `~/Library/LaunchAgents/com.stackslash.*.plist`, copies tracked in `scripts/launchd/` |
 
@@ -127,8 +128,24 @@ PostgREST pagination silently skips rows without an explicit `.order()`.
 | Sun 03:00 ET (07:00 UTC) | `refresh-spread-estimates` | Abdi-Ranaldo spread estimates |
 | Mon 02:00 ET (06:00 UTC) | `weekly-bars-scan` | `bars_weekly` |
 
+**Added 2026-09-30 — launchd**
+
+| Time | Job | Does |
+|---|---|---|
+| 05:30 daily | `research-publish` | `scripts/run-research-publish.sh`: EDGAR bulk (`submissions.zip` nightly, `companyfacts.zip` Sundays) -> news (current + previous month) -> new Form 4s -> rebuild catalyst event tables (going-concern search incremental, DoltHub earnings Mondays) -> publish to `research_*` (behind `/research`) -> rebuild Charter's `daily_metrics` table. Failed steps are logged and skipped; log `~/Library/Logs/stackslash-research-publish/` |
+| hourly | `reddit-collect` | ApeWisdom mention snapshots, r/pennystocks + r/stocks + r/wallstreetbets -> `research/data/catalysts/raw/reddit.duckdb`. Forward-only; numbers only, no Reddit content |
+| every 5 min | `ops-heartbeat` | `scripts/ops_heartbeat.py`: every `com.stackslash.*` job's loaded / pid / last exit / newest log -> `ops_host_status` (the `/ops` page) |
+| always on | `charter-api` | `research/charter_api/server.py` on 127.0.0.1:8787, behind `/charter`; reached via Tailscale Serve |
+| 21:15 daily | `supabase-backup` | now actually works (see §1) |
+
+Retired 2026-09-30: `set-sip-floors-once` (a finished one-off; plist moved
+to `~/Library/LaunchAgents/retired/`).
+
+**Where to look:** the `/ops` page lists every recurring job (29 incl. the
+above), its schedule, last run, status and a plain-language description.
+
 **Manual only:** `intraday-scan`, `backfill-history`, `backtest-triggers`,
-the Supabase backup,
+the one-shot research scripts (`research/*.py`, `research/catalysts/*`),
 and the Robinhood float snapshot (only possible from a Claude session).
 
 ---
@@ -145,6 +162,12 @@ and the Robinhood float snapshot (only possible from a Claude session).
 | **DoltHub** | Financial statements, forward calendar, Zacks | none | Feeds `fundamentals` |
 | **Discord** | Alerts and digests | webhook in `.env` | |
 | **Robinhood (MCP)** | Float, listing status, L2, consolidated quotes, SEC facts | Claude session connector | **Cannot be called by host jobs** — Claude sessions only. Read-only; never trade |
+| **Alpaca news** (research) | 2.08M Benzinga headlines 2016+ -> `research/data/catalysts/raw/news` | same Alpaca key | Crawled at 120 req/min to leave headroom on the key's shared 200/min |
+| **SEC EDGAR bulk + full-text search** (research) | `submissions.zip` / `companyfacts.zip` nightly/Sundays; EFTS for going-concern language; Form 4 XML (316k parsed) | `SEC_USER_AGENT` | Bulk zips ~3 GB; EFTS and Form 4 kept <=8 req/s |
+| **FINRA Reg SHO** (research) | Daily short-sale volume 2018-08+ | none | `cdn.finra.org/equity/regsho/daily`; earlier files are 403. FINRA short interest API history starts 2018-01 |
+| **DoltHub `eps_history`** (research) | Reported vs consensus EPS per quarter (2016-07+) | none (`DOLTHUB_TOKEN` optional) | Keyset pagination only — deep OFFSETs time out |
+| **ApeWisdom** | Reddit ticker mentions (r/pennystocks, r/stocks, r/wallstreetbets) | none | Chosen over Reddit's API (whose terms require purging deleted content); numbers only |
+| **Tailscale** | Private access to the Charter API | owner's Tailscale account | Serve (tailnet-only) on this Mac; HTTPS certs enabled in the admin console |
 
 ---
 
@@ -192,6 +215,17 @@ charter filing — sources price/liquidity from `factor_state.last_close`
 `scan_config`, `tracked_symbols`, `regime_state`, `screens`, `watchlists`,
 `job_runs`, `data_quality_issues`.
 
+**Added 2026-09-30:**
+- `research_catalyst_types`, `research_catalyst_tests`,
+  `research_catalyst_events` (rolling 365 days), `research_studies`,
+  `research_reddit_daily` — written nightly by `research/publish_research.py`
+  (service role), read by `/research` and the symbol-page catalyst timeline.
+- `ops_jobs` (registry of every recurring job incl. its plain-language
+  `details`), `ops_host_status` (the 5-minute heartbeat), view
+  `ops_job_summary` (security_invoker, over `job_runs`) — read by `/ops`.
+- `charter_views` — Charter saved views; RLS **own rows only**
+  (read/insert/update/delete where `user_id = auth.uid()`).
+
 Schema changes go through the Supabase MCP `apply_migration`. The MCP's
 `execute_sql` is **read-only**, so data writes use the service-role client
 (`netlify/functions/lib/supabaseAdmin.ts` or `scripts/localjobs.py`).
@@ -216,6 +250,20 @@ Supabase database is not.
 Vite + React, deployed by Netlify from `main`. Behind sign-in (Supabase
 Auth); the user signs in themselves.
 
+- **Header:** one shared `AppHeader` on every page — logo left; symbol
+  search + Charter / Research / Reports / Isolator / Settings / About / Ops
+  / Sign out right-aligned in fixed positions; the current page's button
+  is red with a glow.
+- **Charter** (`/charter`, `docs/charter.md`): symbol deep dive (daily +
+  minute bars, overlays, event markers, any-metric panels, formulas) and
+  cross-sectional explorer (binned / scatter / histogram / table over any
+  date or pooled range). Needs the Charter API reachable: this Mac on, and
+  Tailscale on the viewing device. Netlify env `VITE_CHARTER_API_URL`.
+- **Research** (`/research`): catalyst leaderboard, live catalyst feed,
+  Reddit attention, study write-ups; from the `research_*` tables.
+- **Ops** (`/ops`): status of every recurring process.
+- **About:** at-a-glance trigger table, click a row for full detail.
+
 - **Dashboard:** Spotlight chart grid (`tracked_symbols.spotlight`), trigger
   feed (Time · Symbol · Catalyst · Flags · Fired at · Price · Change, split
   Buy / Watch / Sell), sidebar with the Tracking column, top gainers and
@@ -236,7 +284,27 @@ widths, overflow) rather than eyeballing it.
 
 ---
 
-## 8. Current state, 2026-09-22 09:00 ET
+## 8. Current state, 2026-09-30 evening ET
+
+- **Read `README.md` -> "Session 2026-09-29/30"** first; its open-items
+  list (numbers up to 47) supersedes every earlier one.
+- Everything from this session is merged to `main` (last: #243, Charter
+  phase 2) and the checkout is on `main`, clean apart from a local
+  `.claude/launch.json` dev-server entry (port 5174) that is deliberately
+  not committed.
+- Services loaded and healthy: `charter-api`, `ops-heartbeat`,
+  `reddit-collect`, `research-publish` (first unattended run 10-01 05:30).
+  Tailscale Serve is on.
+- Known red on `/ops`: `ib-short-availability` whenever IB Gateway is
+  logged out (item 47).
+- Research data added under `research/data/` (not backed up, rebuildable):
+  `catalysts/` (event parquets, `raw/news` 2.08M headlines, `raw/form4.duckdb`
+  316k filings, `raw/short_interest` 209 settlements, `raw/short_volume`
+  98 months, `raw/reddit.duckdb`, `registry.duckdb` = every harness test
+  ever run), `charter/` (`daily_metrics` 20.9M rows ~6.4 GB, `minute_index`),
+  `study_outputs/breakout_features_v2_*.parquet`.
+
+## 8a. Earlier state, 2026-09-22 09:00 ET
 
 - **Read `README.md` -> "Session 2026-09-21/22 — the audit" first.** It
   supersedes older sections where they disagree, and it is where the
@@ -303,11 +371,13 @@ next steps" for the full list of what is pending and why.
 
 Read in this order:
 
-1. **`README.md` -> "Session 2026-09-22/24 — the growth null, and the
-   display layer"**. It is the current state and supersedes every
-   section below it, including the 2026-09-21/22 audit section. Its
-   **"Open items — the consolidated list"** replaces every earlier
+1. **`README.md` -> "Session 2026-09-29/30 — agentic-trader research,
+   the catalyst harness, and the Research / Ops / Charter pages"**. It is
+   the current state and supersedes every section below it. Its **"Open
+   items — the consolidated list (2026-09-30)"** replaces every earlier
    to-do list in that file.
+   Then `docs/charter.md` (the visualizer), `docs/catalyst-harness.md`,
+   `docs/filing-state-study.md`, `docs/breakout-study.md`.
 2. **`docs/research-audit-plan.md`** — what has and has not been verified.
    Layer 1 is done for `bigmove_study.py` and `catalyst_study.py` and
    Layer 2 for `bigmove_study.py`; Layer 3 (independent
