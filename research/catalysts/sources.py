@@ -144,7 +144,7 @@ def earnings(con):
     number became public, timestamped by EDGAR."""
     RAW.mkdir(parents=True, exist_ok=True)
     cache = RAW / "dolt_eps_history.parquet"
-    if not cache.exists() or "--refresh" in sys.argv:
+    if not cache.exists() or "--refresh-earnings" in sys.argv:
         print("  pulling eps_history from DoltHub...", flush=True)
         rows = dolt_eps_history()
         f = lambda k: [float(r[k]) if r[k] is not None else None for r in rows]
@@ -220,36 +220,41 @@ def going_concern(con):
     filing says it', dated by filing date."""
     RAW.mkdir(parents=True, exist_ok=True)
     cache = RAW / "efts_going_concern.parquet"
-    if not cache.exists() or "--refresh" in sys.argv:
-        hits = {}
-        m = dt.date(2016, 1, 1)
-        today = dt.date.today()
-        while m <= today:
-            nxt = (m.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
-            for phrase in GC_PHRASES:
-                for form in ("10-K", "10-Q"):
-                    frm = 0
-                    while True:
-                        d = efts({"q": f'"{phrase}"', "forms": form, "dateRange": "custom",
-                                  "startdt": m.isoformat(), "enddt": (nxt - dt.timedelta(days=1)).isoformat(), "from": frm})
-                        page = d["hits"]["hits"]
-                        for x in page:
-                            src = x["_source"]
-                            if src.get("root_forms", [form])[0] not in ("10-K", "10-Q"):
-                                continue
-                            for cik in src.get("ciks", []):
-                                hits[(src["adsh"], int(cik))] = (src["file_date"], src["form"])
-                        frm += len(page)
-                        time.sleep(0.15)
-                        if not page or frm >= d["hits"]["total"]["value"] or frm >= 10000:
-                            break
-            print(f"    {m:%Y-%m}: {len(hits):,} filings so far", flush=True)
-            m = nxt
-        pq.write_table(pa.table({
-            "adsh": [k[0] for k in hits], "cik": [k[1] for k in hits],
-            "file_date": pa.array([v[0] for v in hits.values()]).cast(pa.date32()),
-            "form": [v[1] for v in hits.values()],
-        }), cache)
+    full = not cache.exists() or "--refresh-going-concern" in sys.argv
+    hits = {}
+    if not full:
+        # incremental: keep the cache, re-search only the last two months
+        old = pq.read_table(cache).to_pylist()
+        cutoff = (dt.date.today().replace(day=1) - dt.timedelta(days=1)).replace(day=1)
+        hits = {(r["adsh"], r["cik"]): (r["file_date"].isoformat(), r["form"]) for r in old if r["file_date"] < cutoff}
+    m = dt.date(2016, 1, 1) if full else (dt.date.today().replace(day=1) - dt.timedelta(days=1)).replace(day=1)
+    today = dt.date.today()
+    while m <= today:
+        nxt = (m.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
+        for phrase in GC_PHRASES:
+            for form in ("10-K", "10-Q"):
+                frm = 0
+                while True:
+                    d = efts({"q": f'"{phrase}"', "forms": form, "dateRange": "custom",
+                              "startdt": m.isoformat(), "enddt": (nxt - dt.timedelta(days=1)).isoformat(), "from": frm})
+                    page = d["hits"]["hits"]
+                    for x in page:
+                        src = x["_source"]
+                        if src.get("root_forms", [form])[0] not in ("10-K", "10-Q"):
+                            continue
+                        for cik in src.get("ciks", []):
+                            hits[(src["adsh"], int(cik))] = (src["file_date"], src["form"])
+                    frm += len(page)
+                    time.sleep(0.15)
+                    if not page or frm >= d["hits"]["total"]["value"] or frm >= 10000:
+                        break
+        print(f"    {m:%Y-%m}: {len(hits):,} filings so far", flush=True)
+        m = nxt
+    pq.write_table(pa.table({
+        "adsh": [k[0] for k in hits], "cik": [k[1] for k in hits],
+        "file_date": pa.array([v[0] for v in hits.values()]).cast(pa.date32()),
+        "form": [v[1] for v in hits.values()],
+    }), cache)
     e = str(EDGAR)
     con.execute(f"""
       create or replace temp table ticker_cik as
@@ -401,14 +406,22 @@ def main():
     names = [a for a in sys.argv[1:] if not a.startswith("--")] or list(ADAPTERS)
     OUT.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect()
+    failed = []
     for name in names:
-        tbl = ADAPTERS[name](con)
+        try:
+            tbl = ADAPTERS[name](con)
+        except Exception as ex:  # one bad source shouldn't block the others
+            print(f"{name}: FAILED: {ex}", flush=True)
+            failed.append(name)
+            continue
         path = OUT / f"{name}.parquet"
         con.execute(f"copy (select * from {tbl} order by event_date, symbol) to '{path}' (format parquet)")
         n, types, syms = con.execute(f"select count(*), count(distinct type), count(distinct symbol) from {tbl}").fetchone()
         print(f"{name}: {n:,} events, {types} types, {syms:,} symbols -> {path}")
         for t, c in con.execute(f"select type, count(*) from {tbl} group by 1 order by 2 desc").fetchall():
             print(f"    {t:<24}{c:>10,}")
+    if failed:
+        sys.exit(f"failed sources: {', '.join(failed)}")
 
 
 if __name__ == "__main__":

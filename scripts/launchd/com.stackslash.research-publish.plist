@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.research-publish</string>
+
+    <!-- Nightly catalyst refresh + publish to the research_* tables behind
+         /research. See scripts/run-research-publish.sh. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/scripts/run-research-publish.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+
+    <!-- 05:30 every day, local time (the host is on America/New_York):
+         after SEC regenerates its bulk files overnight (~03:00 ET), before
+         the open. Weekends too: filings and news keep arriving. -->
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>30</integer></dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-research-publish/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-research-publish/launchd.err.log</string>
+</dict>
+</plist>
