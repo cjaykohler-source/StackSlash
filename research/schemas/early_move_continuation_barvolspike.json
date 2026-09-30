@@ -1,0 +1,23 @@
+{
+  "name": "early_move_continuation_barvolspike",
+  "notes": "Sensitivity variant of early_move_continuation (2026-09-25): replaces cum_vol_vs_adv20 >= 0.3 (cumulative volume vs 20-day ADV) with bar_vol_spike >= 2 (this bar's volume vs the mean bar volume over the prior 20 minutes). bar_vol_spike is a rate/pace measure like production's live `rvol` gate (rvol >= 2 in the avoid_chase_extended trigger), just computed per-bar over a short trailing window rather than against a time-of-day-normalized minute profile -- the closest analog schema_lab.py's 59 fields can offer to what production actually gates on.",
+  "universe": {
+    "price_min": 0.10,
+    "price_max": 5.00,
+    "min_dollar_vol_20d": 50000,
+    "exchanges": ["NYSE", "NASDAQ", "AMEX", "ARCA", "BATS"],
+    "include_delisted": true
+  },
+  "window": {"start": "09:45", "end": "10:30"},
+  "entry": {
+    "all": [
+      {"field": "session_ret", "op": ">=", "value": 0.10},
+      {"field": "dist_vwap", "op": ">", "value": 0},
+      {"field": "pct_off_hod", "op": ">=", "value": -0.02},
+      {"field": "bar_vol_spike", "op": ">=", "value": 2}
+    ]
+  },
+  "first_match_only": true,
+  "exit": {"horizons_min": [15, 30, 60, 120, 240]},
+  "cost": {"flat_pct": 0.01}
+}
