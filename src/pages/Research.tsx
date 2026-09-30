@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { AppHeader } from "../components/AppHeader";
 import { Markdown } from "../components/Markdown";
+import { InfoTooltip } from "../components/InfoTooltip";
 import {
   fetchCatalystTests,
   fetchCatalystTypes,
@@ -23,6 +24,21 @@ const TABS: [Tab, string][] = [
   ["studies", "Studies"],
 ];
 const VERDICT_ORDER: Verdict[] = ["avoid", "positive", "watch", "none", "untested"];
+
+/** Leaderboard columns: [label, hover explanation, numeric]. */
+const LEADERBOARD_COLUMNS: [string, string, boolean][] = [
+  ["Catalyst", "The event type (e.g. a trading halt, an S-1 filing, an earnings beat). The grey line underneath says what it is and where it comes from.", false],
+  ["Verdict", "Avoid: stocks do reliably worse after it. Positive: reliably better. Watch: promising, not proven. No effect: indistinguishable from chance. Untested: too few events to test.", false],
+  ["Source", "Where the events come from: SEC filings, news headlines, earnings data, insider (Form 4) filings, or corporate actions.", false],
+  ["Events", "How many times this happened in 2016-2021 among $0.10-$15 stocks trading at least $250k a day. More events = more trustworthy numbers.", true],
+  ["5d excess", "Average return over the 5 trading days after the event, minus the average stock's return over the same days. Costs already taken out. Positive = beat the typical stock.", true],
+  ["20d excess", "Same as 5d excess, over 20 trading days (about a month) — the horizon everything else is judged on.", true],
+  ["20d null", "The 20-day excess for the same stocks on random days, when the event didn't happen — what these kinds of stocks do anyway.", true],
+  ["Gap", "20d excess minus 20d null: the effect of the event itself, separated from the kind of stock it happens to. Red = worse than usual after the event, green = better.", true],
+  ["90% CI", "The range the true gap likely falls in, 90% of the time (low | high). If it doesn't include zero, the effect is probably real; if it straddles zero, it could be noise.", true],
+  ["q", "The chance this is a fluke after accounting for how many catalyst types were tested — test dozens and a few look good by luck. Below 0.10 counts as a finding.", true],
+  ["2022+ gap", "The same gap on 2022-to-now data, held back while the rules were built. 'Sealed' = that final test hasn't been run yet. A rule is only trusted once it holds here too.", true],
+];
 
 /**
  * Research results published nightly from the local research warehouse
@@ -142,17 +158,11 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
         <table className="ops-table research-table">
           <thead>
             <tr>
-              <th>Catalyst</th>
-              <th>Verdict</th>
-              <th>Source</th>
-              <th className="col-num">Events</th>
-              <th className="col-num">5d excess</th>
-              <th className="col-num">20d excess</th>
-              <th className="col-num">Null</th>
-              <th className="col-num">Gap</th>
-              <th className="col-num">90% CI</th>
-              <th className="col-num">q</th>
-              <th className="col-num">2022+ gap</th>
+              {LEADERBOARD_COLUMNS.map(([label, tip, num]) => (
+                <th key={label} className={num ? "col-num" : undefined}>
+                  <InfoTooltip text={tip}>{label}</InfoTooltip>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -187,7 +197,7 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
                   <td className="col-num">{pct(d20?.null_med)}</td>
                   <td className={`col-num ${gap == null ? "" : gap < 0 ? "neg" : "pos"}`}>{pct(gap)}</td>
                   <td className="col-num">
-                    {d20?.ci_lo != null ? `${pct(d20.ci_lo, 1)} … ${pct(d20.ci_hi, 1)}` : "—"}
+                    {d20?.ci_lo != null ? `${pct(d20.ci_lo, 1)} | ${pct(d20.ci_hi, 1)}` : "—"}
                   </td>
                   <td className="col-num">{d20?.q != null ? d20.q.toFixed(3) : "—"}</td>
                   <td className="col-num">{hgap != null ? pct(hgap) : "sealed"}</td>
