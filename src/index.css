@@ -2824,3 +2824,18 @@ h1 .quote-tag {
   flex: 0 1 260px;
   margin-right: 4px;
 }
+
+/* About: at-a-glance trigger table (reuses the Ops table styling). */
+.about-glance { margin-top: 18px; }
+.about-trigger-name { font-weight: 600; white-space: nowrap; }
+.about-caret { color: var(--text-dim); font-size: 0.8em; }
+.about-glance .up { color: var(--green); }
+.about-glance .down { color: var(--red); }
+.about-row-off td { color: var(--text-dim); }
+.about-row-off td:first-child { box-shadow: inset 3px 0 0 var(--border); }
+.about-details {
+  max-width: min(900px, calc(100vw - 72px));
+  position: sticky;
+  left: 16px;
+}
+.about-details .trigger-summary { color: var(--text); }
