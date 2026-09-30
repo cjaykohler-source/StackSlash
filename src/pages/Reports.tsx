@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { triggerLabel } from "../lib/triggerInfo";
 import { TriggerFeed } from "../components/TriggerFeed";
-import { BrandHomeLink } from "../components/BrandHomeLink";
+import { AppHeader } from "../components/AppHeader";
 import { TriggerScorecard } from "../components/TriggerScorecard";
 
 interface RawEvent {
@@ -317,9 +317,7 @@ export function Reports() {
 
   return (
     <div className="page">
-      <header className="page-header">
-        <BrandHomeLink />
-      </header>
+      <AppHeader />
       <h2>Reports</h2>
 
       <div className="report-controls">

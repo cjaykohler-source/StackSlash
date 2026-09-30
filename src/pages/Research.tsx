@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { BrandHomeLink } from "../components/BrandHomeLink";
+import { AppHeader } from "../components/AppHeader";
 import { Markdown } from "../components/Markdown";
+import { InfoTooltip } from "../components/InfoTooltip";
 import {
   fetchCatalystTests,
   fetchCatalystTypes,
@@ -22,7 +23,42 @@ const TABS: [Tab, string][] = [
   ["reddit", "Reddit attention"],
   ["studies", "Studies"],
 ];
-const VERDICT_ORDER: Verdict[] = ["avoid", "positive", "watch", "none", "untested"];
+const VERDICT_ORDER: Verdict[] = ["positive", "watch", "avoid", "none", "untested"];
+
+/** 90% CI shading: green when the whole range clears the random-date null
+ *  (a real signal, either direction), grey when it includes zero (can't
+ *  even call the direction), plain otherwise. */
+function ciStrength(t?: CatalystTest): string {
+  if (!t || t.ci_lo == null || t.ci_hi == null) return "";
+  if (t.null_med != null && (t.ci_lo > t.null_med || t.ci_hi < t.null_med)) return "ci-strong";
+  if (t.ci_lo <= 0 && t.ci_hi >= 0) return "ci-weak";
+  return "";
+}
+
+/** q shading, same scheme as the CI: green <= 0.10 (counts as a finding),
+ *  grey > 0.25 (weak — likely luck given how many types were tested),
+ *  plain in between. */
+function qStrength(q?: number | null): string {
+  if (q == null) return "";
+  if (q <= 0.1) return "ci-strong";
+  if (q > 0.25) return "ci-weak";
+  return "";
+}
+
+/** Leaderboard columns: [label, hover explanation, numeric]. */
+const LEADERBOARD_COLUMNS: [string, string, boolean][] = [
+  ["Catalyst", "The event type (e.g. a trading halt, an S-1 filing, an earnings beat). The grey line underneath says what it is and where it comes from.", false],
+  ["Verdict", "Avoid: stocks do reliably worse after it. Positive: reliably better. Watch: promising, not proven. No effect: indistinguishable from chance. Untested: too few events to test.", false],
+  ["Source", "Where the events come from: SEC filings, news headlines, earnings data, insider (Form 4) filings, or corporate actions.", false],
+  ["Events", "How many times this happened in 2016-2021 among $0.10-$15 stocks trading at least $250k a day. More events = more trustworthy numbers.", true],
+  ["5d excess", "Average return over the 5 trading days after the event, minus the average stock's return over the same days. Costs already taken out. Positive = beat the typical stock.", true],
+  ["20d excess", "Same as 5d excess, over 20 trading days (about a month) — the horizon everything else is judged on.", true],
+  ["20d null", "The 20-day excess for the same stocks on random days, when the event didn't happen — what these kinds of stocks do anyway.", true],
+  ["Gap", "20d excess minus 20d null: the effect of the event itself, separated from the kind of stock it happens to. Red = worse than usual after the event, green = better.", true],
+  ["90% CI", "The range the 20-day excess likely falls in, 90% of the time (low | high). Green: the whole range clears the 20d null — the event really does differ from the same stocks on random days. Grey: the range includes zero, so even the direction is uncertain (weakest). White: in between.", true],
+  ["q", "The chance this is a fluke after accounting for how many catalyst types were tested — test dozens and a few look good by luck. Green: 0.10 or below, counts as a finding. White: 0.10-0.25, suggestive. Grey: above 0.25, weak.", true],
+  ["2022+ gap", "The same gap on 2022-to-now data, held back while the rules were built. 'Sealed' = that final test hasn't been run yet. A rule is only trusted once it holds here too.", true],
+];
 
 /**
  * Research results published nightly from the local research warehouse
@@ -46,15 +82,7 @@ export function Research() {
 
   return (
     <div className="page">
-      <header className="page-header">
-        <BrandHomeLink />
-        <h1>Research</h1>
-        <div className="header-actions">
-          <Link to="/" className="link-button">
-            Dashboard
-          </Link>
-        </div>
-      </header>
+      <AppHeader />
       <nav className="research-tabs">
         {TABS.map(([t, label]) => (
           <button key={t} className={`research-tab${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
@@ -146,27 +174,35 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
           </select>
         </label>
       </div>
-      <div className="trigger-feed-scroll">
-        <table className="isolator-table research-table">
+      <div className="trigger-feed-scroll ops-panel">
+        <table className="ops-table research-table">
           <thead>
             <tr>
-              <th>Catalyst</th>
-              <th>Verdict</th>
-              <th>Source</th>
-              <th className="col-num">Events</th>
-              <th className="col-num">5d excess</th>
-              <th className="col-num">20d excess</th>
-              <th className="col-num">Null</th>
-              <th className="col-num">Gap</th>
-              <th className="col-num">90% CI</th>
-              <th className="col-num">q</th>
-              <th className="col-num">2022+ gap</th>
+              {LEADERBOARD_COLUMNS.map(([label, tip, num]) => (
+                <th key={label} className={num ? "col-num" : undefined}>
+                  <InfoTooltip text={tip}>{label}</InfoTooltip>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ t, d20, d5, gap, hgap }) => (
+            {rows.map(({ t, d20, d5, gap, hgap }, i) => {
+              const newGroup = i === 0 || rows[i - 1].t.verdict !== t.verdict;
+              const idx = rows.slice(0, i + 1).filter((r) => r.t.verdict === t.verdict).length - 1;
+              return (
               <Fragment key={t.type}>
-                <tr className="research-row" onClick={() => setOpen(open === t.type ? null : t.type)}>
+                {newGroup && (
+                  <tr className="ops-group">
+                    <td colSpan={11}>
+                      {VERDICT_LABEL[t.verdict]}{" "}
+                      <span className="about-section-count">{rows.filter((r) => r.t.verdict === t.verdict).length}</span>
+                    </td>
+                  </tr>
+                )}
+                <tr
+                  className={`ops-row research-row rv-${t.verdict}${idx % 2 ? " ops-row-alt" : ""}${open === t.type ? " ops-row-open" : ""}`}
+                  onClick={() => setOpen(open === t.type ? null : t.type)}
+                >
                   <td>
                     {t.label}
                     {t.description && <div className="research-desc">{t.description}</div>}
@@ -180,14 +216,14 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
                   <td className="col-num">{pct(d20?.mean_x)}</td>
                   <td className="col-num">{pct(d20?.null_med)}</td>
                   <td className={`col-num ${gap == null ? "" : gap < 0 ? "neg" : "pos"}`}>{pct(gap)}</td>
-                  <td className="col-num">
-                    {d20?.ci_lo != null ? `${pct(d20.ci_lo, 1)} … ${pct(d20.ci_hi, 1)}` : "—"}
+                  <td className={`col-num ${ciStrength(d20)}`}>
+                    {d20?.ci_lo != null ? `${pct(d20.ci_lo, 1)} | ${pct(d20.ci_hi, 1)}` : "—"}
                   </td>
-                  <td className="col-num">{d20?.q != null ? d20.q.toFixed(3) : "—"}</td>
+                  <td className={`col-num ${qStrength(d20?.q)}`}>{d20?.q != null ? d20.q.toFixed(3) : "—"}</td>
                   <td className="col-num">{hgap != null ? pct(hgap) : "sealed"}</td>
                 </tr>
                 {open === t.type && (
-                  <tr className="research-expand">
+                  <tr className="ops-expand">
                     <td colSpan={11}>
                       {t.verdict_note && <p className="research-note">{t.verdict_note}</p>}
                       {samples.length === 0 ? (
@@ -207,7 +243,8 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
                   </tr>
                 )}
               </Fragment>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -317,8 +354,8 @@ function Feed({ types }: { types: Map<string, CatalystType> }) {
       {events.length === 0 && !loading ? (
         <p className="empty-state">No events match.</p>
       ) : (
-        <div className="trigger-feed-scroll">
-          <table className="isolator-table research-table">
+        <div className="trigger-feed-scroll ops-panel">
+          <table className="ops-table research-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -330,10 +367,10 @@ function Feed({ types }: { types: Map<string, CatalystType> }) {
               </tr>
             </thead>
             <tbody>
-              {events.map((e) => {
+              {events.map((e, i) => {
                 const t = types.get(e.type);
                 return (
-                  <tr key={e.id}>
+                  <tr key={e.id} className={`ops-row rv-${t?.verdict ?? "untested"}${i % 2 ? " ops-row-alt" : ""}`}>
                     <td className="catalyst-date">{e.event_date}</td>
                     <td>
                       <Link to={`/symbol/${e.symbol}`}>{e.symbol}</Link>
@@ -418,8 +455,8 @@ function Reddit() {
         score = upvotes). Spike = the latest day's mentions vs the 30-day daily average. Not yet a tested catalyst —
         there's no history before the collector started.
       </p>
-      <div className="trigger-feed-scroll">
-        <table className="isolator-table research-table">
+      <div className="trigger-feed-scroll ops-panel">
+        <table className="ops-table research-table">
           <thead>
             <tr>
               <th>Symbol</th>
@@ -431,8 +468,8 @@ function Reddit() {
             </tr>
           </thead>
           <tbody>
-            {table.map((r) => (
-              <tr key={r.symbol}>
+            {table.map((r, i) => (
+              <tr key={r.symbol} className={`ops-row${i % 2 ? " ops-row-alt" : ""}`}>
                 <td>
                   <Link to={`/symbol/${r.symbol}`}>{r.symbol}</Link>
                 </td>

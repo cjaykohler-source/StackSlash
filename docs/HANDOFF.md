@@ -12,7 +12,7 @@ the research derivations and the open decisions.
 |---|---|
 | Repo | `~/StackSlash` on host **stackslash-worker-host** (macOS, Apple Silicon). GitHub: `cjaykohler-source/StackSlash`, default branch `main` |
 | The only machine anything runs on | stackslash-worker-host. Nothing runs on a laptop, in CI or in the cloud except Netlify and Supabase |
-| Site | Netlify, https://stackslash.netlify.app (auto-deploys from `main`) |
+| Site | Netlify, https://r10t.netlify.app (auto-deploys from `main`) |
 | Database | Supabase project `wnzxvdfskmivbyqadtll` (org StackSlash), **Pro plan**, ~2.4 GB of 8 GB |
 | Access / credential map | `docs/ACCESS.md` — accounts to be invited to, credential names, what each key can do, handover checklist |
 | Secrets | `~/StackSlash/.env` (not in git). Netlify has its own copy of the same vars in site settings |

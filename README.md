@@ -1610,7 +1610,7 @@ Keep this list current: add anything left outstanding, strike it when done.
 
 | Piece | Where | Status |
 |---|---|---|
-| Frontend + functions | Netlify, site `stackslash` → https://stackslash.netlify.app | Live, auto-deploys from GitHub `main` |
+| Frontend + functions | Netlify, site `r10t` (renamed from `stackslash`) → https://r10t.netlify.app | Live, auto-deploys from GitHub `main` |
 | Repo | https://github.com/cjaykohler-source/StackSlash | `main` |
 | Database | Supabase project `wnzxvdfskmivbyqadtll` (org StackSlash) | **Pro plan** (8 GB, upgraded 2026-09-10 — was free/500MB) |
 | Market data | Alpaca, **paper** keys, free plan: IEX real-time (production scans, quotes, worker) + SIP history older than 15 min (charts, research); 200 req/min shared | No funded account needed for data-only use |

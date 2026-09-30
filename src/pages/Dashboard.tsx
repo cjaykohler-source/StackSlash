@@ -1,39 +1,13 @@
-import { Link } from "react-router-dom";
-import { supabase } from "../lib/supabaseClient";
+import { AppHeader } from "../components/AppHeader";
 import { RegimeBanner } from "../components/RegimeBanner";
 import { TrackingPanel } from "../components/TrackingPanel";
 import { TriggerFeed } from "../components/TriggerFeed";
 import { TopMovers } from "../components/TopMovers";
-import { SymbolSearch } from "../components/SymbolSearch";
-import { BrandHomeLink } from "../components/BrandHomeLink";
 
 export function Dashboard() {
   return (
     <div className="page">
-      <header className="page-header">
-        <BrandHomeLink />
-        <SymbolSearch />
-        <div className="header-actions">
-          <Link to="/isolator" className="link-button">
-            Isolator
-          </Link>
-          <Link to="/reports" className="link-button">
-            Reports
-          </Link>
-          <Link to="/research" className="link-button">
-            Research
-          </Link>
-          <Link to="/settings" className="link-button">
-            Settings
-          </Link>
-          <Link to="/about" className="link-button">
-            About
-          </Link>
-          <button className="link-button" onClick={() => supabase.auth.signOut()}>
-            Sign out
-          </button>
-        </div>
-      </header>
+      <AppHeader />
       <RegimeBanner />
       <TrackingPanel />
       <div className="dashboard-body">
