@@ -8,6 +8,7 @@ import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Isolator } from "./pages/Isolator";
 import { Research } from "./pages/Research";
+import { Ops } from "./pages/Ops";
 
 export function App() {
   return (
@@ -58,6 +59,14 @@ export function App() {
         element={
           <AuthGuard>
             <Research />
+          </AuthGuard>
+        }
+      />
+      <Route
+        path="/ops"
+        element={
+          <AuthGuard>
+            <Ops />
           </AuthGuard>
         }
       />
