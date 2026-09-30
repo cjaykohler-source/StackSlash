@@ -2811,3 +2811,14 @@ h1 .quote-tag {
   position: sticky;
   left: 16px;
 }
+
+/* Shared header: search sits in the right-hand row with the page buttons. */
+.app-header-nav {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+.app-header-nav .symbol-search {
+  flex: 0 1 260px;
+  margin-right: 4px;
+}
