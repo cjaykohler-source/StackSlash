@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { BrandHomeLink } from "../components/BrandHomeLink";
+import { AppHeader } from "../components/AppHeader";
 import { Markdown } from "../components/Markdown";
 import {
   fetchCatalystTests,
@@ -46,15 +46,7 @@ export function Research() {
 
   return (
     <div className="page">
-      <header className="page-header">
-        <BrandHomeLink />
-        <h1>Research</h1>
-        <div className="header-actions">
-          <Link to="/" className="link-button">
-            Dashboard
-          </Link>
-        </div>
-      </header>
+      <AppHeader />
       <nav className="research-tabs">
         {TABS.map(([t, label]) => (
           <button key={t} className={`research-tab${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>

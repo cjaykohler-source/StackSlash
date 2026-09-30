@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { BrandHomeLink } from "../components/BrandHomeLink";
+import { AppHeader } from "../components/AppHeader";
 
 interface ScanConfig {
   price_min: number;
@@ -105,9 +105,7 @@ export function Settings() {
 
   return (
     <div className="page">
-      <header className="page-header">
-        <BrandHomeLink />
-      </header>
+      <AppHeader />
 
       <h2>Targeting band</h2>
       <p className="settings-intro">

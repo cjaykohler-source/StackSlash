@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { TRIGGER_INFO, TIMING_LABEL, triggerLabel, triggerSide, type TriggerTiming } from "../lib/triggerInfo";
-import { BrandHomeLink } from "../components/BrandHomeLink";
+import { AppHeader } from "../components/AppHeader";
 
 interface TriggerRow {
   id: number;
@@ -85,9 +85,7 @@ export function About() {
 
   return (
     <div className="page about-page">
-      <header className="page-header">
-        <BrandHomeLink />
-      </header>
+      <AppHeader />
 
       <h2>How the triggers work</h2>
       <p className="about-intro">

@@ -2787,3 +2787,13 @@ h1 .quote-tag {
   padding: 12px 16px;
 }
 .ops-table tbody tr:last-child td { border-bottom: none; }
+
+/* Shared app header: the current page's button in red with a soft glow. */
+.link-button.active,
+.link-button.active:visited {
+  color: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 0 10px rgba(231, 76, 60, 0.45), inset 0 0 6px rgba(231, 76, 60, 0.15);
+}
+.link-button.active:hover { color: #ff6b5b; border-color: #ff6b5b; }
+.ops-refresh { padding: 2px 10px; font-size: 0.8rem; }
