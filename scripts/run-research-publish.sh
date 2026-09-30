@@ -9,7 +9,8 @@
 #   3. Going-concern full-text search: last two months, merged into the cache
 #   4. Earnings: DoltHub eps_history re-pulled Mondays (its weekend update)
 #   5. Form 4: new filings only
-#   6. Rebuild event tables; 7. publish
+#   6. Rebuild event tables; 7. publish; 8. rebuild Charter's cross-sectional
+#      metrics table (research/data/charter/daily_metrics)
 # A failed step is logged and the rest still run; publish runs if the event
 # rebuild produced at least the unaffected sources. Touches research/data/
 # and the research_* tables only.
@@ -49,6 +50,7 @@ EXTRA=()
 [ "$DOW" = 1 ] && EXTRA+=(--refresh-earnings)
 step "event tables" $PY -u research/catalysts/sources.py edgar corporate_actions earnings going_concern news form4 ${EXTRA[@]+"${EXTRA[@]}"}
 step "publish" $PY -u research/publish_research.py
+step "charter metrics table" $PY -u research/charter_api/build_metrics.py
 if [ ${#FAILED[@]} -gt 0 ]; then
   echo "=== $(date -u '+%Y-%m-%dT%H:%M:%SZ') done with failures: ${FAILED[*]} ===" >> "$LOG"
   exit 1

@@ -45,7 +45,11 @@ function tokenize(src: string): string[] {
   return out;
 }
 
-export function parseFormula(src: string, columns: Set<string>): Node {
+const SERIES_FUNCS = new Set(["lag", "sma", "change", "zscore"]);
+
+/** rowwise: the rows are different stocks (a cross-section), so functions that look at
+ *  neighbouring rows (lag, sma, change, zscore) would mix stocks and are refused. */
+export function parseFormula(src: string, columns: Set<string>, rowwise = false): Node {
   const t = tokenize(src);
   let p = 0;
   const peek = () => t[p];
@@ -104,6 +108,8 @@ export function parseFormula(src: string, columns: Set<string>): Node {
       if (peek() === "(") {
         const fn = v.toLowerCase();
         if (!(fn in FUNCS)) throw new FormulaError(`unknown function "${v}"`);
+        if (rowwise && SERIES_FUNCS.has(fn))
+          throw new FormulaError(`${fn}() works over a time series; in the cross-section each row is a different stock`);
         eat("(");
         const args: Node[] = [cmp()];
         while (peek() === ",") {
@@ -189,9 +195,9 @@ function evalNode(n: Node, cols: Record<string, Series>, len: number): Series {
 }
 
 /** Parse and evaluate; throws FormulaError with a readable message. */
-export function evaluateFormula(src: string, cols: Record<string, Series>): Series {
+export function evaluateFormula(src: string, cols: Record<string, Series>, rowwise = false): Series {
   const names = new Set(Object.keys(cols));
-  const tree = parseFormula(src, names);
+  const tree = parseFormula(src, names, rowwise);
   const len = Object.values(cols)[0]?.length ?? 0;
   return evalNode(tree, cols, len);
 }

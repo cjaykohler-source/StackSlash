@@ -2923,3 +2923,10 @@ h1 .quote-tag {
 .charter-events { margin: 10px 0; padding: 8px 4px; }
 .charter-events-scroll { max-height: 420px; overflow-y: auto; }
 .charter-page .neg { color: var(--red); }
+
+.charter-num { width: 90px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font: inherit; font-size: 0.85rem; }
+.charter-filter-add { display: inline-flex; gap: 6px; align-items: center; }
+.charter-run { border-color: var(--accent); color: var(--text); }
+.charter-th { cursor: pointer; }
+.charter-th-x { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 0 0 0 4px; }
+.charter-th-x:hover { color: var(--red); }

@@ -401,9 +401,141 @@ def ep_live(q):
             "data": {n: [b.get(k) for b in bars] for n, k in zip(names, keys)}, "rows": len(bars)}
 
 
-ROUTES = {"/catalog": lambda q: {"metrics": METRICS}, "/symbols": ep_symbols, "/daily": ep_daily, "/events": ep_events,
+METRICS_DIR = DATA / "charter" / "daily_metrics"
+EXCHANGES = {"NASDAQ", "NYSE", "AMEX", "ARCA", "BATS", "OTC"}
+# catalyst families counted over trailing windows in /cross (types from research/data/catalysts)
+CAT_FAMILIES = {
+    "offering": ("s1", "s3", "424b4", "424b5"),
+    "halt": ("news_halt",),
+    "partnership_pr": ("news_partnership",),
+    "earnings_beat": ("earn_beat", "earn_big_beat"),
+    "insider_buy": ("f4_buy",),
+    "news": None,        # any typed headline (news_* except news_any)
+    "filing": None,      # any EDGAR event
+}
+
+
+def p_float(q, key, default):
+    v = (q.get(key) or [None])[0]
+    if v in (None, ""):
+        return default
+    try:
+        return float(v)
+    except ValueError:
+        raise ApiError(400, f"{key} must be a number")
+
+
+def ep_cross(q):
+    """Every symbol on one date (snapshot) or a sample of symbol-days across a range (pooled),
+    with all daily metrics + forward outcomes, plus point-in-time short / share / catalyst context."""
+    if (q.get("date") or [None])[0]:
+        start = end = p_date(q, "date")
+    else:
+        start, end = p_range(q)
+        if (end - start).days > 366 * 11:
+            raise ApiError(400, "range too long")
+    sample = int(p_float(q, "sample", 20000))
+    sample = max(100, min(sample, 200000))
+    pmin, pmax = p_float(q, "price_min", 0.10), p_float(q, "price_max", 5.0)
+    dmin = p_float(q, "dollar20_min", 250000)
+    exch = [e for e in (q.get("exchanges") or [""])[0].upper().split(",") if e]
+    if any(e not in EXCHANGES for e in exch):
+        raise ApiError(400, "unknown exchange")
+    funds = (q.get("funds") or ["0"])[0] == "1"
+    seed = int(p_float(q, "seed", 7))
+    con = connect()
+    e = str(EDGAR)
+    ex_sql = f"and exchange in ({', '.join('?' for _ in exch)})" if exch else ""
+    params = [start.year, end.year, start, end, pmin, pmax, dmin, *exch]
+    # sample AFTER filtering (duckdb applies USING SAMPLE to the FROM clause, i.e. before WHERE)
+    con.execute(f"""
+      create temp table base as
+      select * from (
+        select * exclude (year) from read_parquet('{METRICS_DIR}/*/*.parquet', hive_partitioning = true)
+        where year between ? and ? and date between ? and ? and raw_close between ? and ? and dollar20 >= ?
+          {ex_sql} {'' if funds else 'and not coalesce(is_fund, false)'}
+      ) using sample {sample} rows (reservoir, {seed})
+    """, params)
+    total = con.execute(f"""
+      select count(*) from read_parquet('{METRICS_DIR}/*/*.parquet', hive_partitioning = true)
+      where year between ? and ? and date between ? and ? and raw_close between ? and ? and dollar20 >= ?
+        {ex_sql} {'' if funds else 'and not coalesce(is_fund, false)'}
+    """, params).fetchone()[0]
+    si = CAT / "raw" / "short_interest"
+    fam_sql = []
+    for fam, types in CAT_FAMILIES.items():
+        if fam == "news":
+            cond = "ev.type like 'news_%'"
+        elif fam == "filing":
+            cond = "ev.source = 'edgar'"
+        else:
+            cond = "ev.type in (" + ", ".join(f"'{t}'" for t in types) + ")"
+        fam_sql.append(f"count(*) filter (where {cond} and ev.event_date > b.date - 20) as cat20_{fam}")
+        fam_sql.append(f"count(*) filter (where {cond}) as cat60_{fam}")
+    con.execute(f"""
+      create temp table sf as
+      select m.symbol, m.date, m.split_factor from read_parquet('{METRICS_DIR}/*/*.parquet', hive_partitioning = true) m
+      where m.symbol in (select distinct symbol from base) and m.year between ? and ?
+      order by 1, 2
+    """, [start.year - 3, end.year])
+    con.execute(f"""
+      create temp table si as
+      select symbol, settlement_date, settlement_date + interval 12 day as pub, short_interest, days_to_cover
+      from read_parquet('{si}/*.parquet') where symbol in (select distinct symbol from base) order by symbol, pub
+    """)
+    con.execute(f"""
+      create temp table tc as select ticker, min(cik) as cik from (
+        select ticker, cik from read_parquet('{e}/edgar_tickers.parquet')
+        union select unnest(tickers) as ticker, cik from read_parquet('{e}/edgar_companies.parquet')) group by ticker
+    """)
+    con.execute(f"""
+      create temp table sh as select cik, filed::date as filed, max(val) as shares from read_parquet('{e}/edgar_facts.parquet')
+      where concept in ('EntityCommonStockSharesOutstanding','CommonStockSharesOutstanding') and unit = 'shares' and val > 0
+        and cik in (select cik from tc where ticker in (select distinct symbol from base))
+      group by 1, 2 order by 1, 2
+    """)
+    res = columns(con, f"""
+      with x as (select b.*, tc.cik, b.date - interval 365 day as d1y from base b left join tc on tc.ticker = b.symbol),
+      s0 as (select x.*, sh.shares as sh0, sh.filed as f0 from x asof left join sh on x.cik = sh.cik and x.date >= sh.filed),
+      s1 as (select s0.*, sh.shares as sh1, sh.filed as f1 from s0 asof left join sh on s0.cik = sh.cik and s0.d1y >= sh.filed),
+      q as (select s1.*, si.short_interest as si0, si.days_to_cover, si.settlement_date as sd from s1 asof left join si
+            on si.symbol = s1.symbol and s1.date >= si.pub),
+      r0 as (select q.*, a.split_factor as f_f0 from q asof left join sf a on a.symbol = q.symbol and q.f0 >= a.date),
+      r1 as (select r0.*, a.split_factor as f_f1 from r0 asof left join sf a on a.symbol = r0.symbol and r0.f1 >= a.date),
+      r2 as (select r1.*, a.split_factor as f_sd from r1 asof left join sf a on a.symbol = r1.symbol and r1.sd >= a.date),
+      ctx as (
+        select r2.* exclude (cik, d1y, sh0, sh1, f0, f1, si0, sd, f_f0, f_f1, f_sd),
+          sh0 * split_factor / nullif(f_f0, 0) as shares_outstanding,
+          -- shares restated to this date's basis x this date's actual (raw) price
+          sh0 * split_factor / nullif(f_f0, 0) * raw_close as mcap,
+          (sh0 * split_factor / nullif(f_f0, 0)) / nullif(sh1 * split_factor / nullif(f_f1, 0), 0) - 1 as share_growth_1y,
+          si0 * split_factor / nullif(f_sd, 0) as short_interest,
+          (si0 * split_factor / nullif(f_sd, 0)) / nullif(sh0 * split_factor / nullif(f_f0, 0), 0) as short_float,
+          date - sd as short_age_days
+        from r2
+      ),
+      evs as (
+        select symbol, event_date, source, type from read_parquet('{CAT}/*.parquet', union_by_name = true)
+        where symbol in (select distinct symbol from base) and event_date between ?::date - 60 and ?::date
+          and type not in ('news_any', 'form4')
+      ),
+      cats as (
+        select b.symbol, b.date, {", ".join(fam_sql)}
+        from base b join evs ev on ev.symbol = b.symbol and ev.event_date <= b.date and ev.event_date > b.date - 60
+        group by all
+      )
+      select ctx.*, {", ".join(f"coalesce(cats.cat20_{f}, 0) as cat20_{f}, coalesce(cats.cat60_{f}, 0) as cat60_{f}" for f in CAT_FAMILIES)}
+      from ctx left join cats using (symbol, date)
+      order by date, symbol
+    """, (start, end))
+    res["total_matching"] = total
+    res["sampled"] = total > res["rows"]
+    return res
+
+
+ROUTES = {"/catalog": lambda q: {"metrics": METRICS}, "/cross": ep_cross, "/symbols": ep_symbols, "/daily": ep_daily, "/events": ep_events,
           "/short": ep_short, "/fundamentals": ep_fundamentals, "/reddit": ep_reddit, "/minute": ep_minute, "/live": ep_live}
-CSV_OK = {"/daily", "/events", "/fundamentals", "/minute"}
+CSV_OK = {"/daily", "/events", "/fundamentals", "/minute", "/cross"}
 
 
 def to_csv(res):
