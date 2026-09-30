@@ -98,7 +98,256 @@ so the next attempt doesn't re-discover the same dead ends.
 > and the current operational state. This file is the strategy, the
 > research derivations and the open decisions.
 
+## Session 2026-09-24/28 — chart layout, trigger-scorecard audits, a catalyst-discovery system, and the breakout-event study
+
+Read this before every section below it; where they disagree, this wins. Four
+distinct threads, in the order they happened.
+
+### Chart layout and remaining display work
+
+- **Two full-width symbol-page layout mockups**, built as a design-canvas
+  artifact rather than shipped code: (1) drop `.page`'s `max-width: 1680px`
+  cap in favor of a fixed viewport buffer, so the chart alone grows on a
+  wide monitor; (2) a more structural alternative that moves the whole
+  factor-snapshot column out of its 210px sidebar into horizontal bands
+  below the chart, matching a layout the user sketched from a screenshot.
+  Neither implemented yet — a decision for later, not blocking anything.
+- **The Week/Month/Year/5Years/Since-2016 tooltip and Candles/Basic
+  toggle were still on the pre-#212/#215 designs** (only Session had them).
+  Fixed and shipped (#217): `RangeCandleChart` now uses the same
+  hero-price/aligned-grid tooltip as `SessionCandleChart`, and defaults to
+  Basic (a candle body is unreadable once hundreds are compressed into one
+  view) with Candles one click away.
+
+### Live trigger-scorecard audit
+
+Queried `trigger_scorecard` (fire price → EOD close, live data since the
+2026-09-17 restart) for every enabled trigger, then dug into the two that
+looked wrong.
+
+- **Confirmed working, matches research exactly**: `avoid_volume_blowoff`
+  (75% correct, median −14.7%, matching the −16.2% published finding),
+  `bigmove_watchlist` (no win-rate scored by design, but raw returns skew
+  negative as the U:D 0.65 finding predicts), `rvol_breakout` (n=244, flat,
+  matching "not promising at any horizon").
+- **`avoid_chase_extended` looked backwards live** (28.6% correct, n=7) —
+  traced to a real definitional drift: production gates on `rvol` (a
+  time-of-day-pace-normalized minute-profile ratio), the backtested schema
+  (`early_move_continuation`) gates on `cum_vol_vs_adv20`, a different
+  feature schema_lab.py has no way to reproduce exactly. Built a
+  `bar_vol_spike >= 2` analog and reran at 50k tier: **−2.27% mean /
+  −3.40% median at 120min, closely matching the original gate's −1.92% /
+  −3.38%** — the fade edge is not fragile to which volume-rate formula
+  gates it. The live n=7 divergence (one +38.96% outlier, GLND) is noise,
+  not a bug; no code change made.
+- **`avoid_reverse_split` fires across a ~7-week window** (ex-date −28 to
+  +30 days); the backtested −17%/−22% figure was measured at the ex-date
+  only. A diagnostic bucketing the whole window by offset showed the
+  pre-split legs are *more* negative than the ex-date figure, not less —
+  but pre-split lead time can't be verified from the bulk
+  `corporate_actions` parquet (no disclosure-date field). Checked live
+  against Alpaca's actual feed (2026-09-25): it does carry real forward
+  visibility, up to 19 days out on a same-day probe. Still open; no code
+  change made to the trigger itself.
+
+### A catalyst-discovery system (shipped, #218–#220)
+
+Reframed the "next-day setups" question toward Phase E of
+`overhaul-plan.md`'s architecture, which had never been started (open
+item #11 below).
+
+- **`corporate_actions` table + `sync-corporate-actions`** (daily, 11:00
+  UTC): persists Alpaca's forward-looking reverse-split feed, which
+  `eod-scan.ts` had only ever held in memory to evaluate
+  `avoid_reverse_split` and then discarded. `fetchReverseSplits` now
+  returns process/record/payable date and split rate too.
+- **`upcoming_catalysts` view**: band symbols with an upcoming earnings
+  date (FMP calendar), an upcoming reverse split (the new table), or a
+  recent 8-K item 5.03/3.03 charter filing. The charter-filing lead was
+  measured against the full 2016–2026 EDGAR history: only ~21% of
+  historical reverse splits have a matching filing at all, and of those,
+  median lead is ~5 days when filed in advance — a low-confidence
+  secondary flag, not a confirmed early warning; `corporate_actions` is
+  the primary source.
+- **A real performance bug found and fixed in the same pass**: the
+  view's first draft computed "latest close per symbol" via `distinct on`
+  over all 5.4M `bars_daily` rows whenever queried without a `symbol_id`
+  filter — exactly what the digest section below does nightly. Measured
+  at 9.6s, confirmed via a direct anon-key REST call to trip PostgREST's
+  statement timeout (`57014`). Rewritten to source price/liquidity from
+  `factor_state.last_close`/`dollar_vol_20d` instead (`where as_of =
+  max(as_of)`, ~90x fewer rows) — now 41ms unfiltered, ~20ms per-symbol.
+- **`eod-digest`**: a new "📅 Upcoming catalysts" section, independent of
+  whether any trigger fired that day (a quiet trigger day doesn't mean
+  nothing to prep for tomorrow).
+- **Symbol page**: the charter-filing flag surfaced in `FinancialsPanel`
+  as a "Corporate filings" group, amber, with the ~21%-coverage/~5-day-lead
+  caveat in its tooltip.
+
+### The breakout-event study — full detail in `docs/breakout-study.md`
+
+Asked: every instance since 2016 of a ≥75% single-session gain in the
+$0.10–$5 band — what, if anything, precedes one? Summary here; the full
+methodology, every guard, and every scan result are in the dedicated doc.
+
+- **A naive query is dominated by data artifacts, not breakouts.** The
+  top of an unguarded list is reverse-split/bankruptcy-reorg equity
+  cancellations (GPOR 2021-05-18 "+52,648%", LINE, SD, GDP) that
+  `corporate_actions` does **not** catch even with a ±3-day window. The
+  guard that actually works: real prior trading volume plus a genuine
+  volume surge on the event day — reorg/delisting artifacts trade on
+  near-zero prior volume. **Final validated list: 1,465 events across 974
+  symbols** (349 in 2016–21, 1,116 in 2022+), no dollar-volume floor
+  applied, survivorship claimed but not independently reverified.
+- **A wide, persisted per-event feature dataset** (`breakout_events.py`,
+  `breakout_window_dataset.py`): every event × trading-session offset
+  −45..0, ~67k rows, built once from the existing warehouse so later
+  questions don't each re-derive their own slice.
+- **The volume run-up finding flips depending on which direction you
+  condition on** — the project's own lesson about construct validity,
+  replaying itself in a new study. Backward (given a breakout happened,
+  what did volume look like before): a real ramp, quiet for weeks then
+  elevated the final few sessions. Forward (given a stock is currently
+  quiet, does it break out): **streak length alone barely beats baseline
+  even at 20+ days** (0.83% vs 0.47%, ~1 in 120). Pairing the streak with
+  a trailing 20-day decline of ≥20% is the one combination that held up
+  **with the same sign in both periods independently** (2016–21: up to
+  3.25x baseline; 2022+: up to 2.61x) — real, but still a low
+  single-digit-percent absolute hit rate, not a trigger.
+- **A 15-metric universe-wide scan mostly found one archetype wearing many
+  costumes.** Price-down, distance-from-SMA, price level, liquidity tier,
+  ATR width and 52-week-high proximity are all highly collinear —
+  "beaten-down, cheap, illiquid, volatile" is one pattern, not several,
+  and part of it may be plain volatility clustering (extreme moves in
+  *either* direction predict more extreme moves). The one metric that
+  stood apart as a genuinely distinct family: `vol_ratio_20d >= 5x`
+  (2.52x/2.61x, both periods) — participation, not price state.
+- **A full data audit for expanding this**, on request, before adding more
+  metrics from the same OHLCV source. Two paid-for, already-loaded, still
+  untouched resources: `edgar_facts.parquet` (dilution/cash-runway, full
+  2016–2026 history) and the 85GB SIP minute warehouse (intraday
+  microstructure). Real gaps needing new access, not just unused data:
+  historical short interest beyond ~2026, historical borrow-fee data, and
+  full order-book (L2/L3) depth — the last discussed at length: richer in
+  principle, but a real vendor cost, weeks not days of engineering, and
+  unevenly applicable across this universe's OTC-heavy names. Vendor
+  pricing lookup offered, not yet done.
+
+**Everything in this section is exploratory research, not a shipped
+trigger or a claimed edge.** See `docs/breakout-study.md` §Open items for
+the full next-step list for that study specifically; the consolidated
+project-wide list below folds in only its top-line items.
+
+### Open items — the consolidated list (2026-09-28)
+
+This supersedes every earlier "Open items" list in this file, including
+the 2026-09-24 one below. Items unchanged from that list keep their
+number; new ones are appended at the end of their section.
+
+**Research — audit debt** *(unchanged from 2026-09-24, still not started)*
+
+1. Layer 3 (independent reimplementation) for `bigmove_study.py` /
+   `catalyst_study.py`.
+2. `catalyst_study.py` has no negative controls (Layer 2).
+3. Unaudited entirely: `daily_trigger_study.py`, `schema_lab.py`,
+   `tradingCosts.ts`, `backtest-triggers.ts`.
+4. `bigmove_study.py` Layer 1 findings F1/F2/F3/F6/F7 unresolved.
+5. `catalyst_study.py` C2 unresolved (unknowns read as verified-clean).
+6. Every threshold on the 8-K pool needs rebasing against a measured
+   noise floor.
+
+**Research — open questions** *(unchanged unless noted)*
+
+7. Operating cash flow pre-registration (coverage fix first).
+8. The $5–$10 holdout, partly compromised; Phase A needs re-scoping
+   around `8k_2.02` and U:D.
+9. M.3 — real Tier A/B/C pool size per session.
+10. M.4 — is `8k_any_quiet` robust?
+27. **New**: `avoid_reverse_split`'s pre-split window (ex-date −28 to −1
+    days) shows the *strongest* negative drift of the whole window in an
+    unguarded diagnostic, but its point-in-time validity is unverified —
+    the bulk `corporate_actions` parquet has no disclosure-date field.
+    Live-checked 2026-09-25: Alpaca's real-time feed does carry ~19 days
+    of genuine forward visibility, which de-risks this somewhat, but
+    doesn't settle it. No code change made.
+28. **New**: the bulk `corporate_actions` parquet (used for research
+    exclusion filtering) has real, confirmed coverage gaps — it misses
+    GPOR (2021-05-18), LINE (2024-07-25), SD (2016-10-04) and GDP
+    (2017-04-11), all well-known reverse-split/reorg events, even with a
+    ±3-day matching window. Worth investigating `load_corporate_actions.py`
+    before trusting this table for anything beyond a best-effort filter.
+29. **New — the breakout-event study** (`docs/breakout-study.md` has the
+    full list): the volume+price-decline combination is the only finding
+    that cleared the both-periods bar so far (up to 3.25x lift), but
+    still needs a permutation-based noise floor before the magnitude is
+    trusted, not just an assumed one. Two paid-for, unused data sources
+    (`edgar_facts.parquet` for dilution, the 85GB minute warehouse for
+    intraday microstructure) are the next signal families to build out
+    before reaching for anything requiring new paid access.
+
+**Build — the shortlist and the stages**
+
+11. `getShortlist()` — still not built. The new catalyst-discovery system
+    (`upcoming_catalysts`, `corporate_actions`, the digest section) is a
+    step in this direction but is **not** the spec'd function itself —
+    `docs/selection-logic.md`'s Steps 1–5 remain unimplemented.
+12. B.1 list-agnostic boundary; B.3 standing lift scoreboard; B.4 the
+    floor case written down.
+13. Phase D: D.1 tests in CI; D.2 full OHLC in `bars_intraday`; D.3
+    re-baseline affected thresholds.
+14. Phase E — Stage 1 analysis pass, Stage 2 overnight enrichment, Stage
+    3 pre-open report. Gated by Phase A's decision rule.
+15. Phase F monitoring tier, Phase G trade journal and live-vs-backtest
+    panel.
+33. **New (2026-09-30)**: automatic liquidity floors — a weekly job
+    recalculating `scan_config`'s two dollar-volume floors from
+    tradability (position size vs daily volume, estimated spread cost)
+    with a percentile guardrail, manual/auto mode so `/settings` is never
+    silently overwritten, and a shadow period first. Design and open
+    decisions in `docs/liquidity-floor-recalc.md`. Replaces the retired
+    one-off `set-sip-floors-once` job.
+
+**Build — Phase C leftovers** *(unchanged)*
+
+16. C.4 replace the category guard with `opens_position`.
+17. C.5 clean up dead/sentinel `exit_rules`.
+18. C.6 retire `sim-intraday-flips`.
+
+**Display and data presentation**
+
+19. The volume pane's scale is the largest bar in view (left alone
+    deliberately).
+20. The volume meter is green above 2x, conflicting with the >=25x
+    finding.
+21. The typical-volume reference line spans the full 4a-8p axis.
+22. Extended-hours bars stay ~16 minutes delayed on this data plan.
+30. **New**: two full-width symbol-page layout mockups exist (a canvas
+    artifact, not shipped) — pick one, or neither, before building.
+
+**Coverage gaps** *(unchanged)*
+
+23. FBDT and GSUN, both uncoverable by the pipeline as designed.
+
+**Standing decisions, unchanged**
+
+24. `catalyst_momentum` stays disabled.
+25. The free-tier Supabase downgrade, not started, purely a cost call.
+26. IBKR read-only on the paper login, not set up.
+31. **New**: `DOLTHUB_TOKEN` is unset (DoltHub works fine without it, just
+    with less rate-limit headroom) — trivial to add, not urgent.
+32. **New**: full order-book (L2/L3) history was discussed as a possible
+    future data source for the breakout study — genuinely richer in
+    principle, but a real vendor cost (weeks of engineering, not days,
+    and unevenly useful across this universe's OTC-heavy names). Vendor
+    pricing lookup (Polygon.io/Databento/algoseek) offered, not done —
+    a decision for the user, not a research task to start unprompted.
+
+---
+
 ## Session 2026-09-22/24 — the growth null, and the display layer
+
+**Superseded by the section above** for anything it disagrees with; kept
+for its own record below.
 
 Read this before every section below it; where they disagree, this wins.
 
@@ -250,10 +499,9 @@ the axis was right, the thing feeding it was not.
 fixed cases, because `.chart-body` is `flex: 1` and stretches with the
 row. Only comparing the chart *content* shows the gap.
 
-### Open items — the consolidated list (2026-09-24)
+### Open items — the consolidated list (2026-09-24, superseded 2026-09-28)
 
-This supersedes every earlier "Still open" / "Open items" list in this
-file. Nothing here is started.
+**Superseded by the 2026-09-28 list above.** Kept for its own record below.
 
 **Research — audit debt**
 

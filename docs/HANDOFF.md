@@ -109,6 +109,7 @@ PostgREST pagination silently skips rows without an explicit `.order()`.
 | 07:15 weekdays | `finra-short-interest-sync` | launchd | FINRA short interest, skips settlements already loaded |
 | 07:30 / 17:30 / **22:30** weekdays | `sec-filings-sync` | launchd | EDGAR daily index → `sec_filings`. EDGAR publishes a session's index in the evening, so **22:30 is the run that lands that day's filings** |
 | 09:45, 15:15 weekdays | `ib-short-availability` | launchd | IBKR shares-to-borrow. Needs IB Gateway logged in |
+| 11:00 UTC weekdays | `sync-corporate-actions` | Netlify | Alpaca reverse-split feed → `corporate_actions` (added 2026-09-25 — persists what `eod-scan.ts` previously only held in memory) |
 | 17:45 weekdays | `eod-scan` | launchd | Daily factors + daily triggers (~200 s, ~4,980 rows) |
 | 18:10 weekdays | `eod-digest` | launchd | One ranked Discord card |
 | 18:20 / 18:20 / 18:25 weekdays | `prune-bars-intraday`, `prune-trigger-evaluations`, `prune-bars-daily` | Netlify | Retention |
@@ -170,7 +171,9 @@ excursions from the fire tick over 2h, for fast triggers; the older
 **Company data:** `fundamentals` (DoltHub), `balance_sheet` (SEC XBRL, 4,720
 symbols), `short_interest` (FINRA, 12 settlements), `short_availability`
 (IBKR borrow), `broker_snapshot` (Robinhood float + listing status, 374
-names, one-off 2026-09-18), `sec_filings`, `earnings`, `symbol_news`.
+names, one-off 2026-09-18), `sec_filings`, `earnings`, `symbol_news`,
+`corporate_actions` (Alpaca reverse-split feed, persisted daily since
+2026-09-25 by `sync-corporate-actions` — see §4).
 
 **Views:** `trigger_scorecard` (one row per fire: fire price vs the
 reference close, and whether the signal class was directionally right),
@@ -179,7 +182,11 @@ below the firing price"). Horizon differs by trigger speed: **fast** fires
 mid-session so it scores against *that* session's close; **slow** fires
 from `eod-scan` at 17:45 so its fire price already *is* that close, and it
 scores against the *next* session. Getting that backwards returns 0% by
-construction.
+construction. `upcoming_catalysts` (added 2026-09-25): band symbols with a
+known upcoming earnings date, reverse split, or recent 8-K 5.03/3.03
+charter filing — sources price/liquidity from `factor_state.last_close`
+(not `bars_daily`) after a 9.6s→41ms perf fix; see the view's own SQL
+`comment` for the full provenance note.
 
 **Config/ops:** `symbols` (5,003 active), `triggers` (22), `trigger_stats`,
 `scan_config`, `tracked_symbols`, `regime_state`, `screens`, `watchlists`,
