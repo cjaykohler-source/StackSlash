@@ -191,8 +191,10 @@ export function Ops() {
         </div>
       </header>
 
-      <div className={`ops-banner ${hostAge < 15 * 60_000 ? "ops-banner-ok" : "ops-banner-bad"}`}>
-        {hostRow
+      <div className={`ops-banner ${!loadedAt ? "" : hostAge < 15 * 60_000 ? "ops-banner-ok" : "ops-banner-bad"}`}>
+        {!loadedAt
+          ? "Loading…"
+          : hostRow
           ? hostAge < 15 * 60_000
             ? `Worker host up — heartbeat ${ago(hostRow.updated_at, nowMs)}`
             : `Worker host silent since ${new Date(hostRow.updated_at).toLocaleString()} — every launchd job is down (machine off, asleep, or heartbeat stopped)`
