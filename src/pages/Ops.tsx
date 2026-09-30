@@ -208,8 +208,8 @@ export function Ops() {
         </span>
       </div>
 
-      <div className="trigger-feed-scroll">
-        <table className="isolator-table ops-table">
+      <div className="trigger-feed-scroll ops-panel">
+        <table className="ops-table">
           <thead>
             <tr>
               <th>Status</th>
@@ -232,7 +232,7 @@ export function Ops() {
                   <tr className="ops-group">
                     <td colSpan={9}>{g}</td>
                   </tr>
-                  {inGroup.map(({ job, sum, hs, state, last }) => {
+                  {inGroup.map(({ job, sum, hs, state, last }, idx) => {
                     const took =
                       job.records_runs && sum?.finished_at
                         ? Math.round((Date.parse(sum.finished_at) - Date.parse(sum.started_at)) / 1000)
@@ -242,7 +242,10 @@ export function Ops() {
                       (hs && !job.records_runs && hs.last_exit ? `launchd last exit status ${hs.last_exit}` : null);
                     return (
                       <Fragment key={job.name}>
-                        <tr className="ops-row" onClick={() => setOpen(open === job.name ? null : job.name)}>
+                        <tr
+                          className={`ops-row ops-row-${state}${idx % 2 ? " ops-row-alt" : ""}${open === job.name ? " ops-row-open" : ""}`}
+                          onClick={() => setOpen(open === job.name ? null : job.name)}
+                        >
                           <td>
                             <span className={`ops-pill ops-${state}`}>{STATE_LABEL[state]}</span>
                           </td>
@@ -276,7 +279,7 @@ export function Ops() {
                           </td>
                         </tr>
                         {open === job.name && (
-                          <tr className="research-expand">
+                          <tr className="ops-expand">
                             <td colSpan={9}>
                               <div className="ops-detail">
                                 {detail && <pre className="ops-error">{detail}</pre>}
