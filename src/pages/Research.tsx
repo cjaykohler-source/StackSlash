@@ -23,7 +23,17 @@ const TABS: [Tab, string][] = [
   ["reddit", "Reddit attention"],
   ["studies", "Studies"],
 ];
-const VERDICT_ORDER: Verdict[] = ["avoid", "positive", "watch", "none", "untested"];
+const VERDICT_ORDER: Verdict[] = ["positive", "watch", "avoid", "none", "untested"];
+
+/** 90% CI shading: green when the whole range clears the random-date null
+ *  (a real signal, either direction), grey when it includes zero (can't
+ *  even call the direction), plain otherwise. */
+function ciStrength(t?: CatalystTest): string {
+  if (!t || t.ci_lo == null || t.ci_hi == null) return "";
+  if (t.null_med != null && (t.ci_lo > t.null_med || t.ci_hi < t.null_med)) return "ci-strong";
+  if (t.ci_lo <= 0 && t.ci_hi >= 0) return "ci-weak";
+  return "";
+}
 
 /** Leaderboard columns: [label, hover explanation, numeric]. */
 const LEADERBOARD_COLUMNS: [string, string, boolean][] = [
@@ -35,7 +45,7 @@ const LEADERBOARD_COLUMNS: [string, string, boolean][] = [
   ["20d excess", "Same as 5d excess, over 20 trading days (about a month) — the horizon everything else is judged on.", true],
   ["20d null", "The 20-day excess for the same stocks on random days, when the event didn't happen — what these kinds of stocks do anyway.", true],
   ["Gap", "20d excess minus 20d null: the effect of the event itself, separated from the kind of stock it happens to. Red = worse than usual after the event, green = better.", true],
-  ["90% CI", "The range the true gap likely falls in, 90% of the time (low | high). If it doesn't include zero, the effect is probably real; if it straddles zero, it could be noise.", true],
+  ["90% CI", "The range the 20-day excess likely falls in, 90% of the time (low | high). Green: the whole range clears the 20d null — the event really does differ from the same stocks on random days. Grey: the range includes zero, so even the direction is uncertain (weakest). White: in between.", true],
   ["q", "The chance this is a fluke after accounting for how many catalyst types were tested — test dozens and a few look good by luck. Below 0.10 counts as a finding.", true],
   ["2022+ gap", "The same gap on 2022-to-now data, held back while the rules were built. 'Sealed' = that final test hasn't been run yet. A rule is only trusted once it holds here too.", true],
 ];
@@ -196,7 +206,7 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
                   <td className="col-num">{pct(d20?.mean_x)}</td>
                   <td className="col-num">{pct(d20?.null_med)}</td>
                   <td className={`col-num ${gap == null ? "" : gap < 0 ? "neg" : "pos"}`}>{pct(gap)}</td>
-                  <td className="col-num">
+                  <td className={`col-num ${ciStrength(d20)}`}>
                     {d20?.ci_lo != null ? `${pct(d20.ci_lo, 1)} | ${pct(d20.ci_hi, 1)}` : "—"}
                   </td>
                   <td className="col-num">{d20?.q != null ? d20.q.toFixed(3) : "—"}</td>
