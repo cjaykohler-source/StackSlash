@@ -7,7 +7,11 @@ import { About } from "./pages/About";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Isolator } from "./pages/Isolator";
+import { lazy, Suspense } from "react";
 import { Research } from "./pages/Research";
+
+// Charter pulls in ECharts (~1 MB); load it only when the page is opened.
+const Charter = lazy(() => import("./pages/Charter").then((m) => ({ default: m.Charter })));
 import { Ops } from "./pages/Ops";
 
 export function App() {
@@ -51,6 +55,16 @@ export function App() {
         element={
           <AuthGuard>
             <Isolator />
+          </AuthGuard>
+        }
+      />
+      <Route
+        path="/charter"
+        element={
+          <AuthGuard>
+            <Suspense fallback={<div className="page"><p className="empty-state">Loading Charter…</p></div>}>
+              <Charter />
+            </Suspense>
           </AuthGuard>
         }
       />

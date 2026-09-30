@@ -4,6 +4,7 @@ import { BrandHomeLink } from "./BrandHomeLink";
 import { SymbolSearch } from "./SymbolSearch";
 
 const PAGES: [string, string][] = [
+  ["/charter", "Charter"],
   ["/research", "Research"],
   ["/reports", "Reports"],
   ["/isolator", "Isolator"],

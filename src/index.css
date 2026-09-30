@@ -2855,3 +2855,71 @@ h1 .quote-tag {
 /* Leaderboard 90% CI: strength of evidence */
 .research-table td.ci-strong { color: var(--green); }
 .research-table td.ci-weak { color: #6f7789; }
+
+/* ---------------------------------------------------------------------------
+   Charter
+   --------------------------------------------------------------------------- */
+.charter-page .research-tabs { align-items: center; }
+.charter-phase { color: var(--text-dim); font-size: 0.8em; }
+.charter-views { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+.charter-views select, .charter-controls select, .charter-controls input[type="date"], .charter-controls input[type="text"],
+.charter-formula, .charter-formula-name, .charter-search input {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 0.88rem;
+}
+.charter-msg { color: var(--text-dim); font-size: 0.8rem; }
+.charter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+.charter-toggles { font-size: 0.85rem; }
+.charter-toggles label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.charter-presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.charter-presets .research-tab { padding: 4px 10px; }
+.charter-search { position: relative; }
+.charter-search input { width: 220px; text-transform: uppercase; font-weight: 600; }
+.charter-search-hits {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  margin: 4px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  min-width: 380px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.charter-search-hits li { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.charter-search-hits li:hover { background: rgba(79, 140, 255, 0.1); }
+.charter-hit-range { margin-left: auto; font-size: 0.78em; white-space: nowrap; }
+.charter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  font-size: 0.8rem;
+}
+.charter-chip button { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 1rem; line-height: 1; }
+.charter-chip button:hover { color: var(--red); }
+.charter-formula { width: min(460px, 100%); font-family: ui-monospace, Menlo, monospace; }
+.charter-formula-name { width: 150px; }
+.charter-chart { padding: 8px 4px 4px; margin: 10px 0; min-height: 120px; }
+.charter-live { border-color: rgba(240, 160, 32, 0.5); }
+.charter-subhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 4px 10px 8px; }
+.charter-events { margin: 10px 0; padding: 8px 4px; }
+.charter-events-scroll { max-height: 420px; overflow-y: auto; }
+.charter-page .neg { color: var(--red); }
