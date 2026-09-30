@@ -23,6 +23,9 @@ export function Dashboard() {
           <Link to="/research" className="link-button">
             Research
           </Link>
+          <Link to="/ops" className="link-button">
+            Ops
+          </Link>
           <Link to="/settings" className="link-button">
             Settings
           </Link>
