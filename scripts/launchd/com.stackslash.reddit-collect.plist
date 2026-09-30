@@ -5,11 +5,10 @@
     <key>Label</key>
     <string>com.stackslash.reddit-collect</string>
 
-    <!-- Forward-only Reddit collector for retail-attention catalysts. See
-         scripts/run-reddit-collect.sh and research/catalysts/reddit_collect.py.
-         Every 15 minutes, around the clock: posts arrive overnight and on
-         weekends too, and a missed window can't be backfilled. ~30 API
-         calls per run, well under Reddit's ~100/minute. -->
+    <!-- Hourly Reddit-attention snapshot via ApeWisdom (rolling 24-hour
+         mention counts per ticker for r/pennystocks, r/stocks,
+         r/wallstreetbets). See scripts/run-reddit-collect.sh. Around the
+         clock: a missed hour can't be backfilled. ~11 requests per run. -->
     <key>ProgramArguments</key>
     <array>
         <string>/Users/ckohler/StackSlash/scripts/run-reddit-collect.sh</string>
@@ -19,7 +18,7 @@
     <string>/Users/ckohler/StackSlash</string>
 
     <key>StartInterval</key>
-    <integer>900</integer>
+    <integer>3600</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/ckohler/Library/Logs/stackslash-reddit-collect/launchd.out.log</string>

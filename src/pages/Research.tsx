@@ -444,15 +444,16 @@ function Reddit() {
   if (!rows.length)
     return (
       <p className="empty-state">
-        No Reddit data yet. The collector (research/catalysts/reddit_collect.py) is forward-only and starts once its
-        Reddit API credentials are set; mention spikes become testable after a few months of history.
+        No Reddit data published yet. The hourly collector (ApeWisdom mention counts for r/pennystocks, r/stocks and
+        r/wallstreetbets) is forward-only; mention spikes become testable after a few months of history.
       </p>
     );
   return (
     <section>
       <p className="research-intro">
-        Ticker mentions across tracked subreddits. Spike = the latest day's mentions vs the 30-day daily average. Not
-        yet a tested catalyst — there's no history before the collector started.
+        Ticker mentions on r/pennystocks, r/stocks and r/wallstreetbets (ApeWisdom's rolling 24-hour counts, summed;
+        score = upvotes). Spike = the latest day's mentions vs the 30-day daily average. Not yet a tested catalyst —
+        there's no history before the collector started.
       </p>
       <div className="trigger-feed-scroll ops-panel">
         <table className="ops-table research-table">

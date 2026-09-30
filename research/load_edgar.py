@@ -33,12 +33,13 @@ Parquet, not the main DuckDB warehouse, so the schema lab can keep reading
 the warehouse while this runs (DuckDB allows one writer per file).
 
 Usage:
-    research/.venv/bin/python research/load_edgar.py
+    research/.venv/bin/python research/load_edgar.py [--skip-facts]
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -140,6 +141,9 @@ class Sink:
 
 
 def main():
+    # --skip-facts: rebuild companies/tickers/filings only (the nightly
+    # research-publish job); companyfacts.zip is still read for its CIK list.
+    skip_facts = "--skip-facts" in sys.argv
     t0 = time.time()
     fz = zipfile.ZipFile(FACTS)
     fact_ciks = {cik_of(i.filename) for i in fz.infolist() if i.filename.startswith("CIK")}
@@ -183,6 +187,8 @@ def main():
     print(f"edgar_companies: {companies.close():,} | edgar_tickers: {tickers.close():,} | "
           f"edgar_filings: {filings.close():,}  ({(time.time() - t0) / 60:.1f}m)", flush=True)
 
+    if skip_facts:
+        return
     facts = Sink("edgar_facts", FACT_SCHEMA)
     for n, info in enumerate(i for i in fz.infolist() if i.filename.startswith("CIK")):
         cik = cik_of(info.filename)

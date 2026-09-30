@@ -2,8 +2,8 @@
 Resumable crawl of Alpaca's whole-market news feed (/v1beta1/news,
 Benzinga-sourced, 2015+) into one parquet per month:
 research/data/catalysts/raw/news/YYYY-MM.parquet (id, created_at UTC,
-headline, symbols, source). A finished month is never re-fetched unless
---refresh; the current month is always re-fetched.
+headline, symbols, source). Months before last month are never re-fetched
+unless --refresh; the current and previous month always are.
 
 ~700-1,000 headlines per weekday, 50 per request. The key's 200/min limit
 is shared with the live site's scans, so this uses 120/min: a full
@@ -69,7 +69,10 @@ def main():
     this = dt.date.today().replace(day=1)
     while m <= this:
         path = OUT / f"{m:%Y-%m}.parquet"
-        if path.exists() and not args.refresh and m < this:
+        prev = (this - dt.timedelta(days=1)).replace(day=1)
+        # the current and previous month are always re-fetched: a month first
+        # crawled mid-month would otherwise never be completed
+        if path.exists() and not args.refresh and m < prev:
             m = (m.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
             continue
         t0 = time.time()

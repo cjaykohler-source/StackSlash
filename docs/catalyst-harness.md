@@ -19,7 +19,19 @@ many things were tried.
 | `sources.py` | adapters → `research/data/catalysts/<source>.parquet`, one shared schema (symbol, event_date, event_ts, source, type, detail) |
 | `harness.py` | the event study; logs every result to `research/data/catalysts/registry.duckdb` |
 | `news_crawl.py` | resumable month-by-month crawl of Alpaca/Benzinga news, 2016+ |
-| `reddit_collect.py` | forward-only Reddit collector (launchd `com.stackslash.reddit-collect`, every 15 min) |
+| `reddit_collect.py` | forward-only Reddit attention snapshots via ApeWisdom (launchd `com.stackslash.reddit-collect`, hourly) |
+| `form4_crawl.py` | resumable Form 4 fetch + parse (open-market buys vs sales) |
+| `../publish_research.py` | publishes types, tests, a 365-day event window, studies and Reddit counts to the `research_*` Supabase tables behind `/research` |
+
+**Nightly**: `scripts/run-research-publish.sh` (launchd
+`com.stackslash.research-publish`, 05:30 ET daily) refreshes every source
+incrementally — EDGAR `submissions.zip` nightly and `companyfacts.zip`
+Sundays, news for the current and previous month, going-concern search
+for the last two months, DoltHub earnings on Mondays, new Form 4s — then
+rebuilds the event tables and publishes. Log:
+`~/Library/Logs/stackslash-research-publish/research-publish.log`. The
+harness itself is not re-run nightly: results only change when a study
+changes, and every run adds to the registry's tested-types count.
 
 ```
 research/.venv/bin/python research/catalysts/sources.py [edgar corporate_actions earnings going_concern news]
@@ -52,8 +64,11 @@ research/.venv/bin/python research/catalysts/harness.py [--types a,b] [--holdout
   deficiency, reverse split, uplisting, bankruptcy, investigation, short
   report, halt, patent, insider buy) plus `news_any`. Known noise: analyst
   forecast cuts match `guidance_cut`; contract headlines tag both parties.
-- **reddit** — forward only (no usable history via the API; Pushshift is
-  restricted). Untestable until months of data exist.
+- **reddit** — hourly ApeWisdom snapshots of r/pennystocks, r/stocks and
+  r/wallstreetbets (rolling 24-hour mention counts, rank, upvotes per
+  ticker). No Reddit credentials and no Reddit content stored — chosen over
+  Reddit's own API, whose Data API terms require purging deleted user
+  content. Forward only; untestable until months of snapshots exist.
 
 ### The test (`harness.py`)
 
@@ -133,9 +148,7 @@ the plain full run for q.
 ## Open
 
 1. Form 4: crawl running (`form4_crawl.py`); then add buy/sell event types.
-2. Reddit: needs a Reddit "script" app (REDDIT_CLIENT_ID /
-   REDDIT_CLIENT_SECRET / REDDIT_USER_AGENT in `.env`), then
-   `launchctl load` the plist.
+2. Reddit: collecting hourly since 2026-09-30; test once there are months of snapshots.
 3. Holdout (2022+) for the final forms of: earnings beat, earnings
    reporting (2.02/10-Q), 10-K.
 4. Form 4: parse the XML to split open-market buys from sells/grants —

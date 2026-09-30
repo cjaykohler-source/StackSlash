@@ -10,8 +10,9 @@ UI's Research page and the symbol-page catalyst timeline.
                             (minus firehose types: news_any, generic form4,
                             cash dividends); older rows are deleted
   research_studies          the study write-ups in docs/, as Markdown
-  research_reddit_daily     per-symbol daily mention counts, once the
-                            Reddit collector has data
+  research_reddit_daily     per-symbol daily mention counts (ApeWisdom
+                            snapshots of r/pennystocks, r/stocks,
+                            r/wallstreetbets), once the collector has data
 
 Writes with the service role over PostgREST (SUPABASE_URL,
 SUPABASE_SERVICE_ROLE_KEY from .env). Touches only research_* tables.
@@ -146,15 +147,18 @@ def main():
     # --- reddit daily mentions ---
     rdb = CAT / "raw" / "reddit.duckdb"
     if rdb.exists():
+        # ApeWisdom snapshots (reddit_collect.py): each day's LAST snapshot of
+        # the rolling 24-hour mention count, summed over the three subreddits;
+        # `posts` carries how many of them ranked the ticker that day
         con.execute(f"attach '{rdb}' as rd (read_only)")
         rr = con.execute(f"""
-          select m.symbol, p.created_utc::date day, count(*) mentions, count(distinct p.id) posts,
-                 sum(s.score) score_sum, sum(s.num_comments) comments_sum
-          from rd.mentions m join rd.posts p using (id)
-          left join (select id, arg_max(score, seen_at) score, arg_max(num_comments, seen_at) num_comments
-                     from rd.snapshots group by id) s using (id)
-          where p.created_utc >= current_date - interval {args.days} day
-          group by all
+          with last as (
+            select subreddit, seen_at::date as day, max(seen_at) as ts from rd.ape_snapshots
+            where seen_at >= current_date - interval {args.days} day group by 1, 2
+          )
+          select s.ticker, l.day, sum(s.mentions)::int, count(*)::int, sum(s.upvotes)::int, null
+          from rd.ape_snapshots s join last l on l.subreddit = s.subreddit and l.ts = s.seen_at
+          group by 1, 2
         """).fetchall()
         rest.upsert("research_reddit_daily", [{"symbol": a, "day": clean(b), "mentions": c, "posts": d,
                                                "score_sum": e, "comments_sum": f} for a, b, c, d, e, f in rr],
