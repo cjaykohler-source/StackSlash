@@ -2851,3 +2851,7 @@ h1 .quote-tag {
 .research-table .catalyst-detail { color: var(--text-dim); }
 .md-table-scroll.ops-panel { margin: 12px 0; }
 .md-table td, .md-table th { vertical-align: top; }
+
+/* Leaderboard 90% CI: strength of evidence */
+.research-table td.ci-strong { color: var(--green); }
+.research-table td.ci-weak { color: #6f7789; }
