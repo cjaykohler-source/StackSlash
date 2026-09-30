@@ -2722,3 +2722,68 @@ h1 .quote-tag {
   max-height: 200px;
   overflow-y: auto;
 }
+
+/* Ops: table definition — panel, row lines, zebra rows, group bands, and a
+   left status stripe so a failing row reads at a glance. */
+.ops-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ops-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.9rem;
+}
+.ops-table th {
+  text-align: left;
+  color: var(--text-dim);
+  font-weight: 500;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ops-table th:first-child { border-top-left-radius: 8px; }
+.ops-table th:last-child { border-top-right-radius: 8px; }
+.ops-table th.col-num,
+.ops-table td.col-num { text-align: right; }
+.ops-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.ops-table td + td { border-left: 1px solid rgba(255, 255, 255, 0.03); }
+.ops-row-alt td { background: rgba(255, 255, 255, 0.018); }
+.ops-row:hover td,
+.ops-row-open td { background: rgba(79, 140, 255, 0.08); }
+.ops-row td:first-child { box-shadow: inset 3px 0 0 transparent; }
+.ops-row-ok td:first-child { box-shadow: inset 3px 0 0 rgba(46, 204, 113, 0.55); }
+.ops-row-running td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.ops-row-failed td:first-child,
+.ops-row-stuck td:first-child,
+.ops-row-not-loaded td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+.ops-row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+.ops-row-failed td,
+.ops-row-stuck td,
+.ops-row-not-loaded td { background: rgba(231, 76, 60, 0.05); }
+.ops-table .ops-group td {
+  background: rgba(79, 140, 255, 0.07);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: none;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.74rem;
+  padding: 7px 12px;
+}
+.ops-table tbody tr:first-child.ops-group td { border-top: none; }
+.ops-expand td {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+}
+.ops-table tbody tr:last-child td { border-bottom: none; }
