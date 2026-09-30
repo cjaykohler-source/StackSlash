@@ -2816,7 +2816,9 @@ h1 .quote-tag {
 .app-header-nav {
   flex-wrap: wrap;
   justify-content: flex-end;
-  margin-left: auto;
+  /* grow into the space beside the logo: as a shrink-to-fit flex item the
+     wrapping row sized itself too narrow and pushed Sign out to a 2nd line */
+  flex: 1 1 auto;
 }
 .app-header-nav .symbol-search {
   flex: 0 1 260px;
