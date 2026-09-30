@@ -2803,5 +2803,11 @@ h1 .quote-tag {
   color: var(--text);
   font-size: 0.9rem;
   line-height: 1.5;
-  max-width: 900px;
+}
+/* The table scrolls sideways on narrow screens and the drop-down spans all
+   of it, so cap the drop-down to what's visible or its text runs off-screen. */
+.ops-detail {
+  max-width: min(900px, calc(100vw - 72px));
+  position: sticky;
+  left: 16px;
 }
