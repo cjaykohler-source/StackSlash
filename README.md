@@ -176,7 +176,8 @@ edge.
   a 5-minute host heartbeat; a red banner if the Mac goes silent.
 - **Charter** (`/charter`, `docs/charter.md`): phase 1 symbol deep dive
   and phase 2 cross-sectional explorer over the whole warehouse, served by
-  the local Charter API through Tailscale Serve (tailnet-only).
+  the local Charter API through Tailscale Funnel (public URL; the API
+  authenticates and rate-limits every request).
 - **About** is an at-a-glance trigger table with expandable rows; **one
   shared header** on every page (search + buttons fixed, active page red).
 - **Data**: Alpaca news history (2.08M), Form 4 parse (316k filings),
@@ -199,8 +200,9 @@ their numbers unless marked here; new items continue from 34.
 
 **Decisions for the user**
 
-34. Public access to Charter without Tailscale: Funnel + rate limiting,
-    or Cloudflare Tunnel + Access (needs a domain). Currently tailnet-only.
+34. ~~Public access to Charter without Tailscale~~ — **decided 2026-09-30:
+    Tailscale Funnel** on the same URL, with API-side rate limiting and a
+    rejected-token cache (`docs/charter.md`).
 35. Paid history for pre-2018 short interest / true float / borrow
     (Ortex, S3, Fintel, Quandl) — only if the short family is pursued; it
     showed no timing signal on 2018+ data.

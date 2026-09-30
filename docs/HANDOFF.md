@@ -17,7 +17,7 @@ the research derivations and the open decisions.
 | Access / credential map | `docs/ACCESS.md` — accounts to be invited to, credential names, what each key can do, handover checklist |
 | Secrets | `~/StackSlash/.env` (not in git). Netlify has its own copy of the same vars in site settings |
 | Local backups | `~/StackSlashBackups/` — nightly 21:15 (`supabase-backup`, keeps 14). Was silently writing empty files 09-21..09-29; fixed #224, verified 227 MB dumps on 09-30 |
-| Tailscale | Tailnet `tail3d8cea.ts.net`: this Mac is `stackslash-worker-host` (100.111.124.95), plus the owner's iPhone. **Tailscale Serve** exposes the Charter API at `https://stackslash-worker-host.tail3d8cea.ts.net` **to tailnet devices only** (`tailscale serve --bg --https=443 http://127.0.0.1:8787`). Funnel (public) is NOT enabled |
+| Tailscale | Tailnet `tail3d8cea.ts.net`: this Mac is `stackslash-worker-host` (100.111.124.95), plus the owner's iPhone. **Tailscale Funnel** publishes the Charter API at `https://stackslash-worker-host.tail3d8cea.ts.net` to the internet (`tailscale funnel --bg --https=443 http://127.0.0.1:8787`; chosen 2026-09-30 so remote devices need no Tailscale). The API does its own auth + rate limiting (`docs/charter.md`) |
 | Logs | `~/Library/Logs/stackslash-<job>/` , one directory per job |
 | launchd units | `~/Library/LaunchAgents/com.stackslash.*.plist`, copies tracked in `scripts/launchd/` |
 
@@ -135,7 +135,7 @@ PostgREST pagination silently skips rows without an explicit `.order()`.
 | 05:30 daily | `research-publish` | `scripts/run-research-publish.sh`: EDGAR bulk (`submissions.zip` nightly, `companyfacts.zip` Sundays) -> news (current + previous month) -> new Form 4s -> rebuild catalyst event tables (going-concern search incremental, DoltHub earnings Mondays) -> publish to `research_*` (behind `/research`) -> rebuild Charter's `daily_metrics` table. Failed steps are logged and skipped; log `~/Library/Logs/stackslash-research-publish/` |
 | hourly | `reddit-collect` | ApeWisdom mention snapshots, r/pennystocks + r/stocks + r/wallstreetbets -> `research/data/catalysts/raw/reddit.duckdb`. Forward-only; numbers only, no Reddit content |
 | every 5 min | `ops-heartbeat` | `scripts/ops_heartbeat.py`: every `com.stackslash.*` job's loaded / pid / last exit / newest log -> `ops_host_status` (the `/ops` page) |
-| always on | `charter-api` | `research/charter_api/server.py` on 127.0.0.1:8787, behind `/charter`; reached via Tailscale Serve |
+| always on | `charter-api` | `research/charter_api/server.py` on 127.0.0.1:8787, behind `/charter`; reached via Tailscale Funnel (public URL, API-side auth + rate limits) |
 | 21:15 daily | `supabase-backup` | now actually works (see §1) |
 
 Retired 2026-09-30: `set-sip-floors-once` (a finished one-off; plist moved
@@ -167,7 +167,7 @@ and the Robinhood float snapshot (only possible from a Claude session).
 | **FINRA Reg SHO** (research) | Daily short-sale volume 2018-08+ | none | `cdn.finra.org/equity/regsho/daily`; earlier files are 403. FINRA short interest API history starts 2018-01 |
 | **DoltHub `eps_history`** (research) | Reported vs consensus EPS per quarter (2016-07+) | none (`DOLTHUB_TOKEN` optional) | Keyset pagination only — deep OFFSETs time out |
 | **ApeWisdom** | Reddit ticker mentions (r/pennystocks, r/stocks, r/wallstreetbets) | none | Chosen over Reddit's API (whose terms require purging deleted content); numbers only |
-| **Tailscale** | Private access to the Charter API | owner's Tailscale account | Serve (tailnet-only) on this Mac; HTTPS certs enabled in the admin console |
+| **Tailscale** | Public HTTPS to the Charter API | owner's Tailscale account | Funnel on this Mac (needs the `funnel` node attribute in the tailnet policy); HTTPS certs enabled in the admin console |
 
 ---
 
@@ -258,7 +258,8 @@ Auth); the user signs in themselves.
   minute bars, overlays, event markers, any-metric panels, formulas) and
   cross-sectional explorer (binned / scatter / histogram / table over any
   date or pooled range). Needs the Charter API reachable: this Mac on, and
-  Tailscale on the viewing device. Netlify env `VITE_CHARTER_API_URL`.
+  the Funnel on (no Tailscale needed on the viewing device since
+  2026-09-30). Netlify env `VITE_CHARTER_API_URL`.
 - **Research** (`/research`): catalyst leaderboard, live catalyst feed,
   Reddit attention, study write-ups; from the `research_*` tables.
 - **Ops** (`/ops`): status of every recurring process.
