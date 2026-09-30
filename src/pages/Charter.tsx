@@ -13,6 +13,7 @@ import {
   type MetricDef,
 } from "../lib/charterApi";
 import { evaluateFormula, FormulaError } from "../lib/formula";
+import { CrossView, DEFAULT_CROSS, type CrossConfig } from "../components/charter/CrossView";
 
 /**
  * Charter: an interactive data visualizer over the whole research
@@ -24,7 +25,7 @@ import { evaluateFormula, FormulaError } from "../lib/formula";
 type Tab = "symbol" | "cross" | "events" | "aggregates";
 const TABS: [Tab, string, string | null][] = [
   ["symbol", "Symbol deep dive", null],
-  ["cross", "Cross-section", "Phase 2"],
+  ["cross", "Cross-section", null],
   ["events", "Event studies", "Phase 3"],
   ["aggregates", "Aggregates", "Phase 4"],
 ];
@@ -61,6 +62,7 @@ interface Config {
   panels: string[];
   formulas: Formula[];
   live: boolean;
+  cross: CrossConfig;
 }
 const DEFAULT: Config = {
   symbol: "VALE",
@@ -73,6 +75,7 @@ const DEFAULT: Config = {
   panels: ["volume", "vol_ratio", "short_float"],
   formulas: [],
   live: false,
+  cross: DEFAULT_CROSS,
 };
 
 interface ShortRes {
@@ -118,11 +121,19 @@ function alignStep(dates: string[], stepDates: (string | null)[], values: (numbe
 }
 
 export function Charter() {
-  const [tab, setTab] = useState<Tab>("symbol");
+  const [tab, setTab] = useState<Tab>(() => {
+    try {
+      const t = localStorage.getItem("charter.tab") as Tab | null;
+      return t && TABS.some(([x]) => x === t) ? t : "symbol";
+    } catch {
+      return "symbol";
+    }
+  });
   const [cfg, setCfg] = useState<Config>(() => {
     try {
       const s = localStorage.getItem("charter.last");
-      return s ? { ...DEFAULT, ...JSON.parse(s) } : DEFAULT;
+      const c = s ? JSON.parse(s) : {};
+      return { ...DEFAULT, ...c, cross: { ...DEFAULT_CROSS, ...(c.cross ?? {}) } };
     } catch {
       return DEFAULT;
     }
@@ -130,13 +141,27 @@ export function Charter() {
   const [catalog, setCatalog] = useState<MetricDef[]>([]);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  // from the cross-section: open a stock in the deep dive, ~3 months before to 1 month after that day
+  const openSymbol = useCallback(
+    (symbol: string, date: string) => {
+      const d = new Date(date);
+      const start = new Date(d.getTime() - 92 * 86_400_000).toISOString().slice(0, 10);
+      const end = new Date(Math.min(Date.now(), d.getTime() + 31 * 86_400_000)).toISOString().slice(0, 10);
+      setCfg((c) => ({ ...c, symbol, preset: "custom", start, end }));
+      setTab("symbol");
+      window.scrollTo(0, 0);
+    },
+    [],
+  );
+
   useEffect(() => {
     try {
       localStorage.setItem("charter.last", JSON.stringify(cfg));
+      localStorage.setItem("charter.tab", tab);
     } catch {
       /* private mode: fine */
     }
-  }, [cfg]);
+  }, [cfg, tab]);
 
   useEffect(() => {
     charterGet<{ metrics: MetricDef[] }>("/catalog")
@@ -162,7 +187,14 @@ export function Charter() {
             {phase && <span className="charter-phase"> · {phase}</span>}
           </button>
         ))}
-        <SavedViews cfg={cfg} tab={tab} onLoad={(c) => setCfg({ ...DEFAULT, ...c })} />
+        <SavedViews
+          cfg={cfg}
+          tab={tab}
+          onLoad={(c, t) => {
+            setCfg({ ...DEFAULT, ...c, cross: { ...DEFAULT_CROSS, ...(c.cross ?? {}) } });
+            if (TABS.some(([x]) => x === t)) setTab(t as Tab);
+          }}
+        />
       </nav>
       {apiError && (
         <div className="ops-banner ops-banner-bad">
@@ -171,6 +203,14 @@ export function Charter() {
       )}
       {tab === "symbol" ? (
         <SymbolView cfg={cfg} setCfg={setCfg} catalog={catalog} onApiError={setApiError} />
+      ) : tab === "cross" ? (
+        <CrossView
+          cfg={cfg.cross}
+          set={(p) => setCfg({ ...cfg, cross: { ...cfg.cross, ...p } })}
+          catalog={catalog}
+          onApiError={setApiError}
+          onOpenSymbol={openSymbol}
+        />
       ) : (
         <p className="research-intro">
           This tab arrives in {TABS.find(([t]) => t === tab)?.[2]}. The symbol deep dive is available now.
@@ -184,7 +224,7 @@ export function Charter() {
   );
 }
 
-function SavedViews({ cfg, tab, onLoad }: { cfg: Config; tab: Tab; onLoad: (c: Config) => void }) {
+function SavedViews({ cfg, tab, onLoad }: { cfg: Config; tab: Tab; onLoad: (c: Config, tab: string) => void }) {
   const [views, setViews] = useState<SavedView[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const load = useCallback(() => {
@@ -222,7 +262,7 @@ function SavedViews({ cfg, tab, onLoad }: { cfg: Config; tab: Tab; onLoad: (c: C
         value=""
         onChange={(e) => {
           const v = views.find((x) => String(x.id) === e.target.value);
-          if (v) onLoad(v.config);
+          if (v) onLoad(v.config, v.tab);
         }}
       >
         <option value="">Saved views ({views.length})</option>
