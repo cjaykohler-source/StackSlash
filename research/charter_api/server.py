@@ -427,6 +427,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
             self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
             self.send_header("Access-Control-Max-Age", "600")
+            # Chrome's Private Network Access: a public site (r10t.netlify.app) calling a private
+            # address (the tailnet 100.x IP) needs the server to opt in on the preflight
+            if self.headers.get("Access-Control-Request-Private-Network") == "true":
+                self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def do_OPTIONS(self):
         self.send_response(204)
