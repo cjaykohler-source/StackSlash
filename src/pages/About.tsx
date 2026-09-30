@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { TRIGGER_INFO, TIMING_LABEL, triggerLabel, triggerSide, type TriggerTiming } from "../lib/triggerInfo";
 import { AppHeader } from "../components/AppHeader";
@@ -24,9 +24,10 @@ const FIRES_WINDOW_DAYS = 30;
 const TIMING_ORDER: TriggerTiming[] = ["realtime", "daily", "exit", "intraday"];
 
 /**
- * Plain-English breakdown of every trigger: when it runs, exactly what has
- * to be true for it to fire, its backtest record, and how often it has
- * actually fired lately. Wording and conditions live in lib/triggerInfo.ts;
+ * Plain-English breakdown of every trigger, as an at-a-glance table: one
+ * row per trigger (status, timing, side, backtest record, recent fires),
+ * and a click opens the row to show exactly what has to be true for it
+ * to fire, and why it's off if it is. Wording and conditions live in lib/triggerInfo.ts;
  * enabled state, cooldowns, backtest stats (trigger_stats) and recent fire
  * counts (trigger_events) are read live, so the page stays current as
  * triggers are switched on/off or backtests are re-run.
@@ -35,6 +36,7 @@ export function About() {
   const [rows, setRows] = useState<Record<string, TriggerRow>>({});
   const [stats, setStats] = useState<Record<number, StatRow>>({});
   const [fires, setFires] = useState<Record<number, number>>({});
+  const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,16 +75,6 @@ export function About() {
   const active = names.filter((n) => rows[n]?.enabled);
   const off = names.filter((n) => loaded && !rows[n]?.enabled);
 
-  const card = (name: string) => (
-    <TriggerCard
-      key={name}
-      name={name}
-      row={rows[name]}
-      stat={rows[name] ? stats[rows[name].id] : undefined}
-      fires={rows[name] ? fires[rows[name].id] : undefined}
-    />
-  );
-
   return (
     <div className="page about-page">
       <AppHeader />
@@ -119,41 +111,121 @@ export function About() {
         </div>
       </div>
 
-      <h3 className="about-section-title">
-        Active <span className="about-section-count">{active.length}</span>
-      </h3>
-      <div className="trigger-card-grid">{loaded ? active.map(card) : <p className="empty-state">Loading…</p>}</div>
-
-      {off.length > 0 && (
-        <>
-          <h3 className="about-section-title">
-            Switched off <span className="about-section-count">{off.length}</span>
-          </h3>
-          <p className="about-section-note">Kept for reference and re-testing. None of these fire.</p>
-          <div className="trigger-card-grid">{off.map(card)}</div>
-        </>
-      )}
+      <div className="trigger-feed-scroll ops-panel about-glance">
+        <table className="ops-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Trigger</th>
+              <th>Runs</th>
+              <th>Side</th>
+              <th>Type</th>
+              <th className="col-num">Trades</th>
+              <th className="col-num">Win rate</th>
+              <th className="col-num">Avg return</th>
+              <th className="col-num">Avg w/o top 1%</th>
+              <th className="col-num">Fires, {FIRES_WINDOW_DAYS}d</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!loaded ? (
+              <tr>
+                <td colSpan={10} className="empty-state">
+                  Loading…
+                </td>
+              </tr>
+            ) : (
+              ([
+                ["Active", active],
+                ["Switched off — kept for reference and re-testing; none of these fire", off],
+              ] as [string, string[]][]).map(([title, list]) =>
+                list.length === 0 ? null : (
+                  <Fragment key={title}>
+                    <tr className="ops-group">
+                      <td colSpan={10}>
+                        {title} <span className="about-section-count">{list.length}</span>
+                      </td>
+                    </tr>
+                    {list.map((name, idx) => {
+                      const info = TRIGGER_INFO[name];
+                      const row = rows[name];
+                      const stat = row ? stats[row.id] : undefined;
+                      const hasStat = stat && stat.sample_size > 0;
+                      const side = triggerSide(name);
+                      const isOpen = open === name;
+                      return (
+                        <Fragment key={name}>
+                          <tr
+                            className={`ops-row ${row?.enabled ? "ops-row-ok" : "about-row-off"}${idx % 2 ? " ops-row-alt" : ""}${isOpen ? " ops-row-open" : ""}`}
+                            onClick={() => setOpen(isOpen ? null : name)}
+                          >
+                            <td>
+                              <span className={`status ${row?.enabled ? "status-alerted" : "status-dismissed"}`}>
+                                {row?.enabled ? "Active" : "Off"}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="about-trigger-name">
+                                <span className="about-caret">{isOpen ? "▾" : "▸"}</span> {info.label}
+                              </span>
+                              <div className="research-desc">{info.summary}</div>
+                            </td>
+                            <td className="ops-dim">{TIMING_LABEL[info.timing]}</td>
+                            <td>
+                              <span className={`trigger-chip trigger-chip-${side}`}>{side === "buy" ? "Buy" : "Sell"}</span>
+                            </td>
+                            <td className="ops-dim">{info.categoryLabel}</td>
+                            <td className="col-num">{hasStat ? stat.sample_size.toLocaleString() : "—"}</td>
+                            <td className="col-num">
+                              {hasStat && stat.win_rate != null ? `${(stat.win_rate * 100).toFixed(0)}%` : "—"}
+                            </td>
+                            <td className={`col-num ${hasStat ? tone(stat.avg_return) : ""}`}>{hasStat ? pct(stat.avg_return) : "—"}</td>
+                            <td className={`col-num ${hasStat ? tone(stat.mean_excl_top1pct) : ""}`}>
+                              {hasStat ? pct(stat.mean_excl_top1pct) : "—"}
+                            </td>
+                            <td className="col-num">{row && fires[row.id] != null ? fires[row.id].toLocaleString() : "—"}</td>
+                          </tr>
+                          {isOpen && (
+                            <tr className="ops-expand">
+                              <td colSpan={10}>
+                                <TriggerDetails
+                                  name={name}
+                                  row={row}
+                                  stat={stat}
+                                  fires={row ? fires[row.id] : undefined}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </Fragment>
+                ),
+              )
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="research-note">
+        Backtest columns: every past fire bought and held {RECORD_HORIZON} trading days, before costs. Click a trigger for
+        its exact conditions.
+      </p>
     </div>
   );
 }
 
-function TriggerCard({ name, row, stat, fires }: { name: string; row?: TriggerRow; stat?: StatRow; fires?: number }) {
+const pct = (v: number | null | undefined, digits = 2) =>
+  v == null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(digits)}%`;
+const tone = (v: number | null | undefined) => (v == null || v === 0 ? "" : v > 0 ? "up" : "down");
+
+/** The full write-up for one trigger, shown when its table row is opened. */
+function TriggerDetails({ name, row, stat, fires }: { name: string; row?: TriggerRow; stat?: StatRow; fires?: number }) {
   const info = TRIGGER_INFO[name];
   const side = triggerSide(name);
-  const pct = (v: number | null | undefined, digits = 2) =>
-    v == null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(digits)}%`;
-  const tone = (v: number | null | undefined) => (v == null || v === 0 ? "" : v > 0 ? "up" : "down");
 
   return (
-    <article className={`trigger-card${row && !row.enabled ? " trigger-card-off" : ""}`}>
-      <header className="trigger-card-head">
-        <h4>{info.label}</h4>
-        {row && (
-          <span className={`status ${row.enabled ? "status-alerted" : "status-dismissed"}`}>
-            {row.enabled ? "Active" : "Off"}
-          </span>
-        )}
-      </header>
+    <article className="about-details">
       <div className="trigger-chips">
         <span className="trigger-chip">{TIMING_LABEL[info.timing]}</span>
         <span className={`trigger-chip trigger-chip-${side}`}>{side === "buy" ? "Buy side" : "Sell side"}</span>
