@@ -35,6 +35,16 @@ function ciStrength(t?: CatalystTest): string {
   return "";
 }
 
+/** q shading, same scheme as the CI: green <= 0.10 (counts as a finding),
+ *  grey > 0.25 (weak — likely luck given how many types were tested),
+ *  plain in between. */
+function qStrength(q?: number | null): string {
+  if (q == null) return "";
+  if (q <= 0.1) return "ci-strong";
+  if (q > 0.25) return "ci-weak";
+  return "";
+}
+
 /** Leaderboard columns: [label, hover explanation, numeric]. */
 const LEADERBOARD_COLUMNS: [string, string, boolean][] = [
   ["Catalyst", "The event type (e.g. a trading halt, an S-1 filing, an earnings beat). The grey line underneath says what it is and where it comes from.", false],
@@ -46,7 +56,7 @@ const LEADERBOARD_COLUMNS: [string, string, boolean][] = [
   ["20d null", "The 20-day excess for the same stocks on random days, when the event didn't happen — what these kinds of stocks do anyway.", true],
   ["Gap", "20d excess minus 20d null: the effect of the event itself, separated from the kind of stock it happens to. Red = worse than usual after the event, green = better.", true],
   ["90% CI", "The range the 20-day excess likely falls in, 90% of the time (low | high). Green: the whole range clears the 20d null — the event really does differ from the same stocks on random days. Grey: the range includes zero, so even the direction is uncertain (weakest). White: in between.", true],
-  ["q", "The chance this is a fluke after accounting for how many catalyst types were tested — test dozens and a few look good by luck. Below 0.10 counts as a finding.", true],
+  ["q", "The chance this is a fluke after accounting for how many catalyst types were tested — test dozens and a few look good by luck. Green: 0.10 or below, counts as a finding. White: 0.10-0.25, suggestive. Grey: above 0.25, weak.", true],
   ["2022+ gap", "The same gap on 2022-to-now data, held back while the rules were built. 'Sealed' = that final test hasn't been run yet. A rule is only trusted once it holds here too.", true],
 ];
 
@@ -209,7 +219,7 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
                   <td className={`col-num ${ciStrength(d20)}`}>
                     {d20?.ci_lo != null ? `${pct(d20.ci_lo, 1)} | ${pct(d20.ci_hi, 1)}` : "—"}
                   </td>
-                  <td className="col-num">{d20?.q != null ? d20.q.toFixed(3) : "—"}</td>
+                  <td className={`col-num ${qStrength(d20?.q)}`}>{d20?.q != null ? d20.q.toFixed(3) : "—"}</td>
                   <td className="col-num">{hgap != null ? pct(hgap) : "sealed"}</td>
                 </tr>
                 {open === t.type && (
