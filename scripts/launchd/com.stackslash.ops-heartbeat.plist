@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.ops-heartbeat</string>
+
+    <!-- Every 5 minutes: push every com.stackslash.* launchd job's state
+         (loaded, pid, last exit, newest log mtime) and a host-alive row to
+         ops_host_status for the /ops page. See scripts/ops_heartbeat.py.
+         A stale '_host' row on /ops means this machine is off or asleep. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/research/.venv/bin/python</string>
+        <string>/Users/ckohler/StackSlash/scripts/ops_heartbeat.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-ops-heartbeat/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-ops-heartbeat/launchd.err.log</string>
+</dict>
+</plist>

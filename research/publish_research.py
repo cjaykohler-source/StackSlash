@@ -153,7 +153,7 @@ def main():
         con.execute(f"attach '{rdb}' as rd (read_only)")
         rr = con.execute(f"""
           with last as (
-            select subreddit, seen_at::date day, max(seen_at) ts from rd.ape_snapshots
+            select subreddit, seen_at::date as day, max(seen_at) as ts from rd.ape_snapshots
             where seen_at >= current_date - interval {args.days} day group by 1, 2
           )
           select s.ticker, l.day, sum(s.mentions)::int, count(*)::int, sum(s.upvotes)::int, null

@@ -380,7 +380,7 @@ def form4(con):
         group by all
       ),
       typed as (
-        select cik, filing_date, 'f4_buy' type, sum(buy_v) v from filing where buy_v > 0 group by all
+        select cik, filing_date, 'f4_buy' as type, sum(buy_v) as v from filing where buy_v > 0 group by all
         union all select cik, filing_date, 'f4_buy_officer', sum(buy_v) from filing where buy_v > 0 and officer group by all
         union all select cik, filing_date, 'f4_buy_director', sum(buy_v) from filing where buy_v > 0 and director and not officer group by all
         union all select cik, filing_date, 'f4_buy_ten_pct', sum(buy_v) from filing where buy_v > 0 and ten_pct group by all
