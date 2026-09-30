@@ -8,6 +8,7 @@ import { SymbolProfile } from "../components/SymbolProfile";
 import { CompanyDescription } from "../components/CompanyDescription";
 import { useQuotes, sessionLabel, type Quote } from "../components/QuoteTag";
 import { SymbolNews } from "../components/SymbolNews";
+import { CatalystTimeline } from "../components/CatalystTimeline";
 import { SessionCandleChart, type Candle, type PrevSession } from "../components/SessionCandleChart";
 import { RangeCandleChart, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
 import { BrandHomeLink } from "../components/BrandHomeLink";
@@ -350,6 +351,7 @@ export function SymbolDetail() {
               <>
                 <FinancialsPanel symbolId={symbolId} />
                 {ticker && <SymbolNews ticker={ticker} />}
+                {ticker && <CatalystTimeline ticker={ticker} />}
               </>
             }
             factorsTarget={factorsEl}
