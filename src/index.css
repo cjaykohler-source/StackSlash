@@ -2797,3 +2797,11 @@ h1 .quote-tag {
 }
 .link-button.active:hover { color: #ff6b5b; border-color: #ff6b5b; }
 .ops-refresh { padding: 2px 10px; font-size: 0.8rem; }
+
+.ops-what {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-width: 900px;
+}

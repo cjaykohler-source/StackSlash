@@ -19,6 +19,7 @@ interface OpsJob {
   grp: string;
   schedule_text: string;
   description: string | null;
+  details: string | null;
   stale_after: string;
   weekdays_only: boolean;
   market_hours: boolean;
@@ -275,6 +276,7 @@ export function Ops() {
                           <tr className="ops-expand">
                             <td colSpan={9}>
                               <div className="ops-detail">
+                                {job.details && <p className="ops-what">{job.details}</p>}
                                 {detail && <pre className="ops-error">{detail}</pre>}
                                 <div>
                                   Overdue after {job.stale_after}
