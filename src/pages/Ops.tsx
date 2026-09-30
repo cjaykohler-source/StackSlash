@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { BrandHomeLink } from "../components/BrandHomeLink";
+import { AppHeader } from "../components/AppHeader";
 
 /**
  * One place to see every recurring process: launchd jobs on the worker
@@ -178,18 +177,7 @@ export function Ops() {
 
   return (
     <div className="page">
-      <header className="page-header">
-        <BrandHomeLink />
-        <h1>Ops</h1>
-        <div className="header-actions">
-          <button className="link-button" onClick={load}>
-            Refresh
-          </button>
-          <Link to="/" className="link-button">
-            Dashboard
-          </Link>
-        </div>
-      </header>
+      <AppHeader />
 
       <div className={`ops-banner ${!loadedAt ? "" : hostAge < 15 * 60_000 ? "ops-banner-ok" : "ops-banner-bad"}`}>
         {!loadedAt
@@ -200,6 +188,9 @@ export function Ops() {
             : `Worker host silent since ${new Date(hostRow.updated_at).toLocaleString()} — every launchd job is down (machine off, asleep, or heartbeat stopped)`
           : "No heartbeat from the worker host yet (com.stackslash.ops-heartbeat)"}
         <span className="ops-counts">
+          <button className="link-button ops-refresh" onClick={load}>
+            Refresh
+          </button>
           {(Object.keys(STATE_LABEL) as State[])
             .filter((s) => counts[s])
             .map((s) => (

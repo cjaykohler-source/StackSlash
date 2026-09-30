@@ -11,7 +11,7 @@ import { SymbolNews } from "../components/SymbolNews";
 import { CatalystTimeline } from "../components/CatalystTimeline";
 import { SessionCandleChart, type Candle, type PrevSession } from "../components/SessionCandleChart";
 import { RangeCandleChart, type RangeBar, type RangeTimeframe } from "../components/RangeCandleChart";
-import { BrandHomeLink } from "../components/BrandHomeLink";
+import { AppHeader } from "../components/AppHeader";
 import { TrackButton } from "../components/TrackButton";
 import { VolumeMeter } from "../components/VolumeMeter";
 import { loadDailyVolumes, volumeBaseline, type DailyVolume } from "../lib/dailyVolume";
@@ -231,9 +231,9 @@ export function SymbolDetail() {
 
   return (
     <div className="page">
-      <header className="page-header">
+      <AppHeader />
+      <div className="page-header">
         <div className="symbol-header-title">
-          <BrandHomeLink />
           {/* Price trails the ticker + name on the same line, wherever it ends. */}
           <div className="symbol-title-line">
             <h1>
@@ -246,7 +246,7 @@ export function SymbolDetail() {
           </div>
           <CompanyDescription ticker={ticker ?? null} name={symbolName} />
         </div>
-      </header>
+      </div>
 
       {/* Body: sections on the left; the snapshot column runs down the right
           side beside all of them, starting level with the range buttons. */}

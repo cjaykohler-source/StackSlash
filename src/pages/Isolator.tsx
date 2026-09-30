@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { BrandHomeLink } from "../components/BrandHomeLink";
+import { AppHeader } from "../components/AppHeader";
 import {
   DEFAULT_SPEC,
   OPERATORS,
@@ -222,9 +222,7 @@ export function Isolator() {
 
   return (
     <div className="page">
-      <header className="page-header">
-        <BrandHomeLink />
-      </header>
+      <AppHeader />
 
       <h2>Isolator</h2>
       <p className="settings-intro">
