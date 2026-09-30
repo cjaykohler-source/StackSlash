@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.reddit-collect</string>
+
+    <!-- Forward-only Reddit collector for retail-attention catalysts. See
+         scripts/run-reddit-collect.sh and research/catalysts/reddit_collect.py.
+         Every 15 minutes, around the clock: posts arrive overnight and on
+         weekends too, and a missed window can't be backfilled. ~30 API
+         calls per run, well under Reddit's ~100/minute. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ckohler/StackSlash/scripts/run-reddit-collect.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ckohler/StackSlash</string>
+
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-reddit-collect/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-reddit-collect/launchd.err.log</string>
+</dict>
+</plist>
