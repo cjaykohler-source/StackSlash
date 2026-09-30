@@ -6,13 +6,19 @@ SECURITY (it is designed to be reachable from the live site later)
   - every endpoint except /health needs `Authorization: Bearer <Supabase
     access token>`; the token is checked against Supabase (/auth/v1/user)
     and the user id must be in CHARTER_ALLOWED_USER_IDS. Results cached
-    5 minutes per token.
+    5 minutes per token (never past the token's own expiry); rejected
+    tokens are cached too, so a replayed bad token never reaches Supabase.
+  - rate limits (it is public through Tailscale Funnel): a client that
+    fails auth 20 times in 5 minutes is refused (429) until the window
+    clears; a signed-in user gets 240 requests/minute; /cross runs at
+    most 2 at a time.
   - read-only: the warehouse and every file are opened read-only, and the
     API answers a fixed set of queries. Browser input never becomes SQL:
     symbols are validated against a pattern and bound as parameters,
     dates are parsed, metric ids are checked against the catalog.
   - CORS only for the site and local dev origins.
-  - binds 127.0.0.1 only; remote access goes through a tunnel.
+  - binds 127.0.0.1 only; remote access goes through Tailscale Funnel
+    (public HTTPS on the Mac's ts.net name -> 127.0.0.1:8787).
 
 ENDPOINTS (GET; JSON, or CSV with &format=csv where noted)
   /health                              liveness (no auth)
@@ -28,6 +34,8 @@ ENDPOINTS (GET; JSON, or CSV with &format=csv where noted)
 
     research/.venv/bin/python -m research.charter_api.server   (or scripts/run-charter-api.sh)
 """
+import base64
+import collections
 import csv
 import datetime as dt
 import io
@@ -68,6 +76,10 @@ except Exception:  # pragma: no cover
 SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 ORIGINS = {"https://r10t.netlify.app", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"}
 TOKEN_TTL = 300
+FAIL_LIMIT, FAIL_WINDOW = 20, 300    # failed-auth requests per client per 5 minutes
+USER_LIMIT, USER_WINDOW = 240, 60    # requests per signed-in user per minute
+HEAVY = {"/cross"}                   # expensive endpoints: at most HEAVY_SLOTS concurrently
+HEAVY_SLOTS = 2
 
 
 def load_env():
@@ -85,9 +97,58 @@ class ApiError(Exception):
         self.status = status
 
 
+# ---------------------------------------------------------------- rate limits
+class RateLimiter:
+    """Sliding-window counter per key: hit() records one event, over() says whether the key is at its limit."""
+
+    def __init__(self, limit, window):
+        self.limit, self.window = limit, window
+        self.events = collections.defaultdict(collections.deque)
+        self.lock = threading.Lock()
+
+    def _trim(self, key, now):
+        q = self.events[key]
+        while q and q[0] <= now - self.window:
+            q.popleft()
+        if not q:
+            del self.events[key]
+        return q
+
+    def over(self, key):
+        with self.lock:
+            return len(self._trim(key, time.time())) >= self.limit
+
+    def hit(self, key):
+        """Record one event; True if the key was already at its limit (the event is then not counted)."""
+        now = time.time()
+        with self.lock:
+            q = self._trim(key, now)
+            if len(q) >= self.limit:
+                return True
+            self.events[key].append(now)
+            if len(self.events) > 10000:  # bound memory: drop keys whose windows have cleared
+                for k in list(self.events):
+                    self._trim(k, now)
+            return False
+
+
+fail_limiter = RateLimiter(FAIL_LIMIT, FAIL_WINDOW)
+user_limiter = RateLimiter(USER_LIMIT, USER_WINDOW)
+heavy_slots = threading.BoundedSemaphore(HEAVY_SLOTS)
+
+
 # ---------------------------------------------------------------- auth
 _token_cache = {}
 _token_lock = threading.Lock()
+
+
+def token_expiry(token):
+    """The JWT's own exp claim (unverified; only used to cap the cache), or None."""
+    try:
+        payload = token.split(".")[1]
+        return float(json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))["exp"])
+    except Exception:
+        return None
 
 
 def check_auth(header):
@@ -97,26 +158,28 @@ def check_auth(header):
     now = time.time()
     with _token_lock:
         hit = _token_cache.get(token)
-        if hit and hit[1] > now:
-            uid = hit[0]
-            break_ok = True
-        else:
-            break_ok = False
-    if not break_ok:
+    if hit and hit[1] > now:
+        uid = hit[0]
+    else:
         url = os.environ["VITE_SUPABASE_URL"].rstrip("/") + "/auth/v1/user"
         req = urllib.request.Request(url, headers={"apikey": os.environ["VITE_SUPABASE_ANON_KEY"], "Authorization": f"Bearer {token}"})
         try:
             with urllib.request.urlopen(req, timeout=10) as r:
                 uid = json.load(r).get("id")
         except urllib.error.HTTPError:
-            raise ApiError(401, "invalid or expired session")
+            uid = None  # rejected by Supabase: cached as rejected below
         except Exception:
             raise ApiError(503, "could not verify the session with Supabase")
+        exp = token_expiry(token) if uid else None
         with _token_lock:
-            _token_cache[token] = (uid, now + TOKEN_TTL)
+            _token_cache[token] = (uid, min(now + TOKEN_TTL, exp) if exp else now + TOKEN_TTL)
             if len(_token_cache) > 1000:
                 for k in [k for k, v in _token_cache.items() if v[1] < now]:
                     _token_cache.pop(k, None)
+            if len(_token_cache) > 5000:
+                _token_cache.clear()
+    if not uid:
+        raise ApiError(401, "invalid or expired session")
     allowed = {x.strip() for x in os.environ.get("CHARTER_ALLOWED_USER_IDS", "").split(",") if x.strip()}
     if uid not in allowed:
         raise ApiError(403, "this account is not allowed to use Charter")
@@ -564,6 +627,12 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Access-Control-Request-Private-Network") == "true":
                 self.send_header("Access-Control-Allow-Private-Network", "true")
 
+    def _client(self):
+        # behind Tailscale Serve/Funnel every connection comes from tailscaled on 127.0.0.1;
+        # the client address is the X-Forwarded-For entry tailscaled adds (the last one)
+        fwd = self.headers.get("X-Forwarded-For", "")
+        return fwd.split(",")[-1].strip() or self.client_address[0]
+
     def do_OPTIONS(self):
         self.send_response(204)
         self._cors()
@@ -571,6 +640,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, status, body, ctype="application/json", filename=None):
         data = body.encode() if isinstance(body, str) else body
+        self._status = status
         self.send_response(status)
         self._cors()
         self.send_header("Content-Type", ctype)
@@ -590,8 +660,26 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({"ok": True, "warehouse": WAREHOUSE.exists(), "minute_index": MINUTES.size}))
             if u.path not in ROUTES:
                 raise ApiError(404, "unknown endpoint")
-            check_auth(self.headers.get("Authorization"))
-            res = ROUTES[u.path](q)
+            client = self._client()
+            if fail_limiter.over(client):
+                raise ApiError(429, "too many failed sign-in attempts; try again in a few minutes")
+            try:
+                uid = check_auth(self.headers.get("Authorization"))
+            except ApiError as e:
+                if e.status in (401, 403):
+                    fail_limiter.hit(client)
+                raise
+            if user_limiter.hit(uid):
+                raise ApiError(429, "too many requests; slow down for a minute")
+            if u.path in HEAVY:
+                if not heavy_slots.acquire(timeout=60):
+                    raise ApiError(503, "busy with other cross-section queries; try again")
+                try:
+                    res = ROUTES[u.path](q)
+                finally:
+                    heavy_slots.release()
+            else:
+                res = ROUTES[u.path](q)
             if (q.get("format") or [""])[0] == "csv":
                 if u.path not in CSV_OK:
                     raise ApiError(400, "csv not available for this endpoint")
@@ -604,7 +692,7 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self._send(500, json.dumps({"error": "internal error (see the API log)"}))
         finally:
-            sys.stdout.write(f"{dt.datetime.now():%H:%M:%S} {u.path} {int((time.time() - t0) * 1000)}ms\n")
+            sys.stdout.write(f"{dt.datetime.now():%H:%M:%S} {getattr(self, '_status', '-')} {u.path} {int((time.time() - t0) * 1000)}ms {self._client()}\n")
             sys.stdout.flush()
 
     def log_message(self, *args):  # quiet default logging; do_GET logs a line per request

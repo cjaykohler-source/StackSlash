@@ -11,7 +11,7 @@ open item 44).
 browser (r10t.netlify.app/charter, or local dev)
    │  fetch + Authorization: Bearer <Supabase access token>
    ▼
-Tailscale Serve  https://stackslash-worker-host.tail3d8cea.ts.net   (tailnet-only)
+Tailscale Funnel https://stackslash-worker-host.tail3d8cea.ts.net   (public; tailnet devices reach it directly)
    ▼
 Charter API      127.0.0.1:8787   research/charter_api/server.py    (launchd com.stackslash.charter-api, KeepAlive)
    ▼
@@ -25,12 +25,20 @@ research/data/   stackslash.duckdb (SIP daily), minute/ (SIP 1-min, ~740k files)
   public tunnel -> cloud) — no page rewrite.
 - **Access:** the site reads the API URL from the Netlify env var
   `VITE_CHARTER_API_URL` (local dev defaults to `http://127.0.0.1:8787`).
-  A device needs Tailscale on to reach it; the owner's iPhone works.
-  Public access (Funnel + rate limiting, or Cloudflare Tunnel + Access)
-  is an open decision (README item 34).
+  **Tailscale Funnel** (decided 2026-09-30, README item 34) publishes the
+  same ts.net URL to the internet, so any signed-in device works without
+  Tailscale installed and the site config is unchanged. Funnel needs the
+  `funnel` node attribute in the tailnet policy (admin console, owner
+  only); then `tailscale funnel --bg --https=443 http://127.0.0.1:8787`
+  replaces the tailnet-only `tailscale serve` of the same port. Revert
+  with `tailscale funnel --https=443 off` + the old `serve` line.
 - **Security:** every request needs the signed-in Supabase session; the
   API verifies it against Supabase (`/auth/v1/user`, cached 5 min) and
-  requires the user id in `CHARTER_ALLOWED_USER_IDS` (.env). Read-only;
+  requires the user id in `CHARTER_ALLOWED_USER_IDS` (.env). Rejected
+  tokens are cached 5 min so a replayed bad token never reaches Supabase;
+  a client with 20 failed attempts in 5 min gets 429 until the window
+  clears; a signed-in user gets 240 requests/min; `/cross` runs 2 at a
+  time. Each log line has status, path, ms and client IP. Read-only;
   fixed endpoints; input validated (symbol pattern, ISO dates, numbers,
   known exchanges) and bound as parameters, never turned into SQL. CORS
   for the site and local dev only, plus Chrome's Private Network Access
