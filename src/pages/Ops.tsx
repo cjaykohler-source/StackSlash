@@ -98,6 +98,10 @@ function ago(ts: string | null | undefined, now: number): string {
 function judge(job: OpsJob, sum: Summary | undefined, hs: HostStatus | undefined, now: Date): { state: State; last: string | null } {
   const last = job.records_runs ? sum?.started_at ?? null : hs?.last_log_at ?? null;
   if (job.host === "launchd" && hs && hs.loaded === false) return { state: "not-loaded", last };
+  // always-on services (KeepAlive) are healthy while their process is alive,
+  // whatever their start-of-life job_runs row says
+  if (job.grp === "Always on" && hs?.pid) return { state: "running", last: hs.updated_at };
+  if (job.grp === "Always on" && hs && !hs.pid && job.stale_after.startsWith("3650")) return { state: "failed", last };
   if (job.records_runs && sum?.status === "running") {
     return { state: now.getTime() - Date.parse(sum.started_at) > 2 * 3600_000 ? "stuck" : "running", last };
   }
