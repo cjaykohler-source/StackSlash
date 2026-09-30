@@ -138,8 +138,8 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
           </select>
         </label>
       </div>
-      <div className="trigger-feed-scroll">
-        <table className="isolator-table research-table">
+      <div className="trigger-feed-scroll ops-panel">
+        <table className="ops-table research-table">
           <thead>
             <tr>
               <th>Catalyst</th>
@@ -156,9 +156,23 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ t, d20, d5, gap, hgap }) => (
+            {rows.map(({ t, d20, d5, gap, hgap }, i) => {
+              const newGroup = i === 0 || rows[i - 1].t.verdict !== t.verdict;
+              const idx = rows.slice(0, i + 1).filter((r) => r.t.verdict === t.verdict).length - 1;
+              return (
               <Fragment key={t.type}>
-                <tr className="research-row" onClick={() => setOpen(open === t.type ? null : t.type)}>
+                {newGroup && (
+                  <tr className="ops-group">
+                    <td colSpan={11}>
+                      {VERDICT_LABEL[t.verdict]}{" "}
+                      <span className="about-section-count">{rows.filter((r) => r.t.verdict === t.verdict).length}</span>
+                    </td>
+                  </tr>
+                )}
+                <tr
+                  className={`ops-row research-row rv-${t.verdict}${idx % 2 ? " ops-row-alt" : ""}${open === t.type ? " ops-row-open" : ""}`}
+                  onClick={() => setOpen(open === t.type ? null : t.type)}
+                >
                   <td>
                     {t.label}
                     {t.description && <div className="research-desc">{t.description}</div>}
@@ -179,7 +193,7 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
                   <td className="col-num">{hgap != null ? pct(hgap) : "sealed"}</td>
                 </tr>
                 {open === t.type && (
-                  <tr className="research-expand">
+                  <tr className="ops-expand">
                     <td colSpan={11}>
                       {t.verdict_note && <p className="research-note">{t.verdict_note}</p>}
                       {samples.length === 0 ? (
@@ -199,7 +213,8 @@ function Leaderboard({ types }: { types: Map<string, CatalystType> }) {
                   </tr>
                 )}
               </Fragment>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -309,8 +324,8 @@ function Feed({ types }: { types: Map<string, CatalystType> }) {
       {events.length === 0 && !loading ? (
         <p className="empty-state">No events match.</p>
       ) : (
-        <div className="trigger-feed-scroll">
-          <table className="isolator-table research-table">
+        <div className="trigger-feed-scroll ops-panel">
+          <table className="ops-table research-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -322,10 +337,10 @@ function Feed({ types }: { types: Map<string, CatalystType> }) {
               </tr>
             </thead>
             <tbody>
-              {events.map((e) => {
+              {events.map((e, i) => {
                 const t = types.get(e.type);
                 return (
-                  <tr key={e.id}>
+                  <tr key={e.id} className={`ops-row rv-${t?.verdict ?? "untested"}${i % 2 ? " ops-row-alt" : ""}`}>
                     <td className="catalyst-date">{e.event_date}</td>
                     <td>
                       <Link to={`/symbol/${e.symbol}`}>{e.symbol}</Link>
@@ -409,8 +424,8 @@ function Reddit() {
         Ticker mentions across tracked subreddits. Spike = the latest day's mentions vs the 30-day daily average. Not
         yet a tested catalyst — there's no history before the collector started.
       </p>
-      <div className="trigger-feed-scroll">
-        <table className="isolator-table research-table">
+      <div className="trigger-feed-scroll ops-panel">
+        <table className="ops-table research-table">
           <thead>
             <tr>
               <th>Symbol</th>
@@ -422,8 +437,8 @@ function Reddit() {
             </tr>
           </thead>
           <tbody>
-            {table.map((r) => (
-              <tr key={r.symbol}>
+            {table.map((r, i) => (
+              <tr key={r.symbol} className={`ops-row${i % 2 ? " ops-row-alt" : ""}`}>
                 <td>
                   <Link to={`/symbol/${r.symbol}`}>{r.symbol}</Link>
                 </td>

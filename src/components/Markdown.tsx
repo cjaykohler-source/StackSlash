@@ -47,14 +47,16 @@ export function Markdown({ source }: { source: string }) {
       i += 2;
       while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(cells(lines[i++]));
       out.push(
-        <div className="md-table-scroll" key={out.length}>
-          <table className="isolator-table md-table">
+        <div className="md-table-scroll ops-panel" key={out.length}>
+          <table className="ops-table md-table">
             <thead>
               <tr>{head.map((c, j) => <th key={j}>{inline(c)}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map((r, k) => (
-                <tr key={k}>{r.map((c, j) => <td key={j}>{inline(c)}</td>)}</tr>
+                <tr key={k} className={k % 2 ? "ops-row-alt" : undefined}>
+                  {r.map((c, j) => <td key={j}>{inline(c)}</td>)}
+                </tr>
               ))}
             </tbody>
           </table>

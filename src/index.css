@@ -2839,3 +2839,15 @@ h1 .quote-tag {
   left: 16px;
 }
 .about-details .trigger-summary { color: var(--text); }
+
+/* Research tables share the Ops table look; the left stripe is the verdict. */
+.research-table .ops-row { cursor: default; }
+.research-table .research-row { cursor: pointer; }
+.rv-avoid td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+.rv-positive td:first-child { box-shadow: inset 3px 0 0 rgba(46, 204, 113, 0.7); }
+.rv-watch td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+.rv-none td:first-child,
+.rv-untested td:first-child { box-shadow: inset 3px 0 0 var(--border); }
+.research-table .catalyst-detail { color: var(--text-dim); }
+.md-table-scroll.ops-panel { margin: 12px 0; }
+.md-table td, .md-table th { vertical-align: top; }
