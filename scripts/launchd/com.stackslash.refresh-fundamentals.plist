@@ -19,7 +19,7 @@
         <string>POST</string>
         <string>--max-time</string>
         <string>20</string>
-        <string>https://stackslash.netlify.app/.netlify/functions/refresh-fundamentals-background</string>
+        <string>https://r10t.netlify.app/.netlify/functions/refresh-fundamentals-background</string>
     </array>
 
     <!-- Mondays 08:00 local (host is America/New_York) — after DoltHub's

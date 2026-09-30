@@ -15,7 +15,7 @@ export interface DiscordEmbed {
   timestamp?: string;
 }
 
-export const SITE_URL = "https://stackslash.netlify.app";
+export const SITE_URL = "https://r10t.netlify.app";
 
 // Display names for triggers. Mirrors the labels in src/lib/triggerInfo.ts
 // (the functions bundle can't import from src/); keep the two in step.
