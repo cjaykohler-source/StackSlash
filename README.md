@@ -98,9 +98,153 @@ so the next attempt doesn't re-discover the same dead ends.
 > and the current operational state. This file is the strategy, the
 > research derivations and the open decisions.
 
+## Session 2026-09-29/30 — agentic-trader research, the catalyst harness, and the Research / Ops / Charter pages
+
+**Read this before every section below it; where they disagree, this wins.**
+Its open-items list supersedes the 2026-09-28 one. Logistics (jobs,
+tunnel, services) are in `docs/HANDOFF.md`; Charter in `docs/charter.md`.
+
+### What the research established
+
+The goal was a strategy an agent could trade. Every result below is
+2016-21 discovery unless it says 2022+; costs are max(1%, one tick).
+
+- **Price/volume signals don't carry a tradable edge in the $0.10-$5
+  band** — now tested every way this session:
+  - the breakout study's headline (quiet streak + 20% decline) failed a
+    permutation noise floor (`breakout_noise_floor.py`): mostly *which*
+    names, not *when*. Only **volume >= 5x** carried timing information.
+  - trading that volume spike (`swing_backtest.py`, 9 exit/threshold
+    variants) never beat random entries; nor did trend-following on
+    liquid names >$5 (5 exit variants; portfolio replay `trend_portfolio.py`
+    +7.3%/yr vs random +8.6% vs SPY +15.4%, 2016-21).
+  - intraday rvol/gap-and-go was already negative (see older sections).
+- **The one result validated on 2022+: dilution is an avoid rule**
+  (`docs/filing-state-study.md`, `filing_state_study.py`). 60-session
+  excess after an S-1/S-3 in 30 days -11.3%, a priced 424B -9.4%, shares
+  +1-3x YoY -6.7%, all stronger in 2022+ than 2016-21. Not shortable
+  (borrow). Use as a veto.
+- **Catalyst harness** (`docs/catalyst-harness.md`, `research/catalysts/`):
+  65 catalyst types from EDGAR, corporate actions, DoltHub earnings
+  surprise, going-concern full-text search, 2.08M Alpaca/Benzinga
+  headlines and 316k parsed Form 4s, each vs the same names at random
+  dates, BH-corrected. Candidates (q <= 0.10, 2016-21): trading halt
+  -3.7%, partnership PR -1.4%, 10-K -0.8% (avoid); earnings beat +0.9%,
+  8-K 2.02 / 10-Q ~+0.5%, price-target cut +1.0% (suspect, not mean
+  reversion). Insider buying at full sample is only +0.4-0.9% and not
+  significant; the +3% was headline selection. **None has had its 2022+
+  test yet.**
+- **Breakout reverse-engineering** (`breakout_features_v2.py`, 352 columns
+  incl. SMA 5-200, a 6-reading short-interest series, float series,
+  split-restated share counts; `breakout_walkforward.py`): *which* stocks
+  break out is predictable (AUC 0.75, 7/7 years: high ATR, far below 52w
+  high, low price, tiny cap); *when* is only modest (AUC ~0.62, top-1
+  ~48% vs 28% chance) and lives in the last day or two of volume / ATR /
+  dollar volume. Short-interest trend, float change, filings and news
+  carry no timing signal. Two bugs were caught before they misled
+  (post-spike controls leaking the answer; a join summing the controls).
+- **Points score** (`score_poc.py`, `score_poc2.py`, target +30% within 5
+  days, full universe): ranks probability well (2020-21 test: deciles
+  1.1% -> 23.2%, top 5% 3.3x base, beats vol_ratio alone) but **the trade
+  doesn't monetize** (+0.19% vs random -0.15%, 90% CI of the difference
+  -0.34% to +1.07%). It predicts *volatility*, both directions.
+- **Lead-up** (`leadup_profile.py`): volume builds for 2 weeks before big
+  moves in *either* direction (slightly more before drops); VWAP, candle
+  bodies, green-day counts, close location separate nothing (AUC ~0.5).
+  Direction is set by the event on the move day.
+- **Overnight cycle** (`overnight_cycle.py`): buying the day's actual low
+  is +6%/night but impossible (random stocks do +4-5% too); realistic
+  entries hover at zero because the ~+0.7-0.9%/night gross overnight edge
+  is eaten by a 1% round trip.
+- **Allocation context** (`withdrawal_sim.py`): 4%/yr withdrawals from
+  SPY sustained growth 2017-2026; a 200-day trend rule cost ~40% of ending
+  value; momentum alone drew down 57%. The data has no long bear market.
+
+**Net:** the validated edge is in *avoiding* (dilution, halts, promo PRs);
+the price/volume "when" signal is real but thin and hasn't survived costs.
+The agent's likely value is disciplined rules + judgment, not a found
+edge.
+
+### What was built
+
+- **Research page** (`/research`): catalyst leaderboard (verdict bands,
+  gap vs random dates, CI and q colour-coded, header tooltips, 2022+
+  "sealed"), live feed, Reddit attention, study write-ups. Fed nightly by
+  `research-publish` into `research_*` tables.
+- **Ops page** (`/ops`): every recurring job (launchd / Netlify / pg_cron)
+  with status, last run, strip, error and a plain-language description;
+  a 5-minute host heartbeat; a red banner if the Mac goes silent.
+- **Charter** (`/charter`, `docs/charter.md`): phase 1 symbol deep dive
+  and phase 2 cross-sectional explorer over the whole warehouse, served by
+  the local Charter API through Tailscale Serve (tailnet-only).
+- **About** is an at-a-glance trigger table with expandable rows; **one
+  shared header** on every page (search + buttons fixed, active page red).
+- **Data**: Alpaca news history (2.08M), Form 4 parse (316k filings),
+  FINRA short interest 2018+ and Reg SHO short volume 2018-08+, going-
+  concern search, DoltHub EPS surprises, ApeWisdom Reddit snapshots
+  (hourly, forward-only), EDGAR bulk refreshed nightly.
+- **Fixes found along the way**: the nightly Supabase backup had written
+  empty files since 09-21 (fixed #224, real 227 MB backups verified);
+  `refresh-fundamentals` was POSTing to the dead stackslash.netlify.app
+  (fixed #223 — the site is **r10t.netlify.app**); `set-sip-floors-once`
+  retired.
+
+### Open items — the consolidated list (2026-09-30)
+
+Supersedes the 2026-09-28 list. Items 1-33 from that list stay open with
+their numbers unless marked here; new items continue from 34.
+
+- **Closed:** 29 (breakout noise floor — done: the streak finding failed,
+  volume >= 5x survived; see above).
+
+**Decisions for the user**
+
+34. Public access to Charter without Tailscale: Funnel + rate limiting,
+    or Cloudflare Tunnel + Access (needs a domain). Currently tailnet-only.
+35. Paid history for pre-2018 short interest / true float / borrow
+    (Ortex, S3, Fintel, Quandl) — only if the short family is pursued; it
+    showed no timing signal on 2018+ data.
+36. The agent-trader's shape: the evidence points to an index core + a
+    small rules-based sleeve, the dilution/halt/promo vetoes, and the agent
+    as analyst and risk officer, not a signal-finder. Not started.
+
+**Research — next steps (all on 2016-21; 2022+ stays sealed until final)**
+
+37. Run the one-shot 2022+ test for the final catalyst rules: halts,
+    partnership PRs, 10-K (+ going-concern 10-K), earnings beat / 2.02 /
+    10-Q.
+38. Two-sided score: model P(+30%) and P(-20%) and rank by the difference
+    — the direct fix for "the score predicts volatility" (`score_poc2.py`).
+39. Minute-bar direction test on lead-up-flagged days (VWAP / opening
+    range on the first big day) — the only place daily data says direction
+    could live.
+40. Overnight-cycle cost check by price/liquidity bucket against each
+    name's own estimated spread (`overnight_cycle.py`).
+41. Confluence search (pre-set condition pairs/triples, walk-forward,
+    multiple-testing corrected) and a tree model (needs scikit-learn in
+    `research/.venv`) on the breakout v2 table.
+42. Reddit attention becomes testable after a few months of snapshots
+    (collector started 2026-09-30).
+43. Form 4 buys: condition on size relative to market cap and on the
+    insider's role/track record before dropping the family.
+
+**Build**
+
+44. Charter phase 3 (event studies), phase 4 (aggregates), phase 5 polish
+    incl. a "?" formula-language help button next to the formula fields.
+45. Live red flags: add halts, share growth >= 1x, market cap < $10M next
+    to "Offering filed" (the dilution rules are validated; halts are not
+    yet 2022+-tested).
+46. Liquidity-floor recalculation (was item 33; design in
+    `docs/liquidity-floor-recalc.md`).
+47. IB Gateway must be logged in for `ib-short-availability`; it logs out
+    ~daily. Consider IBC or accept the gaps (the Ops page shows them).
+
+---
+
 ## Session 2026-09-24/28 — chart layout, trigger-scorecard audits, a catalyst-discovery system, and the breakout-event study
 
-Read this before every section below it; where they disagree, this wins. Four
+Superseded by the 2026-09-29/30 section above where they disagree. Four
 distinct threads, in the order they happened.
 
 ### Chart layout and remaining display work
@@ -238,10 +382,11 @@ trigger or a claimed edge.** See `docs/breakout-study.md` §Open items for
 the full next-step list for that study specifically; the consolidated
 project-wide list below folds in only its top-line items.
 
-### Open items — the consolidated list (2026-09-28)
+### Open items — the consolidated list (2026-09-28, superseded 2026-09-30)
 
-This supersedes every earlier "Open items" list in this file, including
-the 2026-09-24 one below. Items unchanged from that list keep their
+**Superseded by the 2026-09-30 list in the section above** (which keeps
+these numbers). This superseded every earlier "Open items" list in this
+file, including the 2026-09-24 one below. Items unchanged from that list keep their
 number; new ones are appended at the end of their section.
 
 **Research — audit debt** *(unchanged from 2026-09-24, still not started)*
