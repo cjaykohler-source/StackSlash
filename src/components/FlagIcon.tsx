@@ -29,6 +29,8 @@ export type FlagIconName =
   | "zacks"
   | "revenue"
   | "netcash"
+  | "halt"
+  | "partnership"
   | "generic";
 
 export function flagIconName(label: string): FlagIconName {
@@ -51,6 +53,8 @@ export function flagIconName(label: string): FlagIconName {
   if (l.startsWith("zacks")) return "zacks";
   if (l.startsWith("revenue +")) return "revenue";
   if (l.startsWith("net cash")) return "netcash";
+  if (l.startsWith("trading halt")) return "halt";
+  if (l.startsWith("partnership pr")) return "partnership";
   return "generic";
 }
 
@@ -141,6 +145,21 @@ const PATHS: Record<FlagIconName, JSX.Element> = {
     </>
   ),
   netcash: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
+  // pause in a circle
+  halt: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="10" y1="15" x2="10" y2="9" />
+      <line x1="14" y1="15" x2="14" y2="9" />
+    </>
+  ),
+  // two chain links
+  partnership: (
+    <>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </>
+  ),
   generic: (
     <>
       <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
