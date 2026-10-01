@@ -205,6 +205,12 @@ their numbers unless marked here; new items continue from 34.
 - **Closed:** 29 (breakout noise floor — done: the streak finding failed,
   volume >= 5x survived; see above).
 
+**Measurement note (2026-10-01):** the warehouse's +2.3% per 20 sessions
+for a random in-band stock is right skew (median −1%, compounded ≈ 0) plus
+the 2016/2020 small-cap rallies, with modest survivorship (delisted OTC and
+~23% of delisted NASDAQ names missing) — see `docs/return-inflation.md`.
+Report median, compounded and by-year returns next to any mean.
+
 **Decisions for the user**
 
 34. ~~Public access to Charter without Tailscale~~ — **decided 2026-09-30:

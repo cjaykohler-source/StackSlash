@@ -205,3 +205,14 @@ secondaries (2.02 -0.19%, 10-Q +0.07%). The earnings *big* beat secondary
 (+1.2%, p 0.001) is not a pass — it is a subset of a failed rule and would
 need its own pre-registered test.
 
+
+## Correction (2026-10-01, after the run)
+
+Section 4 says the absolute after-cost returns are "inflated" and that
+the falling equal-weight index contradicts them. The second part was
+wrong: the Charter equal-weight index rose over 2016-21 and fell only in
+2022-26. `docs/return-inflation.md` shows the +2.3% per 20 sessions is
+mostly right skew (median −1%, compounded ≈ 0) and the 2016/2020
+small-cap rallies, with modest survivorship. Section 4's practical rule —
+read absolute returns only against the universe's — stands; no verdict
+in this document used them.
