@@ -46,3 +46,37 @@ The same eight features on **all first big-volume days** (≈5,900, ~6x the
 sample), dropping the lead-up condition — the direction question doesn't
 need it. It would need its own pre-registration; note that the 86 stage-A
 lead-up events above (a subset) have now been looked at.
+
+## Follow-up: all first big-volume days (run 2026-10-01, approved before running)
+
+`research/minute_direction_wide.py` — the same design with the lead-up
+condition dropped; output `minute_direction_wide_20261001T141034.txt`.
+The 86 lead-up events from the first run are a ~1/6 subset of this sample.
+
+| | |
+|---|---|
+| first big-volume days, 2016-21 | 5,917 (5,876 with minute data) |
+| labelled, stage A 2016-19 | 537 (203 winners) |
+| labelled, stage B 2020-21 | 1,058 |
+
+Stage A carried two features: **share of minutes above the running VWAP**
+(AUC 0.592, q 0.012) and **close vs session VWAP** (0.569, q 0.048).
+Opening-range break (0.543, q 0.16) and time of the low (0.456, q 0.17)
+missed.
+
+Stage B (2020-21, once):
+
+| feature | AUC A → B | Holm p | favourable tercile trade | all events | 90% CI of difference | verdict |
+|---|---|---|---|---|---|---|
+| above VWAP | 0.592 → **0.554** | **0.009** | −1.54% | −2.84% | [−0.03%, +2.56%] | FAIL (trade) |
+| close vs VWAP | 0.569 → 0.481 | 0.28 | −3.47% | −2.84% | [−1.65%, +0.38%] | FAIL (flips) |
+
+**Reading.** Time spent above VWAP on the first big day is the first
+intraday feature in this project whose *direction* holds out of sample:
+days that spent most of the session above VWAP were more often followed by
++30% than by −20%. It does not make a trade: buying first big-volume days
+loses −2.84% over five sessions after costs on average, and the better
+tercile only loses less (−1.54%). The useful reading is the other way
+round — first big days that spent the session **below** VWAP are the worse
+ones — which would be an avoid rule, and would need its own pre-registered
+test (2022+ untouched) before it is used. Close vs VWAP alone flips.
