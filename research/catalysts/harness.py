@@ -55,7 +55,9 @@ HORIZONS = (5, 20)
 
 
 def fwd_excess(b, f, elig, starts, ends, h, cost):
-    """Per-row winsorized net forward return minus the same day's gated mean."""
+    """Per-row winsorized net forward return minus the same day's gated mean, and the winsorized
+    net return itself (not de-meaned). The cost is in both terms of the excess, so it cancels there;
+    the net return is the one that says whether the trade itself made money after costs."""
     n = len(b["c"])
     c, ratio = b["c"], f["ratio"]
     r = np.full(n, np.nan)
@@ -80,7 +82,7 @@ def fwd_excess(b, f, elig, starts, ends, h, cost):
     has = ud[pos] == d
     base[has] = mean[pos[has]]
     x = np.where(ok, w - base, np.nan)
-    return x
+    return x, np.where(ok, w, np.nan)
 
 
 def load_events(types):
@@ -124,7 +126,12 @@ def main():
         elig = (b["date"] >= np.datetime64("2016-01-01")) & (b["cr"] >= args.min_price) & (b["cr"] <= args.max_price) \
             & (f["dollar20"] >= args.floor)
     print("forward returns...", flush=True)
-    X = {h: fwd_excess(b, f, elig, starts, ends, h, args.cost) for h in HORIZONS}
+    XN = {h: fwd_excess(b, f, elig, starts, ends, h, args.cost) for h in HORIZONS}
+    X = {h: XN[h][0] for h in HORIZONS}
+    NET = {h: XN[h][1] for h in HORIZONS}
+    # the gated universe's mean net return per period: what buying random in-band stocks returned
+    base_net = {(pn, h): float(np.nanmean(NET[h][elig & (early == pf)])) for pn, pf in
+                [("2016-21", True), ("2022+", False)] for h in HORIZONS}
     qbin = np.zeros(n, int)
     if args.match_ret:
         local_all = np.arange(n) - np.repeat(starts, ends - starts)
@@ -197,7 +204,9 @@ def main():
                 lo, hi = np.percentile(bm, [5, 95])
                 results.append(dict(run_ts=run_ts, source=src, type=t, period=pname, h=h, n=len(sel), syms=len(us),
                                     mean_x=obs, ci_lo=lo, ci_hi=hi, null_med=np.nanmedian(null),
-                                    p=min(p_hi, p_lo), direction="above_null" if p_hi <= p_lo else "below_null"))
+                                    p=min(p_hi, p_lo), p_hi=p_hi, p_lo=p_lo,
+                                    direction="above_null" if p_hi <= p_lo else "below_null",
+                                    mean_net=float(NET[h][sel].mean()), base_net=base_net[(pname, h)]))
         print(f"  tested {t}", flush=True)
 
     # Benjamini-Hochberg on the discovery period, 20-session horizon
@@ -230,6 +239,12 @@ def main():
                       r["ci_hi"], r["null_med"], r["p"], r["q"], r["direction"], r["candidate"],
                       args.min_price, args.max_price, args.floor) for r in results])
     total = reg.execute("select count(distinct type) from tests where period = '2016-21'").fetchone()[0]
+    # full rows (incl. one-sided p and absolute net returns, which the registry table lacks) per run
+    import json
+    (CAT / "runs").mkdir(exist_ok=True)
+    (CAT / "runs" / f"{run_ts}.json").write_text(json.dumps(dict(
+        run_ts=run_ts, args=vars(args), results=[{k: (float(v) if isinstance(v, (np.floating, float)) else v)
+                                                   for k, v in r.items()} for r in results]), indent=1, default=str))
 
     print(f"\n${args.min_price:g}-${args.max_price:g}, floor ${args.floor:,.0f}, cost>={args.cost:.0%}; "
           f"{len(disc)} types tested this run, {total} distinct types ever logged")
@@ -248,7 +263,7 @@ def main():
             print(f"  {t:<24}{r20['source'][:5]:<6}{r20['n']:>8,}{r20['syms']:>6,}{(r5['mean_x'] if r5 else np.nan)*100:>7.2f}%"
                   f"{r20['mean_x']*100:>7.2f}% [{r20['ci_lo']*100:>6.2f},{r20['ci_hi']*100:>6.2f}]{r20['null_med']*100:>7.2f}%"
                   f"{(r20['mean_x'] - r20['null_med'])*100:>6.2f}%{r20['p']:>7.3f}{r20['q']:>7.3f}{flag}")
-    print(f"\nlogged to {REGISTRY}")
+    print(f"\nlogged to {REGISTRY} and {CAT / 'runs' / (run_ts + '.json')}")
 
 
 if __name__ == "__main__":
