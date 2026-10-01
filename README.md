@@ -248,8 +248,8 @@ their numbers unless marked here; new items continue from 34.
     patterns verbatim, <= 3 tickers; IPO-release halt notices excluded); red
     moved to the validated thresholds — shares 2x+ YoY (was +50%) and market
     cap < $10M (was < $50M); the in-between ranges are amber. 10-K stays off.
-    Still red on older evidence: <= 2 quarters of cash (the filing-state study
-    found runway weak/inconsistent) — a candidate to demote to amber.
+    <= 2 quarters of cash demoted to amber (the filing-state study found
+    runway weak/inconsistent; agreed with the user 2026-10-01).
 46. Liquidity-floor recalculation (was item 33; design in
     `docs/liquidity-floor-recalc.md`).
 47. IB Gateway must be logged in for `ib-short-availability`; it logs out
