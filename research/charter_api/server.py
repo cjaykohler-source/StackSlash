@@ -79,7 +79,7 @@ ORIGINS = {"https://r10t.netlify.app", "http://localhost:5173", "http://127.0.0.
 TOKEN_TTL = 300
 FAIL_LIMIT, FAIL_WINDOW = 20, 300    # failed-auth requests per client per 5 minutes
 USER_LIMIT, USER_WINDOW = 240, 60    # requests per signed-in user per minute
-HEAVY = {"/cross", "/event_study"}                   # expensive endpoints: at most HEAVY_SLOTS concurrently
+HEAVY = {"/cross", "/event_study", "/aggregates"}                   # expensive endpoints: at most HEAVY_SLOTS concurrently
 HEAVY_SLOTS = 2
 
 
@@ -477,6 +477,11 @@ CAT_FAMILIES = {
     "news": None,        # any typed headline (news_* except news_any)
     "filing": None,      # any EDGAR event
 }
+CAT_FAMILY_LABELS = {
+    "offering": "offering filings (S-1, S-3, 424B4/5)", "halt": "trading halts", "partnership_pr": "partnership PRs",
+    "earnings_beat": "earnings beats", "insider_buy": "insider buys (Form 4)", "news": "typed headlines",
+    "filing": "SEC filings (any)",
+}
 
 
 def p_float(q, key, default):
@@ -815,9 +820,202 @@ def ep_event_study(q):
             "events": events, "day0": day0, "winsorized": wins}
 
 
+# ---------------------------------------------------------------- aggregates over time
+# Fixed per-day statistics over the gated universe (one SQL each, aggregated per day, then per
+# period). kind: share = mean of daily shares; median = mean of daily medians; count = sum over
+# the period's sessions; level = last value in the period.
+AGG_SERIES = [
+    # id, label, group, unit, kind, per-day SQL over the universe rows u
+    ("n_stocks", "Stocks in the universe", "Universe", "count", "mean", "count(*)"),
+    ("dollar_volume", "Total dollar volume", "Universe", "usd", "count", "sum(dollar_volume)"),
+    ("adv_share", "Advancers (up on the day)", "Breadth", "pct", "mean", "avg((ret_1 > 0)::int)"),
+    ("above_sma50", "Above their SMA 50", "Breadth", "pct", "mean", "avg((dist_sma50 > 0)::int)"),
+    ("above_sma200", "Above their SMA 200", "Breadth", "pct", "mean", "avg((dist_sma200 > 0)::int)"),
+    ("near_high", "Within 2% of 52-week high", "Breadth", "pct", "mean", "avg((pct_52w_high >= 0.98)::int)"),
+    ("near_low", "Within 2% of 52-week low", "Breadth", "pct", "mean", "avg((pct_52w_low <= 1.02)::int)"),
+    ("ew_index", "Equal-weight index (daily returns clipped -50%/+100%)", "Market", "index", "level", None),
+    ("median_ret", "Median daily return", "Market", "pct", "mean", "median(ret_1)"),
+    ("big_up", "Up 20%+ on the day", "Moves", "count", "count", "count(*) filter (where ret_1 >= 0.20)"),
+    ("breakouts", "Breakouts: up 30%+ on 5x volume", "Moves", "count", "count", "count(*) filter (where ret_1 >= 0.30 and vol_ratio >= 5)"),
+    ("big_down", "Down 20%+ on the day", "Moves", "count", "count", "count(*) filter (where ret_1 <= -0.20)"),
+    ("vol_spikes", "Volume 5x+ (any direction)", "Moves", "count", "count", "count(*) filter (where vol_ratio >= 5)"),
+    ("median_atr", "Median ATR 14 (% of price)", "Volatility", "pct", "mean", "median(atr14_pct)"),
+    ("median_range", "Median day range", "Volatility", "pct", "mean", "median(range_pct)"),
+    ("median_vol_ratio", "Median volume vs 20-day avg", "Volatility", "ratio", "mean", "median(vol_ratio)"),
+    ("median_svr", "Median short-volume ratio (Reg SHO)", "Short", "pct", "mean", None),
+    ("median_short_float", "Median short float (per settlement)", "Short", "pct", "mean", None),
+    ("spy_close", "SPY close", "Regime", "price", "level", None),
+    ("spy_above_200", "SPY above its SMA 200 (1/0)", "Regime", "ratio", "level", None),
+]
+AGG_BY_ID = {a[0]: a for a in AGG_SERIES}
+_agg_cache = collections.OrderedDict()
+
+
+def ep_aggregate_catalog(q):
+    fams = [(f"cat_{f}", f"Catalysts: {lab}", "Catalysts", "count", "count") for f, lab in CAT_FAMILY_LABELS.items()]
+    return {"series": [dict(id=a[0], label=a[1], group=a[2], unit=a[3], kind=a[4]) for a in AGG_SERIES]
+            + [dict(id=i, label=lab, group=g, unit=u, kind=k) for i, lab, g, u, k in fams]}
+
+
+def ep_aggregates(q):
+    """Market-wide statistics over time across the gated universe (same gates as /cross):
+    breadth, moves, volatility, short, catalyst counts, SPY regime, plus up to 3 custom formula
+    series ('share' = share of stocks where the formula is true, 'median' = median of the formula).
+    freq = day | week | month. Cached until daily_metrics is rebuilt."""
+    start = p_date(q, "start", dt.date(2016, 1, 1))
+    end = p_date(q, "end", dt.date.today())
+    if start > end:
+        raise ApiError(400, "start is after end")
+    freq = (q.get("freq") or ["week"])[0]
+    if freq not in ("day", "week", "month"):
+        raise ApiError(400, "freq must be day, week or month")
+    pmin, pmax = p_float(q, "price_min", 0.10), p_float(q, "price_max", 5.0)
+    dmin = p_float(q, "dollar20_min", 250000)
+    exch = sorted(e for e in (q.get("exchanges") or [""])[0].upper().split(",") if e)
+    if any(e not in EXCHANGES for e in exch):
+        raise ApiError(400, "unknown exchange")
+    funds = (q.get("funds") or ["0"])[0] == "1"
+    custom = []
+    for i in range(1, 4):
+        src = (q.get(f"f{i}") or [""])[0].strip()
+        if not src:
+            continue
+        how = (q.get(f"f{i}_how") or ["share"])[0]
+        if how not in ("share", "median"):
+            raise ApiError(400, f"f{i}_how must be share or median")
+        try:
+            sql, used = formula_sql.to_sql(src, set(DAILY_IDS))
+        except formula_sql.FormulaError as ex:
+            raise ApiError(400, f"formula {i}: {ex}")
+        custom.append((f"f{i}", src, how, sql, used))
+    key = (start, end, freq, pmin, pmax, dmin, tuple(exch), funds, tuple((c[1], c[2]) for c in custom),
+           METRICS_DIR.stat().st_mtime if METRICS_DIR.exists() else 0)
+    if key in _agg_cache:
+        _agg_cache.move_to_end(key)
+        return _agg_cache[key]
+
+    con = connect()
+    con.execute("set preserve_insertion_order = false")
+    gate = (f"raw_close between {float(pmin)!r} and {float(pmax)!r} and dollar20 >= {float(dmin)!r}"
+            + (f" and exchange in ({', '.join(repr(e) for e in exch)})" if exch else "")
+            + ("" if funds else " and not coalesce(is_fund, false)"))
+    period = {"day": "date", "week": "date_trunc('week', date)::date", "month": "date_trunc('month', date)::date"}[freq]
+    base_cols = ["ret_1", "dist_sma50", "dist_sma200", "pct_52w_high", "pct_52w_low", "vol_ratio", "atr14_pct",
+                 "range_pct", "dollar_volume", "raw_close", "dollar20", "exchange", "is_fund", "split_factor"]
+    extra = sorted({c for cu in custom for c in cu[4]} - set(base_cols))
+    cust_sql = ", ".join(f"({c[3]}) as {c[0]}" for c in custom)
+    windowed = any(" over " in c[3] for c in custom)
+    # custom formulas with lag/sma/... need each symbol's history before `start`
+    y0 = start.year - 1 if windowed else start.year
+    con.execute(f"""
+      create temp table u as
+      select * exclude (_keep) from (
+        select symbol, date, {", ".join(f'"{c}"' for c in base_cols + extra)}{", " + cust_sql if custom else ""},
+          -- the universe on day t = names that passed the gates at the PREVIOUS close (known before
+          -- the session); gating on day t's own close drops a stock on the day it leaves the band
+          -- (+33% from $4.50) and biases every return statistic down
+          coalesce(lag({gate}) over (partition by symbol order by date), false) and date between ? and ? as _keep
+        from read_parquet('{METRICS_DIR}/*/*.parquet', hive_partitioning = true)
+        where year between {y0 - (0 if windowed else 1)} and {end.year}
+      ) where _keep
+    """, [start, end])
+    warm = {"above_sma50": "2016-03-16", "above_sma200": "2016-10-19", "near_high": "2016-12-30", "near_low": "2016-12-30",
+            "median_atr": "2016-01-25", "median_vol_ratio": "2016-02-02"}
+    daily_sql = ", ".join((f"case when date >= date '{warm[a[0]]}' then {a[5]} end" if a[0] in warm else a[5]) + f" as {a[0]}"
+                          for a in AGG_SERIES if a[5])
+    cust_daily = ", ".join(
+        (f"avg((coalesce({c[0]}, 0) <> 0)::int) filter (where {c[0]} is not null) as {c[0]}" if c[2] == "share"
+         else f"median({c[0]}) as {c[0]}") for c in custom)
+    con.execute(f"""
+      create temp table d as
+      select date, {daily_sql}, avg(least(greatest(ret_1, -0.5), 1.0)) as _ew_ret{", " + cust_daily if custom else ""}
+      from u group by date order by date
+    """)
+    sv = CAT / "raw" / "short_volume"
+    con.execute(f"""
+      create temp table dsv as
+      select v.date, median(v.short_volume / nullif(v.total_volume, 0)) as median_svr
+      from read_parquet('{sv}/*.parquet') v join u using (symbol, date)
+      where v.total_volume > 0 group by 1
+    """)
+    spy = con.execute(f"""
+      select date, close, (dist_sma200 > 0)::int from read_parquet('{METRICS_DIR}/*/*.parquet', hive_partitioning = true)
+      where symbol = 'SPY' and year between {start.year} and {end.year} and date between ? and ? order by date
+    """, [start, end]).fetchall()
+    con.execute("create temp table dspy (date date, spy_close double, spy_above_200 int)")
+    con.executemany("insert into dspy values (?, ?, ?)", spy)
+
+    # median short float per FINRA settlement, over universe names on the settlement date
+    si, e = CAT / "raw" / "short_interest", str(EDGAR)
+    con.execute(f"""
+      create temp table dsf as
+      with s as (select symbol, settlement_date as date, short_interest from read_parquet('{si}/*.parquet')
+                 where settlement_date between ? and ?),
+      su as (select s.*, u.split_factor as f_sd from s join u using (symbol, date)),
+      tc as (select ticker, min(cik) cik from (select ticker, cik from read_parquet('{e}/edgar_tickers.parquet')
+             union select unnest(tickers), cik from read_parquet('{e}/edgar_companies.parquet')) group by 1),
+      sh as (select cik, filed::date as filed, max(val) as shares from read_parquet('{e}/edgar_facts.parquet')
+             where concept in ('EntityCommonStockSharesOutstanding','CommonStockSharesOutstanding') and unit = 'shares' and val > 0
+               and cik in (select cik from tc where ticker in (select distinct symbol from su)) group by 1, 2),
+      sf as (select symbol, date, split_factor from read_parquet('{METRICS_DIR}/*/*.parquet', hive_partitioning = true)
+             where symbol in (select distinct symbol from su) and year between {start.year - 2} and {end.year}),
+      x as (select su.*, tc.cik from su join tc on tc.ticker = su.symbol),
+      y as (select x.*, sh.shares, sh.filed from x asof join sh on x.cik = sh.cik and x.date >= sh.filed),
+      z as (select y.*, sf.split_factor as f_f from y asof left join sf on sf.symbol = y.symbol and y.filed >= sf.date)
+      select date, median(sf_) as median_short_float from (
+        select date, (short_interest / nullif(f_sd, 0)) / nullif(shares / nullif(f_f, 0), 0) as sf_ from z
+        where date - filed <= 400) where sf_ between 0 and 5 group by 1
+    """, [start, end])
+
+    fam_sql = []
+    for fam, types in CAT_FAMILIES.items():
+        cond = ("type like 'news_%' and type <> 'news_any'" if fam == "news" else "source = 'edgar'" if fam == "filing"
+                else "type in (" + ", ".join(f"'{t}'" for t in types) + ")")
+        fam_sql.append(f"count(*) filter (where {cond}) as cat_{fam}")
+    con.execute(f"""
+      create temp table dcat as
+      with ev as (select symbol, event_date, source, type from read_parquet('{CAT}/*.parquet', union_by_name = true)
+                  where event_date between ?::date - 7 and ? and type not in ('news_any', 'form4')),
+      us as (select symbol, date from u order by symbol, date),
+      m as (select ev.*, us.date from ev asof join us on ev.symbol = us.symbol and ev.event_date <= us.date
+            where us.date - ev.event_date <= 7)
+      select date, {", ".join(fam_sql)} from m group by date
+    """, [start, end])
+
+    # per-period rollup
+    series_ids = [a[0] for a in AGG_SERIES] + [f"cat_{f}" for f in CAT_FAMILIES] + [c[0] for c in custom]
+    kinds = {a[0]: a[4] for a in AGG_SERIES} | {f"cat_{f}": "count" for f in CAT_FAMILIES} | {c[0]: "mean" for c in custom}
+    con.execute("""
+      create temp table dd as
+      select d.*, exp(sum(ln(1 + _ew_ret)) over (order by d.date)) * 100 as ew_index,
+        dsv.median_svr, dsf.median_short_float, dspy.spy_close, dspy.spy_above_200, dcat.* exclude (date)
+      from d left join dsv using (date) left join dsf using (date) left join dspy using (date) left join dcat using (date)
+    """)
+    agg = []
+    for sid in series_ids:
+        k = kinds[sid]
+        agg.append({"mean": f"avg({sid})", "count": f"sum(coalesce({sid}, 0))",
+                    "level": f"arg_max({sid}, date) filter (where {sid} is not null)"}[k] + f" as {sid}")
+    res = columns(con, f"""
+      select {period} as period, count(*) as sessions, {", ".join(agg)}
+      from dd group by 1 order by 1
+    """)
+    out = {
+        "freq": freq, "periods": res["data"]["period"], "sessions": res["data"]["sessions"],
+        "series": {sid: res["data"][sid] for sid in series_ids},
+        "custom": [dict(id=c[0], expr=c[1], how=c[2]) for c in custom],
+        "universe_rows": con.execute("select count(*) from u").fetchone()[0],
+    }
+    _agg_cache[key] = out
+    while len(_agg_cache) > 24:
+        _agg_cache.popitem(last=False)
+    return out
+
+
 ROUTES = {"/catalog": lambda q: {"metrics": METRICS}, "/cross": ep_cross, "/symbols": ep_symbols, "/daily": ep_daily, "/events": ep_events,
           "/short": ep_short, "/fundamentals": ep_fundamentals, "/reddit": ep_reddit, "/minute": ep_minute, "/live": ep_live,
-          "/event_types": ep_event_types, "/event_study": ep_event_study}
+          "/event_types": ep_event_types, "/event_study": ep_event_study,
+          "/aggregate_catalog": ep_aggregate_catalog, "/aggregates": ep_aggregates}
 CSV_OK = {"/daily", "/events", "/fundamentals", "/minute", "/cross"}
 
 
