@@ -229,9 +229,11 @@ their numbers unless marked here; new items continue from 34.
     toward up-moves (top-5% net hit +9.0% vs +4.4%) and the trade beats random
     entries (+0.71% vs −0.41%, 2020-21) — but deciles 7/9, nothing on 2019,
     and absolute profit only in 2020. Not tradable; 2022+ not spent.
-39. Minute-bar direction test on lead-up-flagged days (VWAP / opening
-    range on the first big day) — the only place daily data says direction
-    could live.
+39. ~~Minute-bar direction on lead-up days~~ — **done 2026-10-01,
+    inconclusive** (`docs/minute-direction.md`): only 1,016 first big days
+    had a lead-up (86 labelled in 2016-19); no feature cleared the bar (best
+    q 0.17). Lead-ups are rare before big days (median ratio 0.95). Follow-up
+    if wanted: the same features on all ~5,900 first big-volume days.
 40. Overnight-cycle cost check by price/liquidity bucket against each
     name's own estimated spread (`overnight_cycle.py`).
 41. Confluence search (pre-set condition pairs/triples, walk-forward,
