@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EChartsOption } from "echarts";
 import { EChart } from "./EChart";
+import { FormulaHelp } from "./FormulaHelp";
 import { CharterApiError, charterGet, fmtValue, type Columnar, type MetricDef } from "../../lib/charterApi";
 
 /**
@@ -137,6 +138,7 @@ export function EventStudyView({
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [sortDesc, setSortDesc] = useState(true);
   const [sortCol, setSortCol] = useState("date");
+  const condRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     charterGet<{ types: CatType[] }>("/event_types")
@@ -314,8 +316,10 @@ export function EventStudyView({
             </label>
           </>
         )}
-        <input className="charter-formula" value={cfg.cond} onChange={(e) => set({ cond: e.target.value })} onKeyDown={(e) => e.key === "Enter" && run()}
+        <input ref={condRef} className="charter-formula" value={cfg.cond} onChange={(e) => set({ cond: e.target.value })} onKeyDown={(e) => e.key === "Enter" && run()}
                placeholder={cfg.kind === "catalyst" ? "optional day-0 condition, e.g. gap > 0" : "e.g. (ret_1 >= 0.3) * (vol_ratio >= 5)   or   change(close, 3) > 0.5"} />
+        <FormulaHelp context="server" inputRef={condRef} value={cfg.cond} onChange={(v) => set({ cond: v })}
+                     metrics={daily.map((m) => ({ id: m.id, label: m.label, group: m.group, unit: m.unit }))} />
         <button className="link-button charter-run" onClick={run} disabled={loading}>{loading ? "Running…" : "Run"}</button>
         {err && <span className="neg">{err}</span>}
       </div>

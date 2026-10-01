@@ -16,6 +16,7 @@ import { evaluateFormula, FormulaError } from "../lib/formula";
 import { CrossView, DEFAULT_CROSS, type CrossConfig } from "../components/charter/CrossView";
 import { DEFAULT_EVENTS, EventStudyView, type EventConfig } from "../components/charter/EventStudyView";
 import { AggregatesView, DEFAULT_AGG, type AggConfig } from "../components/charter/AggregatesView";
+import { FormulaHelp } from "../components/charter/FormulaHelp";
 
 /**
  * Charter: an interactive data visualizer over the whole research
@@ -239,6 +240,7 @@ export function Charter() {
         />
       ) : (
         <AggregatesView
+          catalog={catalog}
           cfg={cfg.agg}
           set={(p) => setCfg((c) => ({ ...c, agg: { ...c.agg, ...p } }))}
           onApiError={setApiError}
@@ -410,6 +412,14 @@ function SymbolView({
   const [minuteDate, setMinuteDate] = useState<string | null>(null);
   const [addPanel, setAddPanel] = useState("");
   const [formulaDraft, setFormulaDraft] = useState({ name: "", expr: "" });
+  const formulaRef = useRef<HTMLInputElement>(null);
+  const helpMetrics = useMemo(
+    () => [
+      ...catalog.map((m) => ({ id: m.id, label: m.label, group: m.group, unit: m.unit })),
+      ...cfg.formulas.map((f) => ({ id: f.id, label: f.name, group: "My formulas" })),
+    ],
+    [catalog, cfg.formulas],
+  );
   const [formulaErr, setFormulaErr] = useState<string | null>(null);
   const { start, end } = rangeOf(cfg);
   const set = (p: Partial<Config>) => setCfg({ ...cfg, ...p });
@@ -735,9 +745,11 @@ function SymbolView({
         <span className="ops-dim">Formula</span>
         <input className="charter-formula-name" placeholder="name (optional)" value={formulaDraft.name}
                onChange={(e) => setFormulaDraft({ ...formulaDraft, name: e.target.value })} />
-        <input className="charter-formula" placeholder="e.g. vol_ratio * (close > sma20)   or   change(short_float, 10)"
+        <input ref={formulaRef} className="charter-formula" placeholder="e.g. vol_ratio * (close > sma20)   or   change(short_float, 10)"
                value={formulaDraft.expr} onChange={(e) => setFormulaDraft({ ...formulaDraft, expr: e.target.value })}
                onKeyDown={(e) => e.key === "Enter" && addFormula()} />
+        <FormulaHelp context="series" metrics={helpMetrics} inputRef={formulaRef} value={formulaDraft.expr}
+                     onChange={(v) => setFormulaDraft((d) => ({ ...d, expr: v }))} />
         <button className="link-button" onClick={addFormula}>Add as panel</button>
         {formulaErr && <span className="neg">{formulaErr}</span>}
         {cfg.formulas.length > 0 && (
