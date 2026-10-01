@@ -5,6 +5,7 @@ import { fetchSnapshots, fetchNews } from "./lib/alpaca";
 import { isRoundupHeadline } from "./lib/newsFilter";
 import { riskFlags, tradeSuggestion } from "./lib/riskFlags";
 import { catalystNewsAges, FLAG_DAYS, type NewsRow } from "./lib/catalystNews";
+import { etDateString } from "./lib/etTime";
 import { fetchProfile } from "./lib/fmp";
 
 /**
@@ -44,9 +45,12 @@ export default async (req: Request) => {
   }
 
   const db = getSupabaseAdmin();
-  const body = (await req.json()) as { record?: { id: number } } | { trigger_event_id?: number };
+  const body = (await req.json()) as { record?: { id: number } } | { trigger_event_id?: number; backfill?: boolean };
   const triggerEventId =
     "record" in body ? body.record?.id : (body as { trigger_event_id?: number }).trigger_event_id;
+  // backfill: rebuild a missed dossier AS OF the event's own timestamp (point in time), for events whose
+  // webhook never arrived (2026-09-24..10-01, the dead-host bug). Live calls are unchanged.
+  const backfill = !("record" in body) && (body as { backfill?: boolean }).backfill === true;
 
   if (!triggerEventId) {
     return new Response("Missing trigger_event id", { status: 400 });
@@ -55,7 +59,7 @@ export default async (req: Request) => {
   const { data: event, error } = await db
     .from("trigger_events")
     .select(
-      "id, snapshot, symbol_id, trigger_id, priority, symbols(ticker, alert_excluded, sector, industry, market_cap, is_adr, profile_synced_at), triggers(name, cooldown_minutes, category)",
+      "id, ts, snapshot, symbol_id, trigger_id, priority, symbols(ticker, alert_excluded, sector, industry, market_cap, is_adr, profile_synced_at), triggers(name, cooldown_minutes, category)",
     )
     .eq("id", triggerEventId)
     .single();
@@ -74,6 +78,14 @@ export default async (req: Request) => {
   }
 
   const ticker = (event as unknown as { symbols: { ticker: string } | null }).symbols?.ticker ?? "?";
+  // "now" for every time-relative input: the event's timestamp in backfill mode
+  const asOfMs = backfill ? Date.parse((event as unknown as { ts: string }).ts) : Date.now();
+  const asOfDate = etDateString(asOfMs);
+  const etHm = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    .format(new Date(asOfMs)).replace(":", "");
+  // factor_state / regime_state rows are written by eod-scan at 17:45 ET for that session: an event before
+  // then may only see earlier sessions' rows (a same-day row would be the future)
+  const sameDayRowKnown = !backfill || Number(etHm) >= 1745;
   const triggerName =
     (event as unknown as { triggers: { name: string; cooldown_minutes: number } | null }).triggers?.name ??
     "unknown trigger";
@@ -114,7 +126,7 @@ export default async (req: Request) => {
   const profileStale =
     !sym?.profile_synced_at ||
     Date.now() - Date.parse(sym.profile_synced_at) > 45 * 86400_000;
-  if (profileStale) {
+  if (profileStale && !backfill) {
     try {
       const p = await fetchProfile(ticker);
       if (p) {
@@ -146,11 +158,13 @@ export default async (req: Request) => {
   // Current share price — one snapshot call, best-effort. A failure here
   // must not block the dossier/alert.
   let currentPrice: number | null = null;
-  try {
-    const snap = (await fetchSnapshots([ticker]))[ticker];
-    currentPrice = snap?.latestTrade?.p ?? snap?.dailyBar?.c ?? null;
-  } catch {
-    /* non-critical */
+  if (!backfill) {
+    try {
+      const snap = (await fetchSnapshots([ticker]))[ticker];
+      currentPrice = snap?.latestTrade?.p ?? snap?.dailyBar?.c ?? null;
+    } catch {
+      /* non-critical */
+    }
   }
 
   // --- 1. Historical expectancy, if there's enough of it to trust ---
@@ -191,22 +205,27 @@ export default async (req: Request) => {
   const hasReliableHistory = (stats?.sample_size ?? 0) >= MIN_RELIABLE_SAMPLE;
 
   // --- 2. Live multi-signal confirmation + risk context ---
-  const nowIso = new Date().toISOString().slice(0, 10);
+  const nowIso = backfill ? asOfDate : new Date().toISOString().slice(0, 10);
+  const factorQ = db
+    .from("factor_state")
+    .select("dist_sma200, volume_ratio_20d, vol_percentile_252d, ret_1m, last_close")
+    .eq("symbol_id", event.symbol_id);
+  const regimeQ = db.from("regime_state").select("risk_on");
   const [{ data: factors }, { data: regime }, { data: earn }, { data: cfg }, { data: fundamentals }] =
     await Promise.all([
-    db
-      .from("factor_state")
-      .select("dist_sma200, volume_ratio_20d, vol_percentile_252d, ret_1m, last_close")
-      .eq("symbol_id", event.symbol_id)
+    (backfill ? (sameDayRowKnown ? factorQ.lte("as_of", asOfDate) : factorQ.lt("as_of", asOfDate)) : factorQ)
       .order("as_of", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    db.from("regime_state").select("risk_on").order("as_of", { ascending: false }).limit(1).maybeSingle(),
+    (backfill ? (sameDayRowKnown ? regimeQ.lte("as_of", asOfDate) : regimeQ.lt("as_of", asOfDate)) : regimeQ)
+      .order("as_of", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     db
       .from("earnings")
       .select("report_date")
       .eq("symbol_id", event.symbol_id)
-      .gte("report_date", new Date(Date.now() - 15 * 86400_000).toISOString().slice(0, 10))
+      .gte("report_date", new Date(asOfMs - 15 * 86400_000).toISOString().slice(0, 10))
       .order("report_date", { ascending: true })
       .limit(20),
     db
@@ -222,6 +241,14 @@ export default async (req: Request) => {
   ]);
 
   currentPrice = currentPrice ?? (factors?.last_close != null ? Number(factors.last_close) : null);
+  if (backfill && profile.market_cap != null && currentPrice != null) {
+    // the stored profile cap is at today's price: rescale to the event's price (share count ~unchanged in a week)
+    const { data: latest } = await db
+      .from("factor_state").select("last_close").eq("symbol_id", event.symbol_id)
+      .order("as_of", { ascending: false }).limit(1).maybeSingle();
+    const lc = latest?.last_close != null ? Number(latest.last_close) : null;
+    if (lc && lc > 0) profile.market_cap = profile.market_cap * (currentPrice / lc);
+  }
 
   // Nearest earnings report to today (upcoming preferred, else most recent).
   const earnDates = ((earn as { report_date: string }[] | null) ?? []).map((e) => e.report_date);
@@ -233,29 +260,40 @@ export default async (req: Request) => {
 
   // Recent headlines for the symbol — best-effort "why is it moving"
   // context. fetchNews never throws (returns [] on any failure).
-  const newsItems = (await fetchNews([ticker], { limit: 20 })).filter((n) => !isRoundupHeadline(n.headline)).slice(0, 4);
-  const news = newsItems.map((n) => ({
-    headline: n.headline,
-    url: n.url,
-    source: n.source,
-    ts: n.created_at,
-  }));
+  let news: { headline: string; url: string | undefined; source: string | undefined; ts: string }[];
+  if (backfill) {
+    // only headlines published before the event (symbol_news keeps 30 days)
+    const { data: past } = await db
+      .from("symbol_news").select("headline, url, source, created_at")
+      .contains("symbols", [ticker])
+      .lte("created_at", new Date(asOfMs).toISOString())
+      .gte("created_at", new Date(asOfMs - 30 * 86400_000).toISOString())
+      .order("created_at", { ascending: false }).limit(20);
+    news = ((past as { headline: string; url: string | null; source: string | null; created_at: string }[] | null) ?? [])
+      .filter((n) => !isRoundupHeadline(n.headline)).slice(0, 4)
+      .map((n) => ({ headline: n.headline, url: n.url ?? undefined, source: n.source ?? undefined, ts: n.created_at }));
+  } else {
+    const newsItems = (await fetchNews([ticker], { limit: 20 })).filter((n) => !isRoundupHeadline(n.headline)).slice(0, 4);
+    news = newsItems.map((n) => ({ headline: n.headline, url: n.url, source: n.source, ts: n.created_at }));
+  }
   const newsAgeHours = news.length
-    ? Math.max(0, (Date.now() - Date.parse(news[0].ts)) / 3_600_000)
+    ? Math.max(0, (asOfMs - Date.parse(news[0].ts)) / 3_600_000)
     : null;
 
   // Latest share-offering filing in the last 30 days (sec-filings-sync).
-  const { data: offering } = await db
+  // In backfill mode only filings from before the event's day: a day's filings land at 22:30 ET.
+  const offeringQ = db
     .from("sec_filings")
     .select("form, filing_date")
     .eq("symbol_id", event.symbol_id)
     .in("form", ["S-1", "S-3", "F-1", "F-3", "424B4", "424B5"])
-    .gte("filing_date", new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10))
+    .gte("filing_date", new Date(asOfMs - 30 * 86400_000).toISOString().slice(0, 10));
+  const { data: offering } = await (backfill ? offeringQ.lt("filing_date", asOfDate) : offeringQ)
     .order("filing_date", { ascending: false })
     .limit(1)
     .maybeSingle();
   const offeringDays = offering
-    ? Math.max(0, Math.floor((Date.now() - Date.parse(`${(offering as { filing_date: string }).filing_date}T12:00:00Z`)) / 86400_000))
+    ? Math.max(0, Math.floor((asOfMs - Date.parse(`${(offering as { filing_date: string }).filing_date}T12:00:00Z`)) / 86400_000))
     : null;
 
   // Halt / partnership headlines in the last 28 days (symbol_news keeps 30), research rules — lib/catalystNews.ts
@@ -263,10 +301,11 @@ export default async (req: Request) => {
     .from("symbol_news")
     .select("headline, created_at, symbols")
     .contains("symbols", [ticker])
-    .gte("created_at", new Date(Date.now() - FLAG_DAYS * 86400_000).toISOString())
+    .gte("created_at", new Date(asOfMs - FLAG_DAYS * 86400_000).toISOString())
+    .lte("created_at", new Date(asOfMs).toISOString())
     .order("created_at", { ascending: false })
     .limit(200);
-  const { haltDays, partnershipDays } = catalystNewsAges((recentNews as NewsRow[] | null) ?? []);
+  const { haltDays, partnershipDays } = catalystNewsAges((recentNews as NewsRow[] | null) ?? [], asOfMs);
 
   const flags = riskFlags({
     price: currentPrice,
@@ -380,6 +419,15 @@ export default async (req: Request) => {
               : "No backtest history for this trigger yet — it may need backtest-triggers run, or (like realtime_outlier_zscore/momentum_exit) isn't backtestable this way at all.",
         },
     confirmations,
+    ...(backfill
+      ? {
+          backfill: {
+            as_of: (event as unknown as { ts: string }).ts,
+            built_at: new Date().toISOString(),
+            note: "Rebuilt after the fact as of the event's time (price, factors, regime, news, filings, earnings). Fundamentals and sector are today's: that table keeps no history.",
+          },
+        }
+      : {}),
   };
 
   const { data: dossier, error: dossierError } = await db
@@ -414,8 +462,10 @@ export default async (req: Request) => {
     );
   }
 
+  const firedAt = `${asOfDate} ${etHm.slice(0, 2)}:${etHm.slice(2)} ET`;
   const headline =
-    priority === "high" ? `🔴 *HIGH PRIORITY* — *${ticker}*` : `*${ticker}* — ${triggerName}`;
+    (backfill ? `📼 *BACKFILL — fired ${firedAt}, not a live signal* · ` : "") +
+    (priority === "high" ? `🔴 *HIGH PRIORITY* — *${ticker}*` : `*${ticker}* — ${triggerName}`);
   const priceLine = currentPrice != null ? `  ·  $${currentPrice.toFixed(2)}` : "";
   const redFlags = flags.filter((x) => x.level === "red");
   const amberFlags = flags.filter((x) => x.level === "amber");
@@ -476,7 +526,7 @@ export default async (req: Request) => {
   rows.push(["Score", score.toFixed(2)]);
   const embed = buildAlertEmbed({
     ticker,
-    triggerName,
+    triggerName: backfill ? `BACKFILL (fired ${firedAt}) · ${triggerName}` : triggerName,
     highPriority: priority === "high",
     watch: watchSide,
     price: currentPrice,
@@ -487,7 +537,7 @@ export default async (req: Request) => {
 
   const alertResult = await dispatchAlert(db, {
     dossierId: dossier.id,
-    dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}${redFlags.length ? ":rf" : ""}`,
+    dedupKey: `${event.trigger_id}:${event.symbol_id}:${priority}${redFlags.length ? ":rf" : ""}${backfill ? `:backfill:${event.id}` : ""}`,
     cooldownMinutes,
     message: `${headline}${priceLine}${flagLine}${tradeLine}${fundLine}${newsLine}\nscore: ${score.toFixed(2)}`,
     embed,
