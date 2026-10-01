@@ -15,12 +15,14 @@ import {
 import { evaluateFormula, FormulaError } from "../lib/formula";
 import { CrossView, DEFAULT_CROSS, type CrossConfig } from "../components/charter/CrossView";
 import { DEFAULT_EVENTS, EventStudyView, type EventConfig } from "../components/charter/EventStudyView";
+import { AggregatesView, DEFAULT_AGG, type AggConfig } from "../components/charter/AggregatesView";
 
 /**
  * Charter: an interactive data visualizer over the whole research
  * warehouse (SIP daily + minute bars, catalysts, short data, SEC filings,
  * Reddit), served by the local Charter API: the symbol deep dive (phase 1),
- * the cross-section (phase 2) and event studies (phase 3). Aggregates follow.
+ * the cross-section (phase 2), event studies (phase 3) and aggregates over
+ * time (phase 4).
  */
 
 type Tab = "symbol" | "cross" | "events" | "aggregates";
@@ -28,7 +30,7 @@ const TABS: [Tab, string, string | null][] = [
   ["symbol", "Symbol deep dive", null],
   ["cross", "Cross-section", null],
   ["events", "Event studies", null],
-  ["aggregates", "Aggregates", "Phase 4"],
+  ["aggregates", "Aggregates", null],
 ];
 
 const PRESETS: [string, number | null][] = [
@@ -65,6 +67,7 @@ interface Config {
   live: boolean;
   cross: CrossConfig;
   events: EventConfig;
+  agg: AggConfig;
 }
 const DEFAULT: Config = {
   symbol: "VALE",
@@ -79,6 +82,7 @@ const DEFAULT: Config = {
   live: false,
   cross: DEFAULT_CROSS,
   events: DEFAULT_EVENTS,
+  agg: DEFAULT_AGG,
 };
 
 interface ShortRes {
@@ -109,6 +113,7 @@ function withDefaults(c: Partial<Config>): Config {
     ...c,
     cross: { ...DEFAULT_CROSS, ...(c.cross ?? {}) },
     events: { ...DEFAULT_EVENTS, ...(c.events ?? {}), show: { ...DEFAULT_EVENTS.show, ...(c.events?.show ?? {}) } },
+    agg: { ...DEFAULT_AGG, ...(c.agg ?? {}) },
   };
 }
 
@@ -233,9 +238,11 @@ export function Charter() {
           onOpenSymbol={openSymbol}
         />
       ) : (
-        <p className="research-intro">
-          This tab arrives in {TABS.find(([t]) => t === tab)?.[2]}. The symbol deep dive is available now.
-        </p>
+        <AggregatesView
+          cfg={cfg.agg}
+          set={(p) => setCfg((c) => ({ ...c, agg: { ...c.agg, ...p } }))}
+          onApiError={setApiError}
+        />
       )}
       <p className="research-note">
         Data: local research warehouse via the Charter API ({CHARTER_API_URL}). SIP data updates nightly around 20:30 ET;

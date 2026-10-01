@@ -161,7 +161,7 @@ def to_sql(src, columns):
                 return (f"(case when {full} and stddev_pop({a}) over {_win(n)} > 0 "
                         f"then ({a} - avg({a}) over {_win(n)}) / stddev_pop({a}) over {_win(n)} end)"), True
             if v not in columns:
-                raise FormulaError(f'unknown metric "{v}"' + (" (forward metrics are outcomes and can't define an event)" if v.startswith("fwd_") else ""))
+                raise FormulaError(f'unknown metric "{v}"' + (" (forward metrics are future outcomes and can't be used here)" if v.startswith("fwd_") else ""))
             used.add(v)
             return f'"{v}"', False
         raise FormulaError(f'unexpected "{v}"')
