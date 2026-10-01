@@ -408,7 +408,8 @@ export function EventStudyView({
             {res.winsorized ? "; means winsorized 1/99 per day" : ""}.
           </p>
           {s && (
-            <table className="ops-table research-table" style={{ margin: "6px 10px", width: "auto" }}>
+            <div style={{ overflowX: "auto", margin: "6px 10px" }}>
+            <table className="ops-table research-table" style={{ width: "auto" }}>
               <thead>
                 <tr><th>Return to day +{s.k}</th><th className="col-num">n</th><th className="col-num">mean</th><th className="col-num">median</th><th className="col-num">% up</th></tr>
               </thead>
@@ -434,6 +435,7 @@ export function EventStudyView({
                 )}
               </tbody>
             </table>
+            </div>
           )}
           <p className="research-note" style={{ margin: "4px 10px" }}>
             {res.counts.winners.toLocaleString()} winners / {res.counts.losers.toLocaleString()} losers (return to day +{s?.k} ≥ {pct(cfg.thr)}).
