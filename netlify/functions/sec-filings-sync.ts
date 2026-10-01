@@ -10,8 +10,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * flag) plus 8-K and SC 13D/13G (catalyst research). Mapped to symbols via
  * SEC's company_tickers.json.
  *
- * Runs on launchd (07:30 and 17:30 ET weekdays, before eod-scan). Catches up
- * from the latest stored filing date, up to 45 days back on an empty table.
+ * Runs on launchd (07:30, 17:30 and 22:30 ET weekdays). EDGAR publishes a
+ * session's index in the evening, so 22:30 is the run that lands that day;
+ * today's file is not requested before 21:00 ET. Each run re-checks the last
+ * OVERLAP_DAYS (upserts are idempotent), so a day skipped on a transient
+ * 403/404 is retried rather than lost; 429/5xx are retried with backoff and a
+ * past day that still fails fails the run. Up to 45 days back on an empty table.
  *
  * SEC fair-access policy: automated requests must identify a contact in the
  * User-Agent (SEC_USER_AGENT in the host .env) and stay under 10 req/s.
@@ -20,6 +24,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const OFFERING_FORMS = ["S-1", "S-3", "F-1", "F-3", "424B4", "424B5"];
 const KEEP_FORMS = new Set([...OFFERING_FORMS, "8-K", "SC 13D", "SC 13G"]);
 const BACKFILL_DAYS = 45;
+const OVERLAP_DAYS = 7; // calendar days re-checked before the latest stored filing date
+const TODAY_AFTER_ET_HOUR = 21; // the same-day index is published in the evening
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -62,10 +68,12 @@ export default async () => {
       .maybeSingle();
     const today = etDateString(Date.now());
     const start = latest?.filing_date
-      ? new Date(Date.parse(`${latest.filing_date}T12:00:00Z`))
+      ? new Date(Date.parse(`${latest.filing_date}T12:00:00Z`) - OVERLAP_DAYS * 86400_000)
       : new Date(Date.parse(`${today}T12:00:00Z`) - BACKFILL_DAYS * 86400_000);
+    const etHour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+    const lastDay = etHour >= TODAY_AFTER_ET_HOUR ? today : new Date(Date.parse(`${today}T12:00:00Z`) - 86400_000).toISOString().slice(0, 10);
     const days: string[] = [];
-    for (let t = start.getTime(); t <= Date.parse(`${today}T12:00:00Z`); t += 86400_000) {
+    for (let t = start.getTime(); t <= Date.parse(`${lastDay}T12:00:00Z`); t += 86400_000) {
       const d = new Date(t);
       if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) days.push(d.toISOString().slice(0, 10));
     }
@@ -76,9 +84,15 @@ export default async () => {
       const [y, m] = day.split("-").map(Number);
       const q = Math.floor((m - 1) / 3) + 1;
       const url = `https://www.sec.gov/Archives/edgar/daily-index/${y}/QTR${q}/form.${day.replace(/-/g, "")}.idx`;
-      const res = await secFetch(url);
-      if (res.status === 404 || res.status === 403) continue; // holiday / index not published yet
-      if (!res.ok) throw new Error(`${url}: ${res.status}`);
+      let res = await secFetch(url);
+      // 429 / 5xx are transient on EDGAR (a 503 at 07:30 on 2026-10-01 failed the run): back off and retry
+      for (const wait of [2000, 6000, 15000]) {
+        if (res.status !== 429 && res.status < 500) break;
+        await sleep(wait);
+        res = await secFetch(url);
+      }
+      if (res.status === 404 || res.status === 403) continue; // holiday or not published (S3 answers 403 for a missing key); re-checked next run
+      if (!res.ok) throw new Error(`${url}: ${res.status} after retries`);
       fetchedDays++;
       const text = await res.text();
       const body = text.slice(text.indexOf("-----") >= 0 ? text.indexOf("\n", text.indexOf("-----")) + 1 : 0);
