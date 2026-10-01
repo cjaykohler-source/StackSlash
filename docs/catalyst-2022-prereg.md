@@ -1,6 +1,6 @@
 # Catalyst rules — the 2022+ holdout, pre-registered
 
-**Status: DRAFT for review. Nothing below has been run on 2022+ data.**
+**Status: APPROVED 2026-10-01 (decisions in section 6). Nothing below has been run on 2022+ data at the time of approval.**
 Written 2026-10-01 (README item 37). Once this document is approved and
 merged, `research/catalysts/holdout_2022.py --run --approved-commit <sha>`
 runs the test **once**; the script refuses to run if this file,
@@ -28,7 +28,8 @@ Discovery: full harness run `20260930T094900` (65 types, $0.10-$15, the
 harness defaults), 2016-21. Gap = mean 20-session excess minus the
 rotated-date null median (the catalyst vs the same names at random dates).
 
-**Primary family — six rules, the README item-37 list:**
+**Primary family — four rules** (the README item-37 list minus the two
+earnings-reporting rules; see section 6):
 
 | rule | type | direction | n | gap (20d) | p | q (65 types) |
 |---|---|---|---|---|---|---|
@@ -36,8 +37,6 @@ rotated-date null median (the catalyst vs the same names at random dates).
 | Partnership / licensing PR | `news_partnership` | avoid | 1,345 | −1.36% | 0.005 | 0.054 |
 | 10-K filed | `10k` | avoid | 2,950 | −0.82% | 0.011 | 0.089 |
 | Earnings beat | `earn_beat` | positive | 3,569 | +0.88% | 0.002 | 0.032 |
-| 8-K 2.02 earnings release | `8k_2.02` | positive | 11,628 | +0.45% | 0.005 | 0.054 |
-| 10-Q filed | `10q` | positive | 9,071 | +0.50% | 0.011 | 0.089 |
 
 **Secondary — reported, never counted as a pass:**
 
@@ -45,7 +44,13 @@ rotated-date null median (the catalyst vs the same names at random dates).
 |---|---|---|---|---|---|
 | Going-concern 10-K | `gc_10k` | README item 37 asks for it; not a discovery candidate (q 0.25, n 223) | 223 | −2.62% | 0.25 |
 | Earnings big beat | `earn_big_beat` | a subset of earnings beat | 1,950 | +0.93% | 0.10 |
-| Price-target cut | `news_pt_cut` | discovery candidate (q 0.022), but the docs call it suspect and it flips sign in-band (below) | 3,390 | +0.99% | 0.022 |
+| 8-K 2.02 earnings release | `8k_2.02` | discovery candidate; flips sign in-band (below) and largely duplicates earnings beat | 11,628 | +0.45% | 0.054 |
+| 10-Q filed | `10q` | discovery candidate; +0.37% in-band, largely the same reporting events | 9,071 | +0.50% | 0.089 |
+
+**Not tested:** price-target cut (`news_pt_cut`, discovery q 0.022). It
+flips sign in-band, has no explained mechanism, and would not be adopted
+whatever 2022+ showed, so its one clean test is kept for a better-specified
+version (e.g. conditioned on the size of the cut).
 
 ### The same rules in the traded band ($0.10-$5), 2016-21
 
@@ -65,7 +70,8 @@ multiple-testing bar there** (every q 0.46):
 | `news_pt_cut` | 672 | **−0.64%** (sign flips) | — |
 
 So the earnings-*reporting* rules (2.02, 10-Q) and the price-target cut do
-not hold in the band even on discovery data. That is why the decision
+not hold in the band even on discovery data — the reason they are not in
+the primary family. That is why the decision
 rule below asks for an in-band check before anything is "validated for use".
 
 ## 3. Fixed settings
@@ -94,13 +100,13 @@ Exactly the discovery harness (`research/catalysts/harness.py`):
 
 ## 4. Decision rules
 
-For each **primary** rule, on 2022+ at $0.10-$15, 20 sessions:
+For each of the four **primary** rules, on 2022+ at $0.10-$15, 20 sessions:
 
 1. **One-sided p** in the discovery direction (the share of rotations at
    least as extreme as observed, that way).
-2. **Holm** step-down across the six at **α = 0.05** (family-wise; valid
-   when the tests are correlated, which they are — earnings beats, 2.02s
-   and 10-Qs are largely the same reporting events).
+2. **Holm** step-down across the four at **α = 0.05** (family-wise; valid
+   when the tests are correlated). The strongest needs p ≤ 0.0125, then
+   0.0167, 0.025, 0.05.
 3. **PASS** = the 2022+ gap points the discovery way **and** Holm-adjusted
    p ≤ 0.05 **and** the 90% CI of the mean excess excludes the null
    median on that side (the harness's own candidate test).
@@ -136,20 +142,22 @@ number does not, so it is only ever read against the universe's.
 
 Rough power: if each rule's 2022+ effect were as large as discovery's, at
 similar n the p-values would be about 0.001-0.011, enough to pass Holm
-for most. Discovery winners usually shrink out of sample, so several
+for all four. In-band samples are smaller (roughly 400-600 events per
+rule), so "passes, not in the traded band" is a likely outcome and means
+the evidence is too thin there, not that the rule failed. Discovery winners usually shrink out of sample, so several
 failures are the expected outcome, not a sign the test is broken.
 
-## 6. Decisions for you before approving
+## 6. Decisions (made 2026-10-01, before approval)
 
-1. **Family size.** Six rules as listed (the README list). Alternative:
-   drop 8-K 2.02 and 10-Q to secondary, since they already fail in-band on
-   discovery data. That makes the Holm bar easier for the other four
-   (0.0125 instead of 0.0083 for the strongest).
-2. **Price-target cut**: secondary as above, or excluded.
-3. **α = 0.05 family-wise with Holm**, and the in-band requirement for
-   "validated for use".
+1. **Family: four rules.** 8-K 2.02 and 10-Q moved to secondary: they
+   fail in-band on discovery data (so could never be validated for use)
+   and largely duplicate earnings beat. Decided on 2016-21 data only. It
+   eases the Holm bar for the rest (strongest p ≤ 0.0125, not 0.0083).
+2. **Price-target cut: not tested** (section 2).
+3. **α = 0.05 family-wise with Holm, plus the in-band requirement** for
+   "validated for use": accepted.
 
-Approve by merging this PR. Then the run is:
+Approved by merging this document. The run:
 
 ```
 research/.venv/bin/python research/catalysts/holdout_2022.py --run --approved-commit <merge sha>

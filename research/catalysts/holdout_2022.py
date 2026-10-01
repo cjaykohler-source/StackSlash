@@ -46,13 +46,12 @@ PRIMARY = {
     "news_partnership": "below_null",
     "10k": "below_null",
     "earn_beat": "above_null",
-    "8k_2.02": "above_null",
-    "10q": "above_null",
 }
 SECONDARY = {
     "gc_10k": "below_null",
     "earn_big_beat": "above_null",
-    "news_pt_cut": "above_null",
+    "8k_2.02": "above_null",
+    "10q": "above_null",
 }
 ALPHA = 0.05
 H = 20
