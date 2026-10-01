@@ -357,18 +357,51 @@ def form4(con):
         union select unnest(tickers) ticker, cik from read_parquet('{e}/edgar_companies.parquet')
       )
     """)
+    # point-in-time market cap per (cik, date) for the size-conditioned types (README item 43):
+    # SEC shares outstanding (latest filed on/before the date, restated to that date's split basis
+    # with the warehouse split factor) x that date's raw close
+    m = str(RAW.parent.parent / "charter" / "daily_metrics")
+    con.execute(f"""
+      create or replace temp table f4_mcap as
+      with px as (select symbol, date, raw_close, split_factor from read_parquet('{m}/*/*.parquet', hive_partitioning = true)
+                  where symbol in (select ticker from ticker_cik)),
+      sh as (select cik, filed::date filed, max(val) shares from read_parquet('{e}/edgar_facts.parquet')
+             where concept in ('EntityCommonStockSharesOutstanding','CommonStockSharesOutstanding') and unit = 'shares' and val > 0
+             group by 1, 2 order by 1, 2),
+      d as (select distinct t.cik, t.filing_date, tc.ticker from f4.tx t join ticker_cik tc using (cik) where t.code = 'P'),
+      a as (select d.*, p.raw_close, p.split_factor f_now from d asof join px p on p.symbol = d.ticker and d.filing_date >= p.date),
+      b as (select a.*, sh.shares, sh.filed from a asof join sh on sh.cik = a.cik and a.filing_date >= sh.filed),
+      c as (select b.*, p.split_factor f_filed from b asof left join px p on p.symbol = b.ticker and b.filed >= p.date)
+      select cik, filing_date, max(shares * f_now / nullif(f_filed, 0) * raw_close) as mcap
+      from c where filing_date - filed <= 400 group by 1, 2
+    """)
     con.execute("""
       create or replace temp table ev as
       with t as (
         select accession, cik, filing_date, coalesce(owner_cik, owner) as who, is_director, is_officer, is_ten_pct,
-               code, shares * price as value
+               code, shares * price as value,
+               regexp_matches(coalesce(officer_title, ''), '(chief executive|chief financial|\bceo\b|\bcfo\b)', 'i') as ceo_cfo
         from f4.tx where code in ('P', 'S') and shares > 0 and price > 0
       ),
       filing as (
         select cik, filing_date, accession, who,
                sum(value) filter (where code = 'P') buy_v, sum(value) filter (where code = 'S') sell_v,
-               bool_or(is_officer) officer, bool_or(is_director) director, bool_or(is_ten_pct) ten_pct
+               bool_or(is_officer) officer, bool_or(is_director) director, bool_or(is_ten_pct) ten_pct,
+               bool_or(ceo_cfo) ceo_cfo
         from t group by all
+      ),
+      -- an insider's open-market buy with none by the same insider at the same issuer in the prior 365 days;
+      -- events from 2017 only, so every one has a full year of history in the parse (which starts 2016)
+      first_buy as (
+        select f.cik, f.filing_date, sum(f.buy_v) v from filing f
+        where f.buy_v > 0 and f.filing_date >= date '2017-01-01'
+          and not exists (select 1 from filing p where p.cik = f.cik and p.who = f.who and p.buy_v > 0
+                          and p.filing_date < f.filing_date and p.filing_date >= f.filing_date - 365)
+        group by all
+      ),
+      day_buys as (
+        select f.cik, f.filing_date, sum(f.buy_v) v, any_value(m.mcap) mcap
+        from filing f left join f4_mcap m using (cik, filing_date) where f.buy_v > 0 group by all
       ),
       buyers as (
         select cik, filing_date, who from filing where buy_v > 0
@@ -386,6 +419,10 @@ def form4(con):
         union all select cik, filing_date, 'f4_buy_ten_pct', sum(buy_v) from filing where buy_v > 0 and ten_pct group by all
         union all select cik, filing_date, 'f4_buy_large', sum(buy_v) from filing where buy_v > 0 group by all having sum(buy_v) >= 100000
         union all select cik, filing_date, 'f4_buy_cluster', null from cluster
+        union all select cik, filing_date, 'f4_buy_ceo_cfo', sum(buy_v) from filing where buy_v > 0 and ceo_cfo group by all
+        union all select cik, filing_date, 'f4_buy_mcap_0.1pct', v from day_buys where mcap > 0 and v >= 0.001 * mcap
+        union all select cik, filing_date, 'f4_buy_mcap_0.5pct', v from day_buys where mcap > 0 and v >= 0.005 * mcap
+        union all select cik, filing_date, 'f4_buy_first_1y', v from first_buy
         union all select cik, filing_date, 'f4_sell', sum(sell_v) from filing where sell_v > 0 group by all
         union all select cik, filing_date, 'f4_sell_officer', sum(sell_v) from filing where sell_v > 0 and officer group by all
         union all select cik, filing_date, 'f4_sell_large', sum(sell_v) from filing where sell_v > 0 group by all having sum(sell_v) >= 250000
