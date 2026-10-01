@@ -194,8 +194,13 @@ edge.
   stackslash.netlify.app, so no trigger event since 2026-09-24 ~15:00 ET
   got a dossier — no risk flags on the feed, no alerts. Fixed by migration
   `notify_deep_dive_r10t_url`; no other function or cron job referenced
-  the old host. The ~181 events in between were left without dossiers
-  (rebuilding them would send stale alerts).
+  the old host. The 209 events in between (plus one failed call on 10-01)
+  were rebuilt **point in time** with deep-dive's backfill mode (#265:
+  price, factors, regime, news, filings and earnings as of each event;
+  `analysis.backfill` marks them); 116 intraday ones sent alerts headed
+  "BACKFILL — fired …, not a live signal", 93 eod-scan ones were digest
+  events (no alert). 100 carry a red flag; the new halt / partnership flags
+  appear on 5.
 
 ### Open items — the consolidated list (2026-09-30)
 
