@@ -1,6 +1,6 @@
 # Catalyst rules — the 2022+ holdout, pre-registered
 
-**Status: APPROVED 2026-10-01 (decisions in section 6). Nothing below has been run on 2022+ data at the time of approval.**
+**Status: RUN 2026-10-01** — approved at commit `a4af9b3` (decisions in section 6), run once the same day; results at the end, unedited.
 Written 2026-10-01 (README item 37). Once this document is approved and
 merged, `research/catalysts/holdout_2022.py --run --approved-commit <sha>`
 runs the test **once**; the script refuses to run if this file,
@@ -169,4 +169,39 @@ and the results go into this document's RESULTS section unedited.
 
 ## RESULTS
 
-*(empty until the run)*
+Run once on 2026-10-01 against commit `a4af9b3`: `holdout_2022.py --run`,
+harness runs `20261001T092244` ($0.10-$15) and `20261001T092357`
+($0.10-$5), 5,000 rotations. The script's output, unedited apart from heading levels (its "gap
+2016-21" column is the discovery period recomputed in the same run with
+5,000 rotations):
+
+### 2022+ holdout — run 20261001T092244 (+ $0.10-$5 run 20261001T092357)
+
+#### Primary (Holm across 4 rules, alpha 0.05)
+
+| rule | n | gap 2016-21 | gap 2022+ | 90% CI vs null | one-sided p | Holm p | verdict | $0.10-$5 2022+ gap | net 20d vs universe |
+|---|---|---|---|---|---|---|---|---|---|
+| news_halt | 1,865 | -3.65% | -9.46% | [-11.99, -9.36] vs -1.26% | 0.0002 | 0.0008 | **VALIDATED FOR USE** | -9.68% | — |
+| news_partnership | 2,833 | -1.33% | -1.60% | [-2.33, -0.87] vs 0.09% | 0.0008 | 0.0016 | **VALIDATED FOR USE** | -2.15% | — |
+| 10k | 5,172 | -0.83% | -1.03% | [-0.92, -0.12] vs 0.55% | 0.0004 | 0.0012 | **PASS, not in the traded band** | -1.04% | — |
+| earn_beat | 6,941 | +0.87% | +0.34% | [0.79, 1.42] vs 0.76% | 0.1022 | 0.1022 | **FAIL** | +0.45% | +0.76% vs -0.88% |
+
+#### Secondary (reported only, never PASS)
+
+| rule | n | gap 2016-21 | gap 2022+ | 90% CI vs null | one-sided p |
+|---|---|---|---|---|---|
+| gc_10k | 781 | -2.77% | -1.01% | [-3.06, -0.30] vs -0.66% | 0.1800 |
+| earn_big_beat | 3,627 | +0.93% | +1.16% | [1.41, 2.32] vs 0.74% | 0.0014 |
+| 8k_2.02 | 18,957 | +0.45% | -0.19% | [0.19, 0.65] vs 0.63% | 0.8922 |
+| 10q | 15,077 | +0.51% | +0.07% | [0.29, 0.79] vs 0.49% | 0.3521 |
+
+**Reading.** Two avoid rules are validated for use: **trading halts**
+(-9.5% vs the same names at random dates over 20 sessions, more than
+double the 2016-21 effect, and -9.7% in the $0.10-$5 band) and
+**partnership / licensing PRs** (-1.6%, -2.2% in-band). **10-Ks** pass but
+their in-band range overlaps the random-date null, so they are not a red
+flag. **Earnings beats fail** (+0.34%, p 0.10), as do the earnings-reporting
+secondaries (2.02 -0.19%, 10-Q +0.07%). The earnings *big* beat secondary
+(+1.2%, p 0.001) is not a pass — it is a subset of a failed rule and would
+need its own pre-registered test.
+

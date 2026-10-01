@@ -173,8 +173,12 @@ candidates is now: halt, partnership PR, 10-K (avoid); earnings beat, 8-K
 1. Form 4 follow-up: condition buys on size vs market cap and on role /
    track record before dropping the family (README item 43).
 2. Reddit: collecting hourly since 2026-09-30; test once there are months of snapshots.
-3. Holdout (2022+) for the final forms of: earnings beat, earnings
-   reporting (2.02/10-Q), 10-K.
+3. ~~Holdout (2022+)~~ — done 2026-10-01, pre-registered
+   (`docs/catalyst-2022-prereg.md`): halts and partnership PRs validated
+   as avoid rules; 10-K passes but not in-band; earnings beat / 2.02 /
+   10-Q fail. `holdout_2022.py` holds the frozen run; `harness.py` now
+   also writes per-run JSON (one-sided p, net return vs the universe)
+   to `research/data/catalysts/runs/`.
 4. Form 4: parse the XML to split open-market buys from sells/grants —
    insider buying is the literature's stronger signal, lumped here.
 5. Map OTC / historical tickers (EDGAR ticker list is current-only;
