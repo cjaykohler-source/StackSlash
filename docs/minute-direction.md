@@ -80,3 +80,25 @@ tercile only loses less (−1.54%). The useful reading is the other way
 round — first big days that spent the session **below** VWAP are the worse
 ones — which would be an avoid rule, and would need its own pre-registered
 test (2022+ untouched) before it is used. Close vs VWAP alone flips.
+
+## Below-VWAP as an avoid rule — not pursued (discovery, 2026-10-01)
+
+`research/below_vwap.py --discovery` (output
+`below_vwap_discovery_20261001T141932.txt`), 2016-21 only. Flag = share of
+the session above the running VWAP ≤ 0.2474 (the lower tercile of 2016-19
+first big days); outcome = 5 sessions from t+1's open, net.
+
+| | flagged | rest | difference |
+|---|---|---|---|
+| 2016-19 | −1.36% | −1.74% | **+0.38%** (wrong way), p 0.63 |
+| 2020-21 | −3.53% | −2.51% | −1.02%, 90% CI [−2.29%, +0.21%], p 0.12 |
+| 2016-21 | −2.51% | −2.15% | −0.36%, CI [−1.53%, +0.74%], p 0.35 |
+| P(−20% in 5) | 17.6% | 17.6% | none |
+| P(+30% in 5) | 8.4% | 13.8% | −5.4 points |
+
+The direction signal is entirely in the upside: below-VWAP first big days
+produce fewer big winners, not more big losers, and their average return is
+not meaningfully worse. As an avoid rule it fails on discovery data, so it
+was **not pre-registered and 2022+ was not spent on it**. The script keeps
+its frozen `--holdout` mode (CUT unset) only in case a better-specified
+version is ever proposed.

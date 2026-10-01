@@ -234,8 +234,9 @@ their numbers unless marked here; new items continue from 34.
     days (5,917): **share of the session above VWAP holds its direction out
     of sample** (AUC 0.592 → 0.554, Holm p 0.009) — the first intraday
     feature to do so — but no trade: first big days lose −2.84%/5 sessions
-    net, the better tercile −1.54%. Candidate avoid rule (below-VWAP first big
-    days), untested on 2022+.
+    net, the better tercile −1.54%. As an avoid rule (below-VWAP first big
+    days) it fails on 2016-21 itself — fewer big winners, not more losers —
+    so it was not pre-registered and 2022+ was not spent.
 40. Overnight-cycle cost check by price/liquidity bucket against each
     name's own estimated spread (`overnight_cycle.py`).
 41. Confluence search (pre-set condition pairs/triples, walk-forward,
@@ -249,7 +250,6 @@ their numbers unless marked here; new items continue from 34.
 **Build**
 
 44. Charter ~~phase 3 (event studies)~~ (done 2026-09-30), ~~phase 4 (aggregates)~~ (done 2026-10-01), ~~phase 5 formula help~~ (done 2026-10-01). Shareable URLs: deferred by the user 2026-10-01.
-    incl. a "?" formula-language help button next to the formula fields.
 45. ~~Live red flags~~ — **done 2026-10-01**: trading-halt and partnership-PR
     headlines in the last 28 days are red (`lib/catalystNews.ts`, the research
     patterns verbatim, <= 3 tickers; IPO-release halt notices excluded); red
