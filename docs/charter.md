@@ -2,8 +2,8 @@
 
 Started 2026-09-30. `/charter` on the site: interactive exploration of the
 whole local research warehouse, for finding and checking signals. Phases 1
-(symbol deep dive) and 2 (cross-section) are live; 3-5 are pending (README
-open item 44).
+(symbol deep dive), 2 (cross-section) and 3 (event studies) are live; 4-5
+are pending (README open item 44).
 
 ## Architecture
 
@@ -57,6 +57,8 @@ research/data/   stackslash.duckdb (SIP daily), minute/ (SIP 1-min, ~740k files)
 | `/fundamentals?symbol` (csv) | SEC shares outstanding (split-restated), public float $, cash, operating cash flow, per filing |
 | `/reddit?symbol&start&end` | ApeWisdom daily mentions/upvotes per subreddit |
 | `/minute?symbol&date` (csv) | SIP 1-minute bars for one session (via `minute_index`) |
+| `/event_types` | every catalyst type with source, label, description, count, first/last date (cached 1 h) |
+| `/event_study?kind&...` | mean/median path of `cum_ret` + up to 6 daily metrics from day -pre to +post (each 1-60) around every event; groups event / winners / losers / control; summary at day +k with events-minus-control 95% CI; the event list. See "Event studies" below |
 | `/live?symbol` | today's **IEX** 1-min bars from Alpaca — a separate feed, never merged into SIP series |
 | `/cross?date` or `?start&end&sample` (csv) | every stock on a date, or a sample of stock-days over a range (sampled **after** filtering), with all daily metrics + forward outcomes + point-in-time short / shares / market cap / share growth + trailing 20/60-day catalyst counts by family. Filters: `price_min`, `price_max`, `dollar20_min`, `exchanges`, `funds` |
 
@@ -85,6 +87,12 @@ research/data/   stackslash.duckdb (SIP daily), minute/ (SIP 1-min, ~740k files)
   view — use a future metric as Y), scatter (colour metric, log axes),
   histogram (split by a 0/1 flag or a median), ranked table; click any
   point/row to open that stock in the deep dive around that date; CSV.
+- **Event studies:** pick a catalyst type (optionally with a day-0
+  formula condition) or a formula condition alone; window, cooldown,
+  universe, winner threshold; charts per metric with all events, winners,
+  losers and the random-date control (mean with 95% band, or median with
+  IQR); summary table at day +k; events table (click -> deep dive), CSV.
+  A red note appears when the range reaches 2022+ (the sealed period).
 - **Saved views** (Supabase `charter_views`, own rows) store the whole
   configuration and restore the tab. The last configuration is also kept
   in the browser's localStorage.
@@ -99,6 +107,37 @@ different stocks — `lag(x,n) sma(x,n) change(x,n) zscore(x,n)`.
 Percentages are fractions. Missing / divide-by-zero -> empty, never an
 error or a made-up number. "and" = multiply comparisons; "or" =
 `max(a > x, b > y)`.
+
+## Event studies (`/event_study`, `research/charter_api/formula_sql.py`)
+
+- **Events.** `kind=catalyst&type=` (any type in `research/data/catalysts`)
+  with optional `cond`, or `kind=condition&cond=`. The condition is the
+  page's formula language compiled to SQL server-side (`formula_sql.py`:
+  whitelisted metric names, re-rendered numbers, fixed operators — nothing
+  typed is copied into SQL). Per-symbol `lag/sma/change/zscore` work here
+  (window functions; not nestable; n <= 250). `fwd_*` columns are refused.
+- **Day 0.** Condition: the session it is true at the close. Catalyst:
+  `align=entry` (default) the first session strictly after the event date
+  — the harness / `/research` convention, so a pre-market or in-session
+  event's reaction is day -1 — or `align=event`, the session on/after it.
+  Universe gates (raw close band, 20-day $ volume, exchanges, funds) apply
+  on day 0. Warrants/units are not excluded (same as `/cross`).
+- **Clusters.** An event within `cooldown` sessions (default 20) of an
+  earlier candidate of the same symbol is dropped; at most `sample`
+  events (default 5,000, max 20,000; reservoir, seeded).
+- **Paths.** `cum_ret` = close / day-0 close - 1 (split-adjusted). Windows
+  holding a >=10x or <=0.1x day are dropped as split/reorg artifacts.
+  Means winsorized 1/99 per day unless `wins=0`; bands = 95% range of the
+  mean; median view uses the IQR.
+- **Control.** Random in-universe days of the same symbols, more than
+  `pre`/`post` sessions from any candidate event, as many as the events.
+  Winners/losers split on `cum_ret` at day +`k` >= `thr` — post-day-0 paths
+  diverge by construction; the lead-up is the informative part.
+- **Check.** Trading halts 2016-21: -3.5% to day +5 vs -0.5% control
+  (diff -2.9%, CI -4.9% to -1.0%), consistent with the harness's -3.7%.
+  Day-+5 outcomes spot-checked against `daily_metrics` directly.
+- Before costs; default range 2016-2021. Runs 0.5-2 s; shares the
+  2-at-a-time slot with `/cross`.
 
 ## Operating it
 
@@ -119,9 +158,7 @@ error or a made-up number. "and" = multiply comparisons; "or" =
 
 ## Remaining phases
 
-3. **Event studies** — pick an event (price-move definition, any catalyst
-   type, a formula condition) and plot the mean path of any metric from
-   day -N to +N, split winners/losers (the lead-up analysis, interactive).
+3. ~~Event studies~~ — done 2026-09-30 (see above).
 4. **Aggregates over time** — breadth, breakouts per week, median short
    float, catalyst counts, regime.
 5. **Polish** — "?" formula-language help next to the formula fields,

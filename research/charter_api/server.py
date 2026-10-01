@@ -61,7 +61,8 @@ WAREHOUSE = DATA / "stackslash.duckdb"
 CAT = DATA / "catalysts"
 EDGAR = DATA / "edgar"
 sys.path.insert(0, str(HERE))
-from metrics import METRICS, SMAS  # noqa: E402
+from metrics import DAILY_IDS, METRICS, SMAS  # noqa: E402
+import formula_sql  # noqa: E402
 from minute_index import MinuteIndex  # noqa: E402
 
 
@@ -78,7 +79,7 @@ ORIGINS = {"https://r10t.netlify.app", "http://localhost:5173", "http://127.0.0.
 TOKEN_TTL = 300
 FAIL_LIMIT, FAIL_WINDOW = 20, 300    # failed-auth requests per client per 5 minutes
 USER_LIMIT, USER_WINDOW = 240, 60    # requests per signed-in user per minute
-HEAVY = {"/cross"}                   # expensive endpoints: at most HEAVY_SLOTS concurrently
+HEAVY = {"/cross", "/event_study"}                   # expensive endpoints: at most HEAVY_SLOTS concurrently
 HEAVY_SLOTS = 2
 
 
@@ -596,8 +597,227 @@ def ep_cross(q):
     return res
 
 
+# ---------------------------------------------------------------- event studies
+_types_cache = {"at": 0, "rows": None}
+
+
+def ep_event_types(q):
+    """Every catalyst type in research/data/catalysts with its source, label and event count (cached 1 h)."""
+    if not _types_cache["rows"] or time.time() - _types_cache["at"] > 3600:
+        con = duckdb.connect()
+        rows = con.execute(f"""
+          select type, any_value(source) as source, count(*) as n, min(event_date) as first, max(event_date) as last
+          from read_parquet('{CAT}/*.parquet', union_by_name = true) group by 1 order by 2, 1
+        """).fetchall()
+        _types_cache["rows"] = [dict(type=t, source=src, n=n, first=str(f), last=str(la),
+                                     label=CATALYST_LABELS.get(t, (t, ""))[0], desc=CATALYST_LABELS.get(t, (t, ""))[1])
+                                for t, src, n, f, la in rows]
+        _types_cache["at"] = time.time()
+    return {"types": _types_cache["rows"]}
+
+
+def p_int(q, key, default, lo, hi):
+    v = p_float(q, key, default)
+    return int(max(lo, min(hi, round(v))))
+
+
+def ep_event_study(q):
+    """Mean path of chosen metrics from day -pre to +post around every event, split winners/losers,
+    against a random-date control drawn from the same symbols.
+
+    Events: kind=catalyst (a catalyst type; optional cond on day 0) or kind=condition (a formula that is
+    true at day 0's close). Day 0 for a catalyst is the first session strictly AFTER the event date
+    (align=entry, the /research harness convention) or the session on/after it (align=event). Universe
+    gates (price band on the raw close, 20-day dollar volume, exchanges, funds) apply on day 0. Events of
+    one symbol within `cooldown` sessions of an earlier one are dropped (first of each cluster kept).
+    cum_ret = close / day-0 close - 1 (split-adjusted). Windows containing a >=10x or <=0.1x day
+    (split/reorg artifacts) are dropped. Means are winsorized 1/99 per offset unless wins=0.
+    Control: random in-universe days of the same symbols, at least pre/post sessions away from any
+    candidate event, as many as there are events."""
+    kind = (q.get("kind") or ["condition"])[0]
+    if kind not in ("condition", "catalyst"):
+        raise ApiError(400, "kind must be condition or catalyst")
+    start = p_date(q, "start", dt.date(2016, 1, 1))
+    end = p_date(q, "end", dt.date(2021, 12, 31))
+    if start > end:
+        raise ApiError(400, "start is after end")
+    pre, post = p_int(q, "pre", 20, 1, 60), p_int(q, "post", 20, 1, 60)
+    k = p_int(q, "k", 5, 1, post)
+    thr = p_float(q, "thr", 0.0)
+    cooldown = p_int(q, "cooldown", 20, 0, 250)
+    cap = p_int(q, "sample", 5000, 200, 20000)
+    seed = p_int(q, "seed", 7, 0, 10 ** 6)
+    wins = (q.get("wins") or ["1"])[0] != "0"
+    align = (q.get("align") or ["entry"])[0]
+    if align not in ("entry", "event"):
+        raise ApiError(400, "align must be entry or event")
+    pmin, pmax = p_float(q, "price_min", 0.10), p_float(q, "price_max", 5.0)
+    dmin = p_float(q, "dollar20_min", 250000)
+    exch = [e for e in (q.get("exchanges") or [""])[0].upper().split(",") if e]
+    if any(e not in EXCHANGES for e in exch):
+        raise ApiError(400, "unknown exchange")
+    funds = (q.get("funds") or ["0"])[0] == "1"
+    mets = [m for m in (q.get("metrics") or [""])[0].split(",") if m]
+    if len(mets) > 6:
+        raise ApiError(400, "at most 6 metrics")
+    bad = [m for m in mets if m not in DAILY_IDS]
+    if bad:
+        raise ApiError(400, f"unknown metric {bad[0]}")
+    cond_src = (q.get("cond") or [""])[0].strip()
+    cond_sql, cond_cols = None, set()
+    if cond_src:
+        try:
+            cond_sql, cond_cols = formula_sql.to_sql(cond_src, set(DAILY_IDS))
+        except formula_sql.FormulaError as ex:
+            raise ApiError(400, f"condition: {ex}")
+    elif kind == "condition":
+        raise ApiError(400, "a condition formula is required")
+    ctype = None
+    if kind == "catalyst":
+        ctype = (q.get("type") or [""])[0]
+        if ctype not in {t["type"] for t in ep_event_types({})["types"]}:
+            raise ApiError(400, "unknown catalyst type")
+
+    cols = sorted({"close", "raw_close", "dollar20", "ret_1", *mets, *cond_cols})
+    gate = (f"raw_close between {float(pmin)!r} and {float(pmax)!r} and dollar20 >= {float(dmin)!r}"
+            + (f" and exchange in ({', '.join(repr(e) for e in exch)})" if exch else "")
+            + ("" if funds else " and not coalesce(is_fund, false)"))
+    con = connect()
+    con.execute("set preserve_insertion_order = false")
+    sym_filter = ""
+    if kind == "catalyst":
+        con.execute(f"""
+          create temp table ev as select distinct symbol, event_date from read_parquet('{CAT}/*.parquet', union_by_name = true)
+          where type = ? and event_date between ?::date - 10 and ?
+        """, [ctype, start, end])
+        sym_filter = "and symbol in (select distinct symbol from ev)"
+    con.execute(f"""
+      create temp table b as
+      select symbol, date, row_number() over (partition by symbol order by date) as idx,
+        {", ".join(f'"{c}"' for c in cols)},
+        close / lag(close) over (partition by symbol order by date) as _ratio,
+        ({gate}) as _g
+        {f", ({cond_sql}) as _cond" if cond_sql else ""}
+      from read_parquet('{METRICS_DIR}/*/*.parquet', hive_partitioning = true)
+      where year between {start.year - 1} and {end.year + 1} {sym_filter}
+    """)
+    cond_ok = "and coalesce(b._cond, 0) <> 0" if cond_sql else ""
+    if kind == "catalyst":
+        con.execute(f"""
+          create temp table cand as
+          select distinct b.symbol, b.idx, b.date, min(e.event_date) over (partition by b.symbol, b.idx) as event_date
+          from ev e asof join b on e.symbol = b.symbol and e.event_date {'<' if align == 'entry' else '<='} b.date
+          where b.date between ? and ? and b._g {cond_ok}
+        """, [start, end])
+    else:
+        con.execute(f"""
+          create temp table cand as
+          select symbol, idx, date, null::date as event_date from b
+          where date between ? and ? and _g {cond_ok}
+        """, [start, end])
+    n_cand = con.execute("select count(*) from cand").fetchone()[0]
+    con.execute(f"""
+      create temp table evall as select * from cand
+      qualify lag(idx) over (partition by symbol order by idx) is null
+           or idx - lag(idx) over (partition by symbol order by idx) > {cooldown}
+    """)
+    n_events = con.execute("select count(*) from evall").fetchone()[0]
+    con.execute(f"create temp table es as select * from (select * from evall) using sample {cap} rows (reservoir, {seed})")
+    n_used = con.execute("select count(*) from es").fetchone()[0]
+    con.execute(f"""
+      create temp table ctl as select * from (
+        select x.symbol, x.idx, x.date, null::date as event_date from (
+          select b.symbol, b.idx, b.date, p.idx as pidx from b asof left join cand p on b.symbol = p.symbol and b.idx >= p.idx
+          where b.symbol in (select distinct symbol from es) and b.date between ? and ? and b._g
+        ) x asof left join cand n on x.symbol = n.symbol and x.idx <= n.idx
+        where (x.pidx is null or x.idx - x.pidx > {post}) and (n.idx is null or n.idx - x.idx > {pre})
+      ) using sample {max(n_used, 1)} rows (reservoir, {seed + 1})
+    """, [start, end])
+    con.execute(f"""
+      create temp table sel as
+      select row_number() over () as eid, * from (
+        select 'event' as grp, symbol, idx, date, event_date from es
+        union all select 'control', symbol, idx, date, event_date from ctl)
+    """)
+    path = ["cum_ret", *[m for m in mets if m != "cum_ret"]]
+    con.execute(f"""
+      create temp table w as
+      select s.eid, s.grp, b.idx - s.idx as off, b.close / nullif(b0.close, 0) - 1 as cum_ret, b._ratio,
+        {", ".join(f'b."{m}"::double as "{m}"' for m in mets)}{"," if mets else ""} b0.raw_close as _p0
+      from sel s join b b0 on b0.symbol = s.symbol and b0.idx = s.idx
+      join b on b.symbol = s.symbol and b.idx between s.idx - {pre} and s.idx + {post}
+    """)
+    dropped = dict(con.execute(f"""
+      with badw as (select distinct eid from w where off > -{pre} and (_ratio >= 10 or _ratio <= 0.1))
+      select s.grp, count(*) from sel s join badw using (eid) group by 1
+    """).fetchall())
+    con.execute(f"delete from w where eid in (select eid from w where off > -{pre} and (_ratio >= 10 or _ratio <= 0.1))")
+    con.execute(f"""
+      create temp table lab as
+      with o as (select eid, cum_ret as o from w where off = {k})
+      select distinct w.eid, w.grp as g from w
+      union all
+      select s.eid, case when o.o >= {float(thr)!r} then 'winners' else 'losers' end
+      from sel s join o using (eid) where s.grp = 'event' and o.o is not null
+    """)
+    unp = ", ".join(f'"{m}"' for m in path)
+    con.execute(f"""
+      create temp table l as
+      unpivot (select lab.g, w.off, {", ".join(f'w."{m}"' for m in path)} from w join lab using (eid))
+      on {unp} into name metric value v
+    """)
+    con.execute("delete from l where not isfinite(v)")
+    clip = "least(greatest(l.v, q.lo1), q.hi1)" if wins else "l.v"
+    stats = con.execute(f"""
+      with q as (select g, metric, off, quantile_cont(v, 0.01) as lo1, quantile_cont(v, 0.99) as hi1 from l group by all)
+      select l.g, l.metric, l.off, count(*) as n, avg({clip}) as mean, stddev_samp({clip}) as sd,
+        median(l.v) as med, quantile_cont(l.v, 0.25) as q25, quantile_cont(l.v, 0.75) as q75
+      from l join q using (g, metric, off) group by all order by 1, 2, 3
+    """).fetchall()
+    offsets = list(range(-pre, post + 1))
+    groups = {}
+    for g, m, off, n, mean, sd, med, q25, q75 in stats:
+        d = groups.setdefault(g, {}).setdefault(m, {f: [None] * len(offsets) for f in ("n", "mean", "lo", "hi", "median", "q25", "q75")})
+        i = off + pre
+        se = (sd or 0) / n ** 0.5 if n > 1 else None
+        d["n"][i], d["mean"][i], d["median"][i], d["q25"][i], d["q75"][i] = n, mean, med, q25, q75
+        if se is not None:
+            d["lo"][i], d["hi"][i] = mean - 1.96 * se, mean + 1.96 * se
+
+    def at_k(g):
+        r = con.execute(f"""
+          with q as (select quantile_cont(v, 0.01) lo1, quantile_cont(v, 0.99) hi1 from l where g = ? and metric = 'cum_ret' and off = {k})
+          select count(*), avg({clip}), stddev_samp({clip}), median(l.v), avg((l.v > 0)::int)
+          from l, q where l.g = ? and l.metric = 'cum_ret' and l.off = {k}
+        """, [g, g]).fetchone()
+        return dict(n=r[0], mean=r[1], sd=r[2], median=r[3], hit=r[4])
+    ev_k, ct_k = at_k("event"), at_k("control")
+    summary = {"k": k, "event": ev_k, "control": ct_k}
+    if ev_k["n"] > 1 and ct_k["n"] > 1 and ev_k["sd"] is not None and ct_k["sd"] is not None:
+        diff = ev_k["mean"] - ct_k["mean"]
+        se = (ev_k["sd"] ** 2 / ev_k["n"] + ct_k["sd"] ** 2 / ct_k["n"]) ** 0.5
+        summary.update(diff=diff, diff_lo=diff - 1.96 * se, diff_hi=diff + 1.96 * se)
+    events = columns(con, f"""
+      select s.symbol, s.date, s.event_date, b0.raw_close, b0.dollar20, b0.ret_1,
+        (select cum_ret from w where w.eid = s.eid and w.off = {k}) as outcome
+      from sel s join b b0 on b0.symbol = s.symbol and b0.idx = s.idx
+      where s.grp = 'event' and s.eid in (select eid from w)
+      order by s.date desc, s.symbol
+    """)
+    counts = {"candidates": n_cand, "events": n_events, "used": n_used, "sampled": n_events > n_used,
+              "dropped_artifacts": dropped.get("event", 0), "control": con.execute("select count(*) from ctl").fetchone()[0] - dropped.get("control", 0),
+              "winners": groups.get("winners", {}).get("cum_ret", {}).get("n", [0])[pre + k] or 0,
+              "losers": groups.get("losers", {}).get("cum_ret", {}).get("n", [0])[pre + k] or 0}
+    day0 = ("the session the condition is true (at its close)" if kind == "condition" else
+            "the first session strictly after the event date (the /research convention)" if align == "entry" else
+            "the session on or after the event date")
+    return {"offsets": offsets, "metrics": path, "groups": groups, "counts": counts, "summary": summary,
+            "events": events, "day0": day0, "winsorized": wins}
+
+
 ROUTES = {"/catalog": lambda q: {"metrics": METRICS}, "/cross": ep_cross, "/symbols": ep_symbols, "/daily": ep_daily, "/events": ep_events,
-          "/short": ep_short, "/fundamentals": ep_fundamentals, "/reddit": ep_reddit, "/minute": ep_minute, "/live": ep_live}
+          "/short": ep_short, "/fundamentals": ep_fundamentals, "/reddit": ep_reddit, "/minute": ep_minute, "/live": ep_live,
+          "/event_types": ep_event_types, "/event_study": ep_event_study}
 CSV_OK = {"/daily", "/events", "/fundamentals", "/minute", "/cross"}
 
 
