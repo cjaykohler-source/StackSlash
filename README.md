@@ -250,8 +250,12 @@ Report median, compounded and by-year returns next to any mean.
     `research/.venv`) on the breakout v2 table.
 42. Reddit attention becomes testable after a few months of snapshots
     (collector started 2026-09-30).
-43. Form 4 buys: condition on size relative to market cap and on the
-    insider's role/track record before dropping the family.
+43. ~~Form 4 buys, conditioned~~ — **done 2026-10-01**
+    (`docs/catalyst-harness.md`): insider buys worth ≥ 0.1% of market cap are
+    a **candidate** (+2.46% vs random dates, q 0.057, not mean reversion;
+    in-band +2.13%, underpowered; leans on 2019 vs each year's universe).
+    CEO/CFO and first-buy-in-a-year don't separate. Family kept; candidate
+    for a pre-registered 2022+ test.
 
 **Build**
 

@@ -168,10 +168,37 @@ amendments and earnings big beats dropped just below the bar; the list of
 candidates is now: halt, partnership PR, 10-K (avoid); earnings beat, 8-K
 2.02, 10-Q, PT cut (positive, PT cut suspect).
 
+## Form 4 buys, conditioned (2026-10-01, README item 43)
+
+Four types fixed before running (`sources.py` form4 adapter): CEO/CFO buy
+(officer title); company's insider buys that day ≥ 0.1% / ≥ 0.5% of market
+cap (SEC shares, restated to the date's split basis, × raw close); first buy
+by that insider in 365 days (2017+). Full run, 69 types, 2016-21:
+
+| type | n | gap (20d) | p | q |
+|---|---|---|---|---|
+| **buys ≥ 0.1% of market cap** | 1,325 | **+2.46%** | 0.003 | **0.057 — candidate** |
+| buys ≥ 0.5% of market cap | 422 | +2.54% | 0.035 | 0.17 |
+| CEO / CFO buy | 1,158 | +0.87% | 0.14 | 0.27 |
+| first buy in a year | 3,725 | +0.48% | 0.10 | 0.27 |
+| any open-market buy (reference) | 10,567 | +0.57% | 0.022 | 0.12 |
+
+- Return-matched null: +2.40% (≥ 0.1%) — not mean reversion.
+- $0.10-$5 band: same sign, +2.13% (n 454, p 0.20) — underpowered.
+- By year (after-cost 20-session return, not excess): mean +3.8 / +1.4 /
+  +0.6 / +6.0 / +7.9 / −0.9% for 2016-21; medians mixed. Against each
+  year's universe the edge leans on 2019.
+- Size relative to the company is what separates; role and first-time
+  buying don't. Track record was not tested (the parse starts 2016, too
+  short to build one honestly).
+
+The family is **not dropped**: buys ≥ 0.1% of market cap are the first
+positive catalyst candidate on the leaderboard. Next step would be its own
+pre-registered 2022+ test with the in-band check.
+
 ## Open
 
-1. Form 4 follow-up: condition buys on size vs market cap and on role /
-   track record before dropping the family (README item 43).
+1. ~~Form 4 follow-up~~ — done 2026-10-01, see above.
 2. Reddit: collecting hourly since 2026-09-30; test once there are months of snapshots.
 3. ~~Holdout (2022+)~~ — done 2026-10-01, pre-registered
    (`docs/catalyst-2022-prereg.md`): halts and partnership PRs validated
