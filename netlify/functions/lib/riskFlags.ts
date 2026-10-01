@@ -12,8 +12,7 @@
  *           filed in the last 30 days, shares 2x+ YoY, market cap under
  *           $10M (docs/filing-state-study.md), a trading-halt headline or
  *           a partnership / licensing PR in the last 20 sessions
- *           (docs/catalyst-2022-prereg.md). Also <=2 quarters of cash
- *           (older evidence; see that flag).
+ *           (docs/catalyst-2022-prereg.md).
  *   amber — neutral / two-sided: a condition to be aware of that can go
  *           either way (news, earnings of any recency, unusual volume
  *           below 25x, parabolic run, biotech / crypto-AI catalyst risk).
@@ -189,8 +188,11 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
     });
   }
   if (typeof x.runway_quarters === "number" && x.runway_quarters > 0 && x.runway_quarters <= 4) {
+    // Amber at every level since 2026-10-01: the filing-state study found cash-runway buckets weak or
+    // inconsistent in 2016-21 (not carried to the 2022+ holdout), so short runway is not a proven
+    // negative. The validated dilution flags (offering filed, shares 2x+) catch the raise itself.
     f.push({
-      level: x.runway_quarters <= 2 ? "red" : "amber",
+      level: "amber",
       label: `~${x.runway_quarters < 1 ? "<1" : x.runway_quarters.toFixed(1)}Q cash left`,
       note: "Cash divided by recent quarterly burn. A raise is likely inside the hold window — an offering prices below market and dilutes.",
     });
