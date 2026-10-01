@@ -1,6 +1,6 @@
 # Size-conditioned insider buying — the 2022+ holdout, pre-registered
 
-**Status: APPROVED 2026-10-01 (section 6). Nothing below has been run on 2022+ data at the time of approval.**
+**Status: RUN 2026-10-01 — FAIL.** Approved at commit `af33f4a` (section 6), run once the same day; results at the end, unedited.
 Written 2026-10-01 (follow-up to README item 43). Once approved and merged,
 `research/catalysts/holdout_insider.py --run --approved-commit <sha>` runs
 the test **once**; it refuses if this file, `holdout_insider.py` or
@@ -101,4 +101,29 @@ research/.venv/bin/python research/catalysts/holdout_insider.py --run --approved
 
 ## RESULTS
 
-*(empty until the run)*
+Run once on 2026-10-01 against commit `af33f4a`: harness runs
+`20261001T171241` ($0.10-$15) and `20261001T171310` ($0.10-$5), 5,000
+rotations. The script's output, unedited apart from heading levels:
+
+### 2022+ insider-buying holdout — run 20261001T171241 (+ $0.10-$5 run 20261001T171310)
+
+#### Primary (Holm across 1 rules, alpha 0.05)
+
+| rule | n | gap 2016-21 | gap 2022+ | 90% CI vs null | one-sided p | Holm p | verdict | $0.10-$5 2022+ gap | net 20d vs universe |
+|---|---|---|---|---|---|---|---|---|---|
+| f4_buy_mcap_0.1pct | 2,706 | +2.47% | -0.52% | [-1.04, 0.56] vs 0.29% | 0.7822 | 0.7822 | **FAIL** | -1.07% | -1.04% vs -0.88% |
+
+#### Secondary (reported only, never PASS)
+
+| rule | n | gap 2016-21 | gap 2022+ | 90% CI vs null | one-sided p |
+|---|---|---|---|---|---|
+| f4_buy_mcap_0.5pct | 1,009 | +2.41% | -1.47% | [-2.52, 0.20] vs 0.31% | 0.9104 |
+| f4_buy | 12,822 | +0.59% | +0.03% | [-0.03, 0.71] vs 0.28% | 0.4525 |
+
+**Reading.** The effect reversed out of sample: +2.47% vs random dates in
+2016-21, **−0.52%** on 2022+ (in-band −1.07%; the ≥ 0.5% secondary
+−1.47%). A FAIL, final for this definition. As pre-registered, the Form 4
+insider-buy family is dropped (README item 43). Like the price/volume
+work, the 2016-21 positive did not survive; the validated catalyst results
+remain avoid rules only.
+

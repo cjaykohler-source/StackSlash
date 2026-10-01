@@ -117,6 +117,9 @@ OVERRIDES = {
     "gc_10k": ("watch", "Worst 10-Ks in 2016-21 (-2.8%); -1.0% on 2022+, p 0.18 (secondary) — not clear of the bar."),
     "8k_3.02": ("watch", "Dilution family, -1.3%, q 0.19 — consistent with the validated rule."),
     "news_insider_buy": ("watch", "+3.0%, q 0.12 on 379 events — see the Form 4 types for the full sample."),
+    # the pre-registered 2022+ insider holdout (docs/insider-2022-prereg.md, run 20261001T171241)
+    "f4_buy_mcap_0.1pct": ("none", "Failed out of sample: +2.5% vs random dates in 2016-21, -0.5% on 2022+ (pre-registered). Insider-buy family dropped."),
+    "f4_buy_mcap_0.5pct": ("none", "Failed out of sample: -1.5% vs random dates on 2022+ (pre-registered, secondary)."),
     "news_pt_cut": ("watch", "Passes 2016-21 but unexplained and flips sign in the $0.10-$5 band; deliberately not tested on 2022+."),
     "ca_cash_dividends": ("none", "Price-only returns bias dividend events; never judged."),
 }

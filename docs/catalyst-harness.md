@@ -192,9 +192,9 @@ by that insider in 365 days (2017+). Full run, 69 types, 2016-21:
   buying don't. Track record was not tested (the parse starts 2016, too
   short to build one honestly).
 
-The family is **not dropped**: buys ≥ 0.1% of market cap are the first
-positive catalyst candidate on the leaderboard. Next step would be its own
-pre-registered 2022+ test with the in-band check.
+Pre-registered 2022+ test (`docs/insider-2022-prereg.md`, 2026-10-01):
+**FAIL** — −0.52% vs random dates (in-band −1.07%). The insider-buy family
+is dropped.
 
 ## Open
 

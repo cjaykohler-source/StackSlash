@@ -252,10 +252,10 @@ Report median, compounded and by-year returns next to any mean.
     (collector started 2026-09-30).
 43. ~~Form 4 buys, conditioned~~ — **done 2026-10-01**
     (`docs/catalyst-harness.md`): insider buys worth ≥ 0.1% of market cap are
-    a **candidate** (+2.46% vs random dates, q 0.057, not mean reversion;
-    in-band +2.13%, underpowered; leans on 2019 vs each year's universe).
-    CEO/CFO and first-buy-in-a-year don't separate. Family kept; candidate
-    for a pre-registered 2022+ test.
+    were the candidate (+2.46% vs random dates, q 0.057) — **and failed the
+    pre-registered 2022+ test** (`docs/insider-2022-prereg.md`): −0.52%,
+    in-band −1.07%. CEO/CFO and first-buy-in-a-year never separated.
+    **Insider-buy family dropped.**
 
 **Build**
 
