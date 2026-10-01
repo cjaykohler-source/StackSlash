@@ -2,8 +2,8 @@
 
 Started 2026-09-30. `/charter` on the site: interactive exploration of the
 whole local research warehouse, for finding and checking signals. Phases 1
-(symbol deep dive), 2 (cross-section) and 3 (event studies) are live; 4-5
-are pending (README open item 44).
+(symbol deep dive), 2 (cross-section), 3 (event studies) and 4 (aggregates)
+are live; 5 (polish) is pending (README open item 44).
 
 ## Architecture
 
@@ -59,6 +59,8 @@ research/data/   stackslash.duckdb (SIP daily), minute/ (SIP 1-min, ~740k files)
 | `/minute?symbol&date` (csv) | SIP 1-minute bars for one session (via `minute_index`) |
 | `/event_types` | every catalyst type with source, label, description, count, first/last date (cached 1 h) |
 | `/event_study?kind&...` | mean/median path of `cum_ret` + up to 6 daily metrics from day -pre to +post (each 1-60) around every event; groups event / winners / losers / control; summary at day +k with events-minus-control 95% CI; the event list. See "Event studies" below |
+| `/aggregate_catalog` | the fixed aggregate series: id, label, group, unit, kind (mean / count / level) |
+| `/aggregates?start&end&freq&...` | every series per day / week / month over the universe, plus up to 3 formula series (`f1..f3`, `f1_how=share|median`); cached until `daily_metrics` is rebuilt. See "Aggregates" below |
 | `/live?symbol` | today's **IEX** 1-min bars from Alpaca — a separate feed, never merged into SIP series |
 | `/cross?date` or `?start&end&sample` (csv) | every stock on a date, or a sample of stock-days over a range (sampled **after** filtering), with all daily metrics + forward outcomes + point-in-time short / shares / market cap / share growth + trailing 20/60-day catalyst counts by family. Filters: `price_min`, `price_max`, `dollar20_min`, `exchanges`, `funds` |
 
@@ -93,6 +95,11 @@ research/data/   stackslash.duckdb (SIP daily), minute/ (SIP 1-min, ~740k files)
   losers and the random-date control (mean with 95% band, or median with
   IQR); summary table at day +k; events table (click -> deep dive), CSV.
   A red note appears when the range reaches 2022+ (the sealed period).
+- **Aggregates:** daily / weekly / monthly market-wide series over the
+  universe — breadth, equal-weight index, big moves and breakouts,
+  volatility, short float and short-volume ratio, catalyst counts by
+  family, SPY regime — plus up to 3 formula series; one zoom-linked panel
+  each (slider under the last), SPY-below-200-day periods shaded; CSV.
 - **Saved views** (Supabase `charter_views`, own rows) store the whole
   configuration and restore the tab. The last configuration is also kept
   in the browser's localStorage.
@@ -139,6 +146,39 @@ error or a made-up number. "and" = multiply comparisons; "or" =
 - Before costs; default range 2016-2021. Runs 0.5-2 s; shares the
   2-at-a-time slot with `/cross`.
 
+## Aggregates (`/aggregates`)
+
+- **Universe** on day t = names passing the gates (raw close band, 20-day
+  $ volume, exchanges, funds) at the **previous** close. Gating on day t's
+  own close drops a stock on the day it leaves the band (+33% from $4.50)
+  and biased every return statistic down — the first build's equal-weight
+  index fell 97%; with prior-close gating it runs 89 -> 59 over 2016-26.
+- **Per day, then per period:** counts are summed over the period's
+  sessions; shares, medians and formula series are averaged over its
+  sessions; the equal-weight index (daily mean return clipped to
+  -50%/+100%, compounded), SPY close and the regime flag take the last
+  value.
+- **Warm-up:** the warehouse starts 2016-01-04, so SMA 50/200, 52-week and
+  20-day measures are blank until their windows fill (to 2016-12-30 for
+  52-week).
+- **Short float** per FINRA settlement: short interest and the latest SEC
+  share count (filed <= 400 days before) restated to one split basis, as
+  `/short` does; median over universe names; 2018+. **Short-volume
+  ratio** = Reg SHO short volume / total, median, 2018-08+.
+- **Catalysts** are dated to the first universe session on or after the
+  event (within 7 days), counted by `/cross`'s families.
+- **Formula series:** the formula compiled server-side (`formula_sql.py`),
+  computed per symbol over its history (a year of warm-up when it uses
+  lag/sma/change/zscore) before gating; `share` = share of the day's
+  universe where it is non-zero, `median` = the day's median.
+- **Check:** week of 2021-02-08 — breakouts 28, 416.4 stocks/day, 92.82%
+  above SMA 50 — matches an independent query exactly. Full history at
+  weekly frequency: ~3-6 s; repeats are cached.
+- Panels have no wheel zoom (full-width charts swallowed page scrolling);
+  the slider under the last panel zooms all of them. Regime shading is
+  drawn on its own empty line series — on a bar series ECharts placed the
+  same ranges differently.
+
 ## Operating it
 
 - Restart: `launchctl kickstart -k gui/$(id -u)/com.stackslash.charter-api`.
@@ -159,7 +199,6 @@ error or a made-up number. "and" = multiply comparisons; "or" =
 ## Remaining phases
 
 3. ~~Event studies~~ — done 2026-09-30 (see above).
-4. **Aggregates over time** — breadth, breakouts per week, median short
-   float, catalyst counts, regime.
+4. ~~Aggregates over time~~ — done 2026-10-01 (see above).
 5. **Polish** — "?" formula-language help next to the formula fields,
-   shareable URLs if wanted, and the public-access decision.
+   shareable URLs if wanted (public access: decided 2026-09-30, Tailscale Funnel).

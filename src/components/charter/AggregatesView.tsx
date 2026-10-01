@@ -178,7 +178,8 @@ export function AggregatesView({
         xAxis: { type: "category", data: res.periods, axisLabel: { color: "#8b93a7", show: last } },
         yAxis: { type: "value", scale: d.kind !== "count", axisLabel: { formatter: (v: number) => fmtValue(v, d.unit), color: "#8b93a7" },
                  splitLine: { lineStyle: { color: "#1c2230" } } },
-        dataZoom: [{ type: "inside" }, ...(last ? [{ type: "slider" as const, height: 20, bottom: 8, textStyle: { color: "#8b93a7" } }] : [])],
+        // no wheel zoom: full-width panels would swallow page scrolling; the bottom slider zooms every panel (connected group)
+        dataZoom: last ? [{ type: "slider", height: 20, bottom: 8, textStyle: { color: "#8b93a7" } }] : [{ type: "slider", show: false }],
         series: [
           {
             type: d.kind === "count" ? "bar" : "line",
@@ -187,8 +188,13 @@ export function AggregatesView({
             connectNulls: id === "median_short_float",
             itemStyle: { color },
             lineStyle: { color, width: 1.5 },
-            markArea: regimeAreas.length ? { silent: true, itemStyle: { color: "rgba(231, 76, 60, 0.08)" }, data: regimeAreas } : undefined,
           } as never,
+          // the regime shading lives on its own empty line series: on a bar series ECharts placed
+          // the same category ranges differently from the line panels (shifted, some missing)
+          ...(regimeAreas.length
+            ? [{ type: "line", data: res.periods.map(() => null), symbol: "none", silent: true, tooltip: { show: false },
+                 markArea: { silent: true, itemStyle: { color: "rgba(231, 76, 60, 0.08)" }, data: regimeAreas } } as never]
+            : []),
         ],
       };
       return { id, option, height: last ? 230 : 190 };
@@ -259,7 +265,7 @@ export function AggregatesView({
       </div>
 
       <details className="charter-agg-picker" open>
-        <summary className="ops-dim">Series ({shown.length} shown) — tick to show; universe and formula changes apply on Run</summary>
+        <summary className="ops-dim">Series ({shown.length} shown) — tick to show; universe and formula changes apply on Run; zoom with the slider under the last panel</summary>
         <div className="charter-agg-groups">
           {Object.entries(grouped)
             .filter(([g]) => g !== "My formulas")
