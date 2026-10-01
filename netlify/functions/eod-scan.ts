@@ -204,7 +204,6 @@ export default async () => {
     // every later page re-sort the whole thing and grinds to a halt (hit
     // this the hard way: eod-scan hung >15 min at ~5,000 symbols). Same
     // per-symbol approach backtest-triggers.ts uses.
-    const today = end;
     const barsBySymbolId = new Map<number, Bar[]>();
     // high/low for the big-move score's range expansion (Bar carries close/volume only)
     const hlBySymbolId = new Map<number, { high: number; low: number }[]>();
@@ -235,6 +234,19 @@ export default async () => {
         hlBySymbolId.set(s.id, hl);
       }
     });
+
+    // The SESSION these bars describe, not the run's wall-clock date. `today`
+    // keys factor_state / regime_state, the fires' trade_date and the
+    // prevSession catalyst window. It used to be the UTC date of the run, so
+    // any run after 20:00 ET (midnight UTC) stamped the next day and moved
+    // prevSession onto the session itself -- a 20:29 ET catch-up run after
+    // the 2026-09-30 network outage did exactly that. Latest SPY bar, else
+    // the latest bar of any symbol, else the New York calendar date.
+    const etDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+    const latestBar = (bars: Bar[] | undefined) => (bars?.length ? bars[bars.length - 1].date : undefined);
+    let today = latestBar(barsBySymbolId.get(byTicker.get("SPY") ?? -1)) ?? "";
+    if (!today) for (const bars of barsBySymbolId.values()) today = [today, latestBar(bars) ?? ""].sort()[1];
+    if (!today || today > etDate) today = etDate;
 
     // --- 3. Compute factor_state via the shared dailySnapshot module ---
     // (also used by backtest-triggers.ts, so live behavior and backtested
