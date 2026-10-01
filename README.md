@@ -224,8 +224,11 @@ their numbers unless marked here; new items continue from 34.
     (-1.6%) **validated for use** as avoid rules, in-band too; 10-K passes
     but not in the $0.10-$5 band; earnings beat, 8-K 2.02 and 10-Q fail.
     Price-target cut deliberately untested.
-38. Two-sided score: model P(+30%) and P(-20%) and rank by the difference
-    — the direct fix for "the score predicts volatility" (`score_poc2.py`).
+38. ~~Two-sided score~~ — **done 2026-10-01, FAIL (3 of 4)**
+    (`docs/two-sided-score.md`): ranking by P(+30%) − P(−20%) tilts the top
+    toward up-moves (top-5% net hit +9.0% vs +4.4%) and the trade beats random
+    entries (+0.71% vs −0.41%, 2020-21) — but deciles 7/9, nothing on 2019,
+    and absolute profit only in 2020. Not tradable; 2022+ not spent.
 39. Minute-bar direction test on lead-up-flagged days (VWAP / opening
     range on the first big day) — the only place daily data says direction
     could live.
