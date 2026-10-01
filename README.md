@@ -232,7 +232,7 @@ their numbers unless marked here; new items continue from 34.
 
 **Build**
 
-44. Charter phase 3 (event studies), phase 4 (aggregates), phase 5 polish
+44. Charter ~~phase 3 (event studies)~~ (done 2026-09-30), phase 4 (aggregates), phase 5 polish
     incl. a "?" formula-language help button next to the formula fields.
 45. Live red flags: add halts, share growth >= 1x, market cap < $10M next
     to "Offering filed" (the dilution rules are validated; halts are not

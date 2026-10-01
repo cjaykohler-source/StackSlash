@@ -14,19 +14,20 @@ import {
 } from "../lib/charterApi";
 import { evaluateFormula, FormulaError } from "../lib/formula";
 import { CrossView, DEFAULT_CROSS, type CrossConfig } from "../components/charter/CrossView";
+import { DEFAULT_EVENTS, EventStudyView, type EventConfig } from "../components/charter/EventStudyView";
 
 /**
  * Charter: an interactive data visualizer over the whole research
  * warehouse (SIP daily + minute bars, catalysts, short data, SEC filings,
- * Reddit), served by the local Charter API. Phase 1: the symbol deep dive.
- * Cross-sectional, event-study and aggregate tabs follow in later phases.
+ * Reddit), served by the local Charter API: the symbol deep dive (phase 1),
+ * the cross-section (phase 2) and event studies (phase 3). Aggregates follow.
  */
 
 type Tab = "symbol" | "cross" | "events" | "aggregates";
 const TABS: [Tab, string, string | null][] = [
   ["symbol", "Symbol deep dive", null],
   ["cross", "Cross-section", null],
-  ["events", "Event studies", "Phase 3"],
+  ["events", "Event studies", null],
   ["aggregates", "Aggregates", "Phase 4"],
 ];
 
@@ -63,6 +64,7 @@ interface Config {
   formulas: Formula[];
   live: boolean;
   cross: CrossConfig;
+  events: EventConfig;
 }
 const DEFAULT: Config = {
   symbol: "VALE",
@@ -76,6 +78,7 @@ const DEFAULT: Config = {
   formulas: [],
   live: false,
   cross: DEFAULT_CROSS,
+  events: DEFAULT_EVENTS,
 };
 
 interface ShortRes {
@@ -97,6 +100,16 @@ interface SavedView {
   name: string;
   tab: string;
   config: Config;
+}
+
+/** A stored config (localStorage or a saved view) may predate newer fields: fill them in. */
+function withDefaults(c: Partial<Config>): Config {
+  return {
+    ...DEFAULT,
+    ...c,
+    cross: { ...DEFAULT_CROSS, ...(c.cross ?? {}) },
+    events: { ...DEFAULT_EVENTS, ...(c.events ?? {}), show: { ...DEFAULT_EVENTS.show, ...(c.events?.show ?? {}) } },
+  };
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -133,7 +146,7 @@ export function Charter() {
     try {
       const s = localStorage.getItem("charter.last");
       const c = s ? JSON.parse(s) : {};
-      return { ...DEFAULT, ...c, cross: { ...DEFAULT_CROSS, ...(c.cross ?? {}) } };
+      return withDefaults(c);
     } catch {
       return DEFAULT;
     }
@@ -191,7 +204,7 @@ export function Charter() {
           cfg={cfg}
           tab={tab}
           onLoad={(c, t) => {
-            setCfg({ ...DEFAULT, ...c, cross: { ...DEFAULT_CROSS, ...(c.cross ?? {}) } });
+            setCfg(withDefaults(c));
             if (TABS.some(([x]) => x === t)) setTab(t as Tab);
           }}
         />
@@ -207,6 +220,14 @@ export function Charter() {
         <CrossView
           cfg={cfg.cross}
           set={(p) => setCfg({ ...cfg, cross: { ...cfg.cross, ...p } })}
+          catalog={catalog}
+          onApiError={setApiError}
+          onOpenSymbol={openSymbol}
+        />
+      ) : tab === "events" ? (
+        <EventStudyView
+          cfg={cfg.events}
+          set={(p) => setCfg((c) => ({ ...c, events: { ...c.events, ...p } }))}
           catalog={catalog}
           onApiError={setApiError}
           onOpenSymbol={openSymbol}
