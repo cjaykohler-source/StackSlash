@@ -212,9 +212,11 @@ their numbers unless marked here; new items continue from 34.
 
 **Research — next steps (all on 2016-21; 2022+ stays sealed until final)**
 
-37. Run the one-shot 2022+ test for the final catalyst rules: halts,
-    partnership PRs, 10-K (+ going-concern 10-K), earnings beat / 2.02 /
-    10-Q.
+37. ~~One-shot 2022+ test of the catalyst rules~~ — **done 2026-10-01**
+    (`docs/catalyst-2022-prereg.md`): halts (-9.5%) and partnership PRs
+    (-1.6%) **validated for use** as avoid rules, in-band too; 10-K passes
+    but not in the $0.10-$5 band; earnings beat, 8-K 2.02 and 10-Q fail.
+    Price-target cut deliberately untested.
 38. Two-sided score: model P(+30%) and P(-20%) and rank by the difference
     — the direct fix for "the score predicts volatility" (`score_poc2.py`).
 39. Minute-bar direction test on lead-up-flagged days (VWAP / opening
@@ -232,11 +234,11 @@ their numbers unless marked here; new items continue from 34.
 
 **Build**
 
-44. Charter ~~phase 3 (event studies)~~ (done 2026-09-30), ~~phase 4 (aggregates)~~ (done 2026-10-01), ~~phase 5 formula help~~ (done 2026-10-01; shareable URLs open)
+44. Charter ~~phase 3 (event studies)~~ (done 2026-09-30), ~~phase 4 (aggregates)~~ (done 2026-10-01), ~~phase 5 formula help~~ (done 2026-10-01). Shareable URLs: deferred by the user 2026-10-01.
     incl. a "?" formula-language help button next to the formula fields.
-45. Live red flags: add halts, share growth >= 1x, market cap < $10M next
-    to "Offering filed" (the dilution rules are validated; halts are not
-    yet 2022+-tested).
+45. Live red flags: add **halts** and **partnership PRs** (both validated
+    on 2022+, item 37), share growth >= 1x and market cap < $10M next to
+    "Offering filed". 10-K stays off (fails the in-band check).
 46. Liquidity-floor recalculation (was item 33; design in
     `docs/liquidity-floor-recalc.md`).
 47. IB Gateway must be logged in for `ib-short-availability`; it logs out

@@ -90,13 +90,16 @@ def main():
     """).fetchone()[0]
     cols = ["type", "period", "h", "run_ts", "n", "syms", "mean_x", "ci_lo", "ci_hi", "null_med", "p", "q",
             "candidate", "min_price", "max_price", "floor"]
+    # 2022+ rows only from runs in the same band as the discovery run shown next to them
+    # (the holdout also ran at $0.10-$5; mixing bands on one row would compare unlike things)
+    band = con.execute(f"select any_value(min_price), any_value(max_price), any_value(floor) from reg.tests where run_ts = '{full}'").fetchone()
     tests = con.execute(f"""
       select {', '.join(cols)} from reg.tests where run_ts = '{full}'
       union all
       select {', '.join(cols)} from (
         select *, row_number() over (partition by type, period, h order by run_ts desc) rk
-        from reg.tests where period = '2022+') where rk = 1
-    """).fetchall()
+        from reg.tests where period = '2022+' and min_price = ? and max_price = ? and floor = ?) where rk = 1
+    """, list(band)).fetchall()
     trows = [{**{("horizon" if c == "h" else c): clean(v) for c, v in zip(cols, r)}, "updated_at": now} for r in tests]
     rest.upsert("research_catalyst_tests", trows, "type,period,horizon")
     print(f"tests: {len(trows)} rows from run {full}")

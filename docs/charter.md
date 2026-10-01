@@ -206,4 +206,4 @@ error or a made-up number. "and" = multiply comparisons; "or" =
 3. ~~Event studies~~ — done 2026-09-30 (see above).
 4. ~~Aggregates over time~~ — done 2026-10-01 (see above).
 5. **Polish** — "?" formula help done 2026-10-01; public access decided
-   2026-09-30 (Tailscale Funnel); shareable URLs still an open question.
+   2026-09-30 (Tailscale Funnel); shareable URLs deferred by the user (2026-10-01).
