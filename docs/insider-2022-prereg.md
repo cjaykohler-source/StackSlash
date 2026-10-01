@@ -1,6 +1,6 @@
 # Size-conditioned insider buying — the 2022+ holdout, pre-registered
 
-**Status: DRAFT for review. Nothing below has been run on 2022+ data.**
+**Status: APPROVED 2026-10-01 (section 6). Nothing below has been run on 2022+ data at the time of approval.**
 Written 2026-10-01 (follow-up to README item 43). Once approved and merged,
 `research/catalysts/holdout_insider.py --run --approved-commit <sha>` runs
 the test **once**; it refuses if this file, `holdout_insider.py` or
@@ -85,12 +85,15 @@ larger in-band effect in 2022+ than in 2016-21.
 - **FAIL** → the Form 4 buy family is dropped (README item 43's original
   condition), recorded on /research.
 
-## 6. Decisions for you before approving
+## 6. Decisions (made 2026-10-01, before approval)
+
+The user asked for whichever option is more reliable, so the stricter
+design as drafted stands:
 
 1. One primary rule (≥ 0.1%), with ≥ 0.5% and any-buy as secondaries.
 2. The in-band requirement for "validated for use", knowing discovery
    alone would not meet it.
-3. Approve by merging this PR; the run is
+3. Approved by merging this document; the run is
 
 ```
 research/.venv/bin/python research/catalysts/holdout_insider.py --run --approved-commit <merge sha>
