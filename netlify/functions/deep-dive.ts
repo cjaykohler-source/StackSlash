@@ -4,6 +4,7 @@ import { buildAlertEmbed } from "./lib/discordEmbed";
 import { fetchSnapshots, fetchNews } from "./lib/alpaca";
 import { isRoundupHeadline } from "./lib/newsFilter";
 import { riskFlags, tradeSuggestion } from "./lib/riskFlags";
+import { catalystNewsAges, FLAG_DAYS, type NewsRow } from "./lib/catalystNews";
 import { fetchProfile } from "./lib/fmp";
 
 /**
@@ -257,6 +258,16 @@ export default async (req: Request) => {
     ? Math.max(0, Math.floor((Date.now() - Date.parse(`${(offering as { filing_date: string }).filing_date}T12:00:00Z`)) / 86400_000))
     : null;
 
+  // Halt / partnership headlines in the last 28 days (symbol_news keeps 30), research rules — lib/catalystNews.ts
+  const { data: recentNews } = await db
+    .from("symbol_news")
+    .select("headline, created_at, symbols")
+    .contains("symbols", [ticker])
+    .gte("created_at", new Date(Date.now() - FLAG_DAYS * 86400_000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(200);
+  const { haltDays, partnershipDays } = catalystNewsAges((recentNews as NewsRow[] | null) ?? []);
+
   const flags = riskFlags({
     price: currentPrice,
     vol_percentile_252d: factors?.vol_percentile_252d ?? null,
@@ -279,6 +290,8 @@ export default async (req: Request) => {
       fundamentals?.revenue_growth_yoy != null ? Number(fundamentals.revenue_growth_yoy) : null,
     zacks_rank: fundamentals?.zacks_rank != null ? Number(fundamentals.zacks_rank) : null,
     offering_days: offeringDays,
+    halt_days: haltDays,
+    partnership_days: partnershipDays,
     offering_form: (offering as { form: string } | null)?.form ?? null,
   });
 

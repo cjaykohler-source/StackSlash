@@ -236,9 +236,13 @@ their numbers unless marked here; new items continue from 34.
 
 44. Charter ~~phase 3 (event studies)~~ (done 2026-09-30), ~~phase 4 (aggregates)~~ (done 2026-10-01), ~~phase 5 formula help~~ (done 2026-10-01). Shareable URLs: deferred by the user 2026-10-01.
     incl. a "?" formula-language help button next to the formula fields.
-45. Live red flags: add **halts** and **partnership PRs** (both validated
-    on 2022+, item 37), share growth >= 1x and market cap < $10M next to
-    "Offering filed". 10-K stays off (fails the in-band check).
+45. ~~Live red flags~~ — **done 2026-10-01**: trading-halt and partnership-PR
+    headlines in the last 28 days are red (`lib/catalystNews.ts`, the research
+    patterns verbatim, <= 3 tickers; IPO-release halt notices excluded); red
+    moved to the validated thresholds — shares 2x+ YoY (was +50%) and market
+    cap < $10M (was < $50M); the in-between ranges are amber. 10-K stays off.
+    Still red on older evidence: <= 2 quarters of cash (the filing-state study
+    found runway weak/inconsistent) — a candidate to demote to amber.
 46. Liquidity-floor recalculation (was item 33; design in
     `docs/liquidity-floor-recalc.md`).
 47. IB Gateway must be logged in for `ib-short-availability`; it logs out

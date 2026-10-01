@@ -7,9 +7,13 @@
  * is moving or whether the move has legs. Flags are colour-coded by what
  * they mean for the trade, never by urgency:
  *   red   — a negative: something that tends to hurt a small long
- *           position. Only five: 25x+ volume (the backtested disaster
- *           tier), a share offering filed in the last 30 days, nano-cap,
- *           <=2 quarters of cash, shares +50% YoY.
+ *           position. 25x+ volume (the backtested disaster tier), and the
+ *           rules that held on the sealed 2022+ data: a share offering
+ *           filed in the last 30 days, shares 2x+ YoY, market cap under
+ *           $10M (docs/filing-state-study.md), a trading-halt headline or
+ *           a partnership / licensing PR in the last 20 sessions
+ *           (docs/catalyst-2022-prereg.md). Also <=2 quarters of cash
+ *           (older evidence; see that flag).
  *   amber — neutral / two-sided: a condition to be aware of that can go
  *           either way (news, earnings of any recency, unusual volume
  *           below 25x, parabolic run, biotech / crypto-AI catalyst risk).
@@ -48,6 +52,9 @@ export interface RiskInput {
   // days since the latest share-offering filing (S-1/S-3/F-1/F-3/424B4/424B5), if within 30
   offering_days?: number | null;
   offering_form?: string | null;
+  // days since the newest trading-halt / partnership headline (<= 3 tickers), if within 28 — lib/catalystNews.ts
+  halt_days?: number | null;
+  partnership_days?: number | null;
   zacks_rank?: number | null; // 1 (strong buy) .. 5 (strong sell)
 }
 
@@ -134,6 +141,22 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
       note: "A share-offering filing (S-1 / S-3 / 424B) in the last 30 days: new shares are coming or just priced, usually below market. Filtering these out improved recent backtests.",
     });
   }
+  // Validated out of sample, pre-registered (docs/catalyst-2022-prereg.md, run 2026-10-01): the 20
+  // sessions after these headlines vs the same stocks at random dates, 2022+, $0.10-$15 and in-band.
+  if (typeof x.halt_days === "number" && x.halt_days >= 0) {
+    f.push({
+      level: "red",
+      label: `Trading halt ${x.halt_days === 0 ? "today" : `${x.halt_days}d ago`}`,
+      note: "A trading-halt headline in the last 20 sessions. Validated on the sealed 2022+ data: these names did 9.5% worse than the same stocks at random dates over the next 20 sessions (9.7% worse in the $0.10-$5 band).",
+    });
+  }
+  if (typeof x.partnership_days === "number" && x.partnership_days >= 0) {
+    f.push({
+      level: "red",
+      label: `Partnership PR ${x.partnership_days === 0 ? "today" : `${x.partnership_days}d ago`}`,
+      note: "A partnership / collaboration / licensing / joint-venture headline in the last 20 sessions. Validated on the sealed 2022+ data: 1.6% worse than the same stocks at random dates over the next 20 sessions (2.2% worse in the $0.10-$5 band).",
+    });
+  }
   if (x.price != null && x.price < 1) {
     f.push({
       level: "amber",
@@ -142,14 +165,20 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
     });
   }
   if (typeof x.market_cap === "number" && x.market_cap > 0 && x.market_cap < 50_000_000) {
+    // Red only under $10M: that bucket measured -12.7% over 60 sessions on the sealed 2022+ data
+    // (docs/filing-state-study.md; a measured bucket, not one of its pre-named rules). $10-50M has
+    // no such result, so it is amber.
+    const tiny = x.market_cap < 10_000_000;
     f.push({
-      level: "red",
+      level: tiny ? "red" : "amber",
       // Sub-$1M caps are real on this universe (RETO ~$30k, SLXN ~$159k on
       // 2026-09-21), and `(cap / 1e6).toFixed(0)` rendered every one of them
       // as "$0M" — indistinguishable from missing data to a reader, and read
       // as exactly that during the 2026-09-21 audit. Scale the unit instead.
       label: `Nano-cap (${formatCap(x.market_cap)})`,
-      note: "Below ~$50M market cap — thin float, easily moved by a single order, and dilution/reverse-split prone.",
+      note: tiny
+        ? "Under $10M market cap. On the sealed 2022+ data this bucket did 12.7% worse than other in-band stocks over 60 sessions (filing-state study) — thin float, dilution and reverse-split prone."
+        : "Below ~$50M market cap — thin float, easily moved by a single order. Only the under-$10M bucket is a measured negative here.",
     });
   }
   if (x.is_adr) {
@@ -167,10 +196,15 @@ export function riskFlags(x: RiskInput): RiskFlag[] {
     });
   }
   if (typeof x.share_change_yoy === "number" && x.share_change_yoy >= 0.2) {
+    // Red from 2x (+100%): the pre-named rule that held on 2022+ (-6.7% over 60 sessions vs other
+    // in-band stocks, docs/filing-state-study.md). +20-100% is unmeasured, so amber.
+    const doubled = x.share_change_yoy >= 1;
     f.push({
-      level: x.share_change_yoy >= 0.5 ? "red" : "amber",
+      level: doubled ? "red" : "amber",
       label: `Shares +${Math.round(x.share_change_yoy * 100)}% YoY`,
-      note: "Heavy dilution over the last year — the count keeps climbing, which caps upside and often precedes more of the same.",
+      note: doubled
+        ? "The share count at least doubled in a year. Validated on the sealed 2022+ data: 6.7% worse than other in-band stocks over 60 sessions (filing-state study)."
+        : "Heavy dilution over the last year — the count keeps climbing. Only 2x+ is a measured negative here.",
     });
   }
   if (typeof x.book_equity === "number" && x.book_equity < 0) {
