@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EChartsOption } from "echarts";
 import { EChart } from "./EChart";
+import { FormulaHelp } from "./FormulaHelp";
 import { CharterApiError, charterGet, fmtValue, type MetricDef } from "../../lib/charterApi";
 
 /**
@@ -60,10 +61,12 @@ const EXCH = ["NASDAQ", "NYSE", "AMEX", "ARCA", "BATS", "OTC"];
 const COLORS = ["#4f8cff", "#f0a020", "#2ecc71", "#c86bff", "#ff6bd6", "#f5c542", "#e74c3c", "#8b93a7"];
 
 export function AggregatesView({
+  catalog,
   cfg,
   set,
   onApiError,
 }: {
+  catalog: MetricDef[];
   cfg: AggConfig;
   set: (p: Partial<AggConfig>) => void;
   onApiError: (m: string | null) => void;
@@ -74,6 +77,11 @@ export function AggregatesView({
   const [err, setErr] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [draft, setDraft] = useState<{ name: string; expr: string; how: "share" | "median" }>({ name: "", expr: "", how: "share" });
+  const formulaRef = useRef<HTMLInputElement>(null);
+  const helpMetrics = useMemo(
+    () => catalog.filter((m) => m.kind === "daily").map((m) => ({ id: m.id, label: m.label, group: m.group, unit: m.unit })),
+    [catalog],
+  );
 
   useEffect(() => {
     charterGet<{ series: SeriesDef[] }>("/aggregate_catalog")
@@ -289,8 +297,9 @@ export function AggregatesView({
           <option value="share">share of stocks where</option>
           <option value="median">median of</option>
         </select>
-        <input className="charter-formula" placeholder={draft.how === "share" ? "e.g. dist_sma20 > 0   or   change(close, 5) > 0.5" : "e.g. close_vs_vwap   or   zscore(volume, 20)"}
+        <input ref={formulaRef} className="charter-formula" placeholder={draft.how === "share" ? "e.g. dist_sma20 > 0   or   change(close, 5) > 0.5" : "e.g. close_vs_vwap   or   zscore(volume, 20)"}
                value={draft.expr} onChange={(e) => setDraft({ ...draft, expr: e.target.value })} onKeyDown={(e) => e.key === "Enter" && addCustom()} />
+        <FormulaHelp context="server" inputRef={formulaRef} value={draft.expr} onChange={(v) => setDraft((d) => ({ ...d, expr: v }))} metrics={helpMetrics} />
         <input className="charter-formula-name" placeholder="name (optional)" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         <button className="link-button" onClick={addCustom} disabled={cfg.custom.length >= 3}>Add</button>
         {cfg.custom.map((c, i) => (

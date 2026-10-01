@@ -3,6 +3,7 @@ import type { ECharts, EChartsOption } from "echarts";
 import { EChart } from "./EChart";
 import { CharterApiError, charterGet, fmtValue, type Columnar, type MetricDef } from "../../lib/charterApi";
 import { evaluateFormula, FormulaError } from "../../lib/formula";
+import { FormulaHelp } from "./FormulaHelp";
 
 /**
  * Charter phase 2: the cross-sectional explorer. Every stock on one date
@@ -137,6 +138,7 @@ export function CrossView({
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [draft, setDraft] = useState({ name: "", expr: "" });
   const [ferr, setFerr] = useState<string | null>(null);
+  const formulaRef = useRef<HTMLInputElement>(null);
 
   const run = useCallback(() => {
     setLoading(true);
@@ -474,8 +476,10 @@ export function CrossView({
       <div className="charter-controls charter-toggles">
         <span className="ops-dim">Formula</span>
         <input className="charter-formula-name" placeholder="name (optional)" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-        <input className="charter-formula" placeholder="e.g. short_float * vol_ratio   or   (cat60_offering > 0) * atr14_pct" value={draft.expr}
+        <input ref={formulaRef} className="charter-formula" placeholder="e.g. short_float * vol_ratio   or   (cat60_offering > 0) * atr14_pct" value={draft.expr}
                onChange={(e) => setDraft({ ...draft, expr: e.target.value })} onKeyDown={(e) => e.key === "Enter" && addFormula()} />
+        <FormulaHelp context="rowwise" inputRef={formulaRef} value={draft.expr} onChange={(v) => setDraft((d) => ({ ...d, expr: v }))}
+                     metrics={Object.entries(grouped).flatMap(([g, ids]) => ids.map((id) => ({ id, label: label(id), group: g, unit: unit(id) })))} />
         <button className="link-button" onClick={addFormula}>Add metric</button>
         {ferr && <span className="neg">{ferr}</span>}
         {cfg.formulas.map((f) => (

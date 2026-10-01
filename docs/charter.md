@@ -3,7 +3,7 @@
 Started 2026-09-30. `/charter` on the site: interactive exploration of the
 whole local research warehouse, for finding and checking signals. Phases 1
 (symbol deep dive), 2 (cross-section), 3 (event studies) and 4 (aggregates)
-are live; 5 (polish) is pending (README open item 44).
+are live; phase 5 added the formula help (shareable URLs: open question).
 
 ## Architecture
 
@@ -106,6 +106,11 @@ research/data/   stackslash.duckdb (SIP daily), minute/ (SIP 1-min, ~740k files)
 
 ## Formula language (both tabs)
 
+A **"?" button** next to every formula field (`src/components/charter/FormulaHelp.tsx`)
+opens the language on one card: what that tab allows, operators and
+functions, clickable examples (replace the field) and a searchable list of
+the metric names valid there (click inserts at the cursor).
+
 Purpose-built parser (`src/lib/formula.ts`), never `eval`:
 metric ids, numbers (`0.05`, `1e6`), `+ - * /`, `( )`, unary minus,
 comparisons `> < >= <= == !=` (1/0), functions `abs log sqrt min max`,
@@ -200,5 +205,5 @@ error or a made-up number. "and" = multiply comparisons; "or" =
 
 3. ~~Event studies~~ — done 2026-09-30 (see above).
 4. ~~Aggregates over time~~ — done 2026-10-01 (see above).
-5. **Polish** — "?" formula-language help next to the formula fields,
-   shareable URLs if wanted (public access: decided 2026-09-30, Tailscale Funnel).
+5. **Polish** — "?" formula help done 2026-10-01; public access decided
+   2026-09-30 (Tailscale Funnel); shareable URLs still an open question.
