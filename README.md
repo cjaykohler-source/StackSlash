@@ -189,6 +189,13 @@ edge.
   `refresh-fundamentals` was POSTing to the dead stackslash.netlify.app
   (fixed #223 — the site is **r10t.netlify.app**); `set-sip-floors-once`
   retired.
+- **Dossiers had stopped (found 2026-10-01).** The `deep_dive_webhook`
+  trigger's function `notify_deep_dive()` still posted to the dead
+  stackslash.netlify.app, so no trigger event since 2026-09-24 ~15:00 ET
+  got a dossier — no risk flags on the feed, no alerts. Fixed by migration
+  `notify_deep_dive_r10t_url`; no other function or cron job referenced
+  the old host. The ~181 events in between were left without dossiers
+  (rebuilding them would send stale alerts).
 
 ### Open items — the consolidated list (2026-09-30)
 
