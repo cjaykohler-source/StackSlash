@@ -98,10 +98,132 @@ so the next attempt doesn't re-discover the same dead ends.
 > and the current operational state. This file is the strategy, the
 > research derivations and the open decisions.
 
+## Session 2026-09-30 → 10-02 — Charter finished, the pre-registered tests, and production fixes
+
+**Read this before every section below it; where they disagree, this wins.**
+Its open-items list supersedes the 2026-09-30 one. Logistics in
+`docs/HANDOFF.md`; Charter in `docs/charter.md`. PRs #245-#268.
+
+### What the research established
+
+Every positive signal tried has now failed out of sample or never cleared
+discovery; **the only validated results are avoid rules.**
+
+- **Item 37 — the catalyst rules on sealed 2022+, pre-registered**
+  (`docs/catalyst-2022-prereg.md`): **trading halts** (−9.5% vs the same
+  names at random dates over 20 sessions, −9.7% in the $0.10-$5 band) and
+  **partnership / licensing PRs** (−1.6%, −2.2% in-band) are **validated for
+  use**. 10-K passes but not in-band. Earnings beat, 8-K 2.02 and 10-Q fail.
+  (Their 2022+ data is now spent; earnings *big* beat looked +1.2% as a
+  secondary but can only be tested on new forward data.)
+- **Item 43 — insider buys conditioned on size/role**: buys ≥ 0.1% of
+  market cap were the first positive candidate (+2.46%, q 0.057) and **failed
+  their pre-registered 2022+ test** (−0.52%; `docs/insider-2022-prereg.md`).
+  **The insider-buy family is dropped.**
+- **Item 38 — two-sided score** (P(+30%) − P(−20%)): fails 3 of 4; tilts the
+  top toward up-moves but only made money in 2020 (`docs/two-sided-score.md`).
+- **Item 39 — minute-bar direction on first big-volume days**: share of the
+  session above VWAP holds its *direction* out of sample (AUC 0.592 → 0.554)
+  but is not a trade (first big days lose −2.84%/5 sessions net), and as an
+  avoid rule it fails on discovery (fewer winners, not more losers) —
+  `docs/minute-direction.md`.
+- **Item 40 — overnight edge vs each stock's own spread**: no tradable edge;
+  only sub-$0.50 nights are positive on average and the median night loses
+  in 5 of 6 years (`docs/overnight-cost.md`).
+- **Measurement notes**: the +2.3%/20-session in-band baseline is right skew
+  plus the 2016/2020 rallies, not a data bug (`docs/return-inflation.md`;
+  report median, compounded and by-year next to any mean). Spread estimates
+  from daily ranges overstate real spreads 4-10x (below).
+- **Descriptive (not a rule)**: Nasdaq stocks under $1 for 30 sessions that
+  close up 40%+ in a day — 2022+ median −29% after 20 sessions, −44% after 60;
+  half fall ≥ 30% within a month; ~1/3 touch +50% intraday at some point.
+
+### What was built
+
+- **Charter** complete: phase 3 event studies (#246/#247), phase 4 aggregates
+  (#249), phase 5 "?" formula help (#250). **Public access** via Tailscale
+  Funnel on the same URL with API-side rate limits and a rejected-token cache
+  (#245). Shareable URLs deferred by the user.
+- **Live red flags** (#253, #255): trading-halt and partnership-PR headlines
+  in the last 28 days are red (`netlify/functions/lib/catalystNews.ts`, the
+  research patterns verbatim); red only at validated thresholds — shares 2x+
+  YoY, market cap < $10M; cash runway is amber.
+- **Holdout machinery**: `research/catalysts/holdout_2022.py` /
+  `holdout_insider.py` run a pre-registered test once and refuse if the
+  frozen files changed; the harness writes per-run JSON with one-sided p and
+  net returns.
+- **Spread estimates from minute bars** (#268): `scripts/spread_minute_sync.py`
+  (launchd 21:00 ET weekdays) fills `symbol_spread_estimates`; pg_cron
+  `refresh-spread-estimates` paused; `fire_outcomes.cost_pct` recomputed
+  (median 1.76% → 0.43%; originals in `cost_pct_cs_daily`).
+
+### What was broken and fixed
+
+- **Dossiers had silently stopped 09-24 → 10-01**: the DB webhook
+  `notify_deep_dive()` still posted to the dead stackslash.netlify.app.
+  Fixed by migration; all 209 missed events rebuilt **point in time** with
+  deep-dive's new backfill mode (#265/#266).
+- **eod-scan dated rows by UTC**: a run after 20:00 ET stamped the next day
+  and shifted the catalyst window (#248). Found after a 5-hour network outage
+  (a Tailscale setup issue) on 09-30 failed every job; 10-01 wrong-dated rows
+  deleted by the user, rerun.
+- **sec-filings-sync**: a SEC 503 on the not-yet-published same-day index
+  failed the run; now no same-day request before 21:00 ET, 429/5xx retried,
+  7-day overlap so a skipped day is retried (#258).
+- research-publish: two DuckDB keyword-alias errors (fixed before the first
+  scheduled run, which then ran clean).
+
+### Open items — the consolidated list (2026-10-02)
+
+Supersedes the 2026-09-30 list. Items 1-33 from the 2026-09-28 list stay
+open with their numbers unless closed below; 34-47 are resolved here except
+where listed; new items continue from 48.
+
+- **Closed this session:** 34 (Funnel), 37, 38, 39, 40, 43, 44 (Charter;
+  URLs deferred), 45 (live flags).
+
+**Decisions for the user**
+
+36. **The agent-trader's shape** (planned for 2026-10-02): the evidence points
+    to an index core, a small rules-based sleeve, the validated vetoes
+    (dilution, halts, partnership PRs, cap < $10M, shares 2x+), and the agent
+    as analyst / risk officer — not a signal-finder.
+35. Paid pre-2018 short / float / borrow history — only if the short family
+    is revived (no timing signal on 2018+).
+
+**Research**
+
+41. Confluence search / tree model on the breakout v2 table (needs
+    scikit-learn) — low expected value given everything above.
+42. Reddit attention: collecting hourly since 09-30; testable after a few
+    months.
+48. Any new rule must now be tested on **forward data** for types whose 2022+
+    is spent (halts, partnership, 10-K, earnings types, insider buys,
+    big-beat). Consider a dated "fresh holdout" from 2026-10 onward.
+
+**Build / ops**
+
+46. Liquidity-floor recalculation (`docs/liquidity-floor-recalc.md`).
+47. IB Gateway logs out ~daily (IBC or accept gaps).
+49. **Dossier coverage check**: a trigger_event with no dossier went
+    unnoticed for a week, and `net._http_response` keeps only ~6 h. Add a
+    "trigger_events without a dossier after 15 min" check to
+    `data-integrity-check` / `/ops`.
+50. **Heartbeat-silence alert**: the 09-30 outage was visible only on /ops.
+    Send a Discord message when `ops_host_status` goes stale.
+51. First live firing of the halt / partnership flags: confirm on a real
+    dossier and the feed (they have fired on backfilled dossiers only).
+52. 436 symbols still carry the old daily spread estimate (too little minute
+    data) — decide whether to fall back to the tick floor for those.
+53. Intraday backfilled dossiers use the prior close, not the fire price
+    (the `trigger_events` snapshot could carry it).
+
+---
+
 ## Session 2026-09-29/30 — agentic-trader research, the catalyst harness, and the Research / Ops / Charter pages
 
 **Read this before every section below it; where they disagree, this wins.**
-Its open-items list supersedes the 2026-09-28 one. Logistics (jobs,
+(Superseded by the 2026-09-30 → 10-02 section above.) Its open-items list supersedes the 2026-09-28 one. Logistics (jobs,
 tunnel, services) are in `docs/HANDOFF.md`; Charter in `docs/charter.md`.
 
 ### What the research established
