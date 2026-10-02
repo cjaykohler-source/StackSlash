@@ -125,7 +125,7 @@ PostgREST pagination silently skips rows without an explicit `.order()`.
 
 | Time | Job | Does |
 |---|---|---|
-| Sun 03:00 ET (07:00 UTC) | `refresh-spread-estimates` | Abdi-Ranaldo spread estimates |
+| ~~Sun 03:00 ET (07:00 UTC)~~ | ~~`refresh-spread-estimates`~~ | **Paused 2026-10-02** (daily Corwin-Schultz, overstated spreads 4-10x); replaced by launchd `spread-minute-sync`, 21:00 ET weekdays, below. Re-enable with `select cron.alter_job(1, active := true)` |
 | Mon 02:00 ET (06:00 UTC) | `weekly-bars-scan` | `bars_weekly` |
 
 **Added 2026-09-30 — launchd**
@@ -137,6 +137,7 @@ PostgREST pagination silently skips rows without an explicit `.order()`.
 | every 5 min | `ops-heartbeat` | `scripts/ops_heartbeat.py`: every `com.stackslash.*` job's loaded / pid / last exit / newest log -> `ops_host_status` (the `/ops` page) |
 | always on | `charter-api` | `research/charter_api/server.py` on 127.0.0.1:8787, behind `/charter`; reached via Tailscale Funnel (public URL, API-side auth + rate limits) |
 | 21:15 daily | `supabase-backup` | now actually works (see §1) |
+| 21:00 weekdays (added 2026-10-02) | `spread-minute-sync` | `scripts/spread_minute_sync.py`: per-symbol round-trip spread from the local 1-minute warehouse (Abdi-Ranaldo on consecutive minutes, median of the last 20 sessions) -> `symbol_spread_estimates` (`method = 'ar_minute_20d'`); the cost used by `record-fire-outcomes` / `sim-flip-exits` |
 
 Retired 2026-09-30: `set-sip-floors-once` (a finished one-off; plist moved
 to `~/Library/LaunchAgents/retired/`).

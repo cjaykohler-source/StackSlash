@@ -252,9 +252,13 @@ Report median, compounded and by-year returns next to any mean.
     (`docs/overnight-cost.md`). The daily spread estimator overstates spreads
     5-15x here; with minute-bar spreads only sub-$0.50 nights are positive on
     average (+0.35-0.61%), and the median night loses in 5 of 6 years
-    (lower-bound costs, partial bid-ask bounce, tiny capacity). Side finding:
-    production `symbol_spread_estimates` (daily Abdi-Ranaldo) likely overstates
-    spreads the same way.
+    (lower-bound costs, partial bid-ask bounce, tiny capacity). Side finding,
+    **fixed 2026-10-02**: production `symbol_spread_estimates` (daily
+    Corwin-Schultz) overstated spreads 4-10x by price bucket (median $2-5:
+    1.89% vs 0.22% from minute bars). Now filled nightly from minute bars by
+    `scripts/spread_minute_sync.py` (launchd, 21:00 ET weekdays; pg_cron job
+    paused); `fire_outcomes.cost_pct` recomputed (median 1.76% -> 0.43%; the
+    old values kept in `cost_pct_cs_daily`).
 41. Confluence search (pre-set condition pairs/triples, walk-forward,
     multiple-testing corrected) and a tree model (needs scikit-learn in
     `research/.venv`) on the breakout v2 table.
