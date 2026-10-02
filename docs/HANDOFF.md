@@ -286,7 +286,29 @@ widths, overflow) rather than eyeballing it.
 
 ---
 
-## 8. Current state, 2026-09-30 evening ET
+## 8. Current state, 2026-10-02
+
+- **Read `README.md` -> "Session 2026-09-30 → 10-02"** first; its open-items
+  list (to item 53) supersedes every earlier one.
+- `main` is clean apart from the local `.claude/launch.json` (`dev-5174`
+  entry, deliberately uncommitted). Everything is merged (last: #268).
+- **New since 09-30:** Charter public via Tailscale **Funnel** (API
+  rate-limited); Charter phases 3-5; live red flags for halts and
+  partnership PRs; launchd `spread-minute-sync` (21:00 ET weekdays) with
+  pg_cron `refresh-spread-estimates` **paused**; deep-dive webhook pointed at
+  r10t (it had been dead since 09-24) and a point-in-time `backfill` mode
+  (`POST {trigger_event_id, backfill: true}`); eod-scan dates rows by session;
+  sec-filings-sync retries/overlap.
+- **Verified 10-01 evening:** eod-scan ok (as_of = the session), 9/9
+  trigger events got dossiers (HTTP 200), the 18:10 digest sent from real
+  dossiers; research-publish's first scheduled run clean.
+- **Sealed data:** 2022+ is now spent for the item-37 types and the insider
+  size types (see `docs/catalyst-2022-prereg.md`, `docs/insider-2022-prereg.md`);
+  the registry (`research/data/catalysts/registry.duckdb`) records every run.
+- Known red/amber on `/ops`: `ib-short-availability` when IB Gateway is
+  logged out (item 47).
+
+## 8z. State, 2026-09-30 evening ET
 
 - **Read `README.md` -> "Session 2026-09-29/30"** first; its open-items
   list (numbers up to 47) supersedes every earlier one.
@@ -358,6 +380,12 @@ next steps" for the full list of what is pending and why.
 
 - Feature branch → PR → merge with `gh pr merge --merge --delete-branch`,
   then confirm the deploy by hash.
+- **Research tests are pre-registered**: rules, settings and pass/fail in a
+  doc + a frozen runner (`holdout_*.py`) before any sealed number; the user
+  approves by merge; results recorded verbatim. When unsure, the user wants
+  the more reliable (stricter) option.
+- **Point-in-time rule**: anything rebuilt after the fact (dossiers, flags)
+  must use only data known at the event's timestamp.
 - One small PR per UI change, each verified on the live site.
 - Trading/portfolio actions are never automated; the Robinhood connector is
   read-only and the IB API is Read-Only.
@@ -373,11 +401,10 @@ next steps" for the full list of what is pending and why.
 
 Read in this order:
 
-1. **`README.md` -> "Session 2026-09-29/30 — agentic-trader research,
-   the catalyst harness, and the Research / Ops / Charter pages"**. It is
-   the current state and supersedes every section below it. Its **"Open
-   items — the consolidated list (2026-09-30)"** replaces every earlier
-   to-do list in that file.
+1. **`README.md` -> "Session 2026-09-30 → 10-02 — Charter finished, the
+   pre-registered tests, and production fixes"**, then "Session 2026-09-29/30".
+   The newest section supersedes everything below it; its **"Open items —
+   the consolidated list (2026-10-02)"** replaces every earlier to-do list.
    Then `docs/charter.md` (the visualizer), `docs/catalyst-harness.md`,
    `docs/filing-state-study.md`, `docs/breakout-study.md`.
 2. **`docs/research-audit-plan.md`** — what has and has not been verified.
