@@ -27,6 +27,14 @@
  *    assumed flat. Computed in SQL (see estimate_symbol_spreads()) and
  *    read from symbol_spread_estimates.
  *
+ *    **Superseded 2026-10-02.** On this $0.10-$5 universe the daily-range
+ *    estimate overstated spreads 4-10x (daily ranges are mostly
+ *    volatility). symbol_spread_estimates is now filled nightly by
+ *    scripts/spread_minute_sync.py — Abdi-Ranaldo on 1-minute bars, median
+ *    of the last 20 sessions (method = 'ar_minute_20d'); the pg_cron job is
+ *    paused. Rows still marked 'cs_daily_380d' are symbols without enough
+ *    minute data. docs/overnight-cost.md has the comparison.
+ *
  * Taking the max is deliberate. Corwin-Schultz is known to be noisy on
  * thin names and can return implausibly small (or negative, floored to
  * zero) values when a symbol barely trades and its high equals its low.
