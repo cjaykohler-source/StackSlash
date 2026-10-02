@@ -248,8 +248,13 @@ Report median, compounded and by-year returns next to any mean.
     net, the better tercile −1.54%. As an avoid rule (below-VWAP first big
     days) it fails on 2016-21 itself — fewer big winners, not more losers —
     so it was not pre-registered and 2022+ was not spent.
-40. Overnight-cycle cost check by price/liquidity bucket against each
-    name's own estimated spread (`overnight_cycle.py`).
+40. ~~Overnight cost check~~ — **done 2026-10-01, no tradable edge**
+    (`docs/overnight-cost.md`). The daily spread estimator overstates spreads
+    5-15x here; with minute-bar spreads only sub-$0.50 nights are positive on
+    average (+0.35-0.61%), and the median night loses in 5 of 6 years
+    (lower-bound costs, partial bid-ask bounce, tiny capacity). Side finding:
+    production `symbol_spread_estimates` (daily Abdi-Ranaldo) likely overstates
+    spreads the same way.
 41. Confluence search (pre-set condition pairs/triples, walk-forward,
     multiple-testing corrected) and a tree model (needs scikit-learn in
     `research/.venv`) on the breakout v2 table.
