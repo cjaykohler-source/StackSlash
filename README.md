@@ -187,7 +187,9 @@ where listed; new items continue from 48.
 36. **The agent-trader's shape** (planned for 2026-10-02): the evidence points
     to an index core, a small rules-based sleeve, the validated vetoes
     (dilution, halts, partnership PRs, cap < $10M, shares 2x+), and the agent
-    as analyst / risk officer — not a signal-finder.
+    as analyst / risk officer — not a signal-finder. **Proposal:
+    `docs/agent-trader.md` (2026-10-03; sleeve empty until a forward test
+    passes).**
 35. Paid pre-2018 short / float / borrow history — only if the short family
     is revived (no timing signal on 2018+).
 
