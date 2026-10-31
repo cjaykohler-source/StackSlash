@@ -145,3 +145,10 @@
 # which records itself in job_runs). estimate_symbol_spreads() outlasts
 # Supabase's ~125s API gateway, so calling it over HTTP from a function
 # logged an error every run while the query actually finished.
+
+# Web app manifest (home-screen install); Netlify serves .webmanifest as
+# octet-stream without this.
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
