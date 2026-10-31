@@ -228,7 +228,7 @@ where listed; new items continue from 48.
 **Build / ops**
 
 46. Liquidity-floor recalculation (`docs/liquidity-floor-recalc.md`).
-47. IB Gateway logs out ~daily (IBC or accept gaps).
+47. IB Gateway logs out ~daily (IBC or accept gaps). **Borrow job turned off 2026-10-31** (low value: only the Financials panel reads it). Revisit only if a squeeze / hard-to-borrow study is planned; borrow history can only be collected forward.
 49. **Dossier coverage check**: a trigger_event with no dossier went
     unnoticed for a week, and `net._http_response` keeps only ~6 h. Add a
     "trigger_events without a dossier after 15 min" check to

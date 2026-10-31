@@ -51,7 +51,7 @@ interface Run {
   status: string;
 }
 
-type State = "ok" | "running" | "failed" | "stuck" | "overdue" | "idle" | "never" | "not-loaded";
+type State = "ok" | "running" | "failed" | "stuck" | "overdue" | "idle" | "paused" | "never" | "not-loaded";
 const STATE_LABEL: Record<State, string> = {
   ok: "OK",
   running: "Running",
@@ -59,10 +59,12 @@ const STATE_LABEL: Record<State, string> = {
   stuck: "Stuck",
   overdue: "Overdue",
   idle: "Idle (off-hours)",
+  paused: "Turned off",
   never: "No runs",
   "not-loaded": "Not loaded",
 };
-const GROUPS = ["Market hours", "Always on", "Daily", "End of day", "Weekly"];
+// "Paused": jobs turned off on purpose (launchd job disabled); shown, never red.
+const GROUPS = ["Market hours", "Always on", "Daily", "End of day", "Weekly", "Paused"];
 
 /** Postgres interval text ("20:00:00", "1 day 02:00:00", "8 days") -> ms. */
 function intervalMs(v: string): number {
@@ -97,6 +99,7 @@ function ago(ts: string | null | undefined, now: number): string {
 
 function judge(job: OpsJob, sum: Summary | undefined, hs: HostStatus | undefined, now: Date): { state: State; last: string | null } {
   const last = job.records_runs ? sum?.started_at ?? null : hs?.last_log_at ?? null;
+  if (job.grp === "Paused") return { state: "paused", last };
   if (job.host === "launchd" && hs && hs.loaded === false) return { state: "not-loaded", last };
   // always-on services (KeepAlive) are healthy while their process is alive,
   // whatever their start-of-life job_runs row says
