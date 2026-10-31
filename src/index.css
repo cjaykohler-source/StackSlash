@@ -1242,12 +1242,6 @@ body {
 .trigger-feed td.col-num.down {
   color: var(--red);
 }
-@media (max-width: 560px) {
-  .trigger-feed th.col-num,
-  .trigger-feed td.col-num {
-    display: none;
-  }
-}
 .trigger-feed a,
 .trigger-feed a:visited {
   color: var(--accent);
@@ -3011,4 +3005,46 @@ h1 .quote-tag {
     color: var(--text-dim);
     font-size: 0.85rem;
   }
+}
+
+/* Feed on a phone: each row becomes a card.
+     TICKER            $price   +x.x%
+     [catalyst]        flags
+     10:32:01 AM ×2    fired $x.xx
+   The whole card opens the symbol (the ticker link is stretched over it);
+   the flag icons sit above that so their tooltips still open. */
+@media (max-width: 640px) {
+  .trigger-feed-panel { padding: 8px; }
+  .trigger-feed-scroll { overflow: visible; }
+  .trigger-feed, .trigger-feed tbody { display: block; }
+  .trigger-feed colgroup, .trigger-feed thead { display: none; }
+  .trigger-feed tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "sym price pct"
+      "cat flags flags"
+      "time fired fired";
+    align-items: center;
+    gap: 4px 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  .trigger-feed tr + tr { margin-top: 8px; }
+  .trigger-feed td { display: block; padding: 0; border: 0; background: none !important; box-shadow: none !important; }
+  .trigger-feed-row-high { box-shadow: inset 3px 0 0 var(--red); background: rgba(231, 76, 60, 0.06) !important; }
+  .trigger-feed td:nth-child(1) { grid-area: time; color: var(--text-dim); font-size: 0.8rem; }
+  .trigger-feed td:nth-child(2) { grid-area: sym; font-size: 1.1rem; font-weight: 700; }
+  .trigger-feed td:nth-child(2) a::after { content: ""; position: absolute; inset: 0; }
+  .trigger-feed td:nth-child(3) { grid-area: cat; }
+  .trigger-feed td:nth-child(4) { grid-area: flags; justify-self: end; position: relative; z-index: 1; }
+  .trigger-feed td:nth-child(4):empty { display: none; }
+  .trigger-feed td:nth-child(5) { grid-area: fired; justify-self: end; color: var(--text-dim); font-size: 0.8rem; }
+  .trigger-feed td:nth-child(5)::before { content: "fired "; }
+  .trigger-feed td:nth-child(6) { grid-area: price; font-weight: 600; }
+  .trigger-feed td:nth-child(7) { grid-area: pct; font-weight: 600; min-width: 3.5em; }
+  .trigger-feed-row-high td:first-child { box-shadow: none; }
 }
