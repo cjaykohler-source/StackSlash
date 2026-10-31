@@ -6,8 +6,8 @@
     <string>com.stackslash.charter-api</string>
 
     <!-- Charter API for the /charter page. Always on (KeepAlive); binds
-         127.0.0.1:8787 only. Remote access is Tailscale Serve (tailnet-only),
-         configured separately with: tailscale serve --bg --https=443 http://127.0.0.1:8787
+         127.0.0.1:8787 only. Remote access is a Cloudflare Tunnel, run by
+         com.stackslash.cloudflared (scripts/launchd/com.stackslash.cloudflared.plist).
          See scripts/run-charter-api.sh and research/charter_api/server.py. -->
     <key>ProgramArguments</key>
     <array>

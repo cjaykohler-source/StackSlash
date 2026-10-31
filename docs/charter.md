@@ -8,10 +8,10 @@ are live; phase 5 added the formula help (shareable URLs: open question).
 ## Architecture
 
 ```
-browser (r10t.netlify.app/charter, or local dev)
+browser (thebrewcible.com/charter or r10t.netlify.app/charter, or local dev)
    │  fetch + Authorization: Bearer <Supabase access token>
    ▼
-Tailscale Funnel https://stackslash-worker-host.tail3d8cea.ts.net   (public; tailnet devices reach it directly)
+Cloudflare Tunnel https://charter.thebrewcible.com   (public; launchd com.stackslash.cloudflared)
    ▼
 Charter API      127.0.0.1:8787   research/charter_api/server.py    (launchd com.stackslash.charter-api, KeepAlive)
    ▼
@@ -25,13 +25,18 @@ research/data/   stackslash.duckdb (SIP daily), minute/ (SIP 1-min, ~740k files)
   public tunnel -> cloud) — no page rewrite.
 - **Access:** the site reads the API URL from the Netlify env var
   `VITE_CHARTER_API_URL` (local dev defaults to `http://127.0.0.1:8787`).
-  **Tailscale Funnel** (decided 2026-09-30, README item 34) publishes the
-  same ts.net URL to the internet, so any signed-in device works without
-  Tailscale installed and the site config is unchanged. Funnel needs the
-  `funnel` node attribute in the tailnet policy (admin console, owner
-  only); then `tailscale funnel --bg --https=443 http://127.0.0.1:8787`
-  replaces the tailnet-only `tailscale serve` of the same port. Revert
-  with `tailscale funnel --https=443 off` + the old `serve` line.
+  A **Cloudflare Tunnel** (2026-10-31; replaced Tailscale Funnel, which the
+  user dropped) publishes it at `https://charter.thebrewcible.com`. Named
+  tunnel `stackslash-charter` (id `c335cd7f-…`) on the user's Cloudflare
+  account; `thebrewcible.com` DNS is on Cloudflare (`charter` is the
+  tunnel's proxied CNAME; the site's apex/`www` CNAMEs to Netlify are DNS
+  only). Config `~/.cloudflared/config.yml` (ingress
+  `charter.thebrewcible.com -> http://127.0.0.1:8787`, else 404) and the
+  secret credentials `~/.cloudflared/<id>.json` stay out of git; run by
+  launchd `com.stackslash.cloudflared` (KeepAlive). The rate limiter keys
+  on `CF-Connecting-IP`. CORS allows r10t.netlify.app, thebrewcible.com,
+  www and local dev. Stop with
+  `launchctl bootout gui/$(id -u)/com.stackslash.cloudflared`.
 - **Security:** every request needs the signed-in Supabase session; the
   API verifies it against Supabase (`/auth/v1/user`, cached 5 min) and
   requires the user id in `CHARTER_ALLOWED_USER_IDS` (.env). Rejected
