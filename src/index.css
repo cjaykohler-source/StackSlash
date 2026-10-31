@@ -3077,3 +3077,14 @@ h1 .quote-tag {
   .research-tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
   .research-tab { white-space: nowrap; }
 }
+
+/* Home-screen app (standalone, translucent status bar): keep content clear
+   of the notch and home indicator. */
+@media (max-width: 760px) {
+  .page {
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: max(48px, env(safe-area-inset-bottom));
+  }
+}
