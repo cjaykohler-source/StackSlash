@@ -2963,8 +2963,8 @@ h1 .quote-tag {
 .app-menu { display: none; position: relative; }
 .app-menu summary { list-style: none; }
 .app-menu summary::-webkit-details-marker { display: none; }
-.app-menu summary::after { content: " ▾"; font-size: 0.8em; }
-.app-menu[open] summary::after { content: " ▴"; }
+.app-menu summary::after { content: " \25BE"; font-size: 0.8em; }
+.app-menu[open] summary::after { content: " \25B4"; }
 .app-menu-list {
   position: absolute;
   right: 0;
