@@ -109,7 +109,7 @@ PostgREST pagination silently skips rows without an explicit `.order()`.
 | Mon 08:00 | `refresh-fundamentals` | launchd | DoltHub statements + Zacks → `fundamentals` (the only writer of that table; loaded 2026-09-21) |
 | 07:15 weekdays | `finra-short-interest-sync` | launchd | FINRA short interest, skips settlements already loaded |
 | 07:30 / 17:30 / **22:30** weekdays | `sec-filings-sync` | launchd | EDGAR daily index → `sec_filings`. EDGAR publishes a session's index in the evening, so **22:30 is the run that lands that day's filings** |
-| 09:45, 15:15 weekdays | `ib-short-availability` | launchd | IBKR shares-to-borrow. Needs IB Gateway logged in |
+| **off since 2026-10-31** (was 09:45, 15:15 weekdays) | `ib-short-availability` | launchd (disabled) | IBKR shares-to-borrow. Nothing reads it but the Financials panel; last capture 2026-10-01. Shown as "Turned off" on /ops (`ops_jobs.grp = 'Paused'`). Restart: `launchctl enable` + `bootstrap` the plist, log IB Gateway in, set `grp` back to `Daily` |
 | 11:00 UTC weekdays | `sync-corporate-actions` | Netlify | Alpaca reverse-split feed → `corporate_actions` (added 2026-09-25 — persists what `eod-scan.ts` previously only held in memory) |
 | 17:45 weekdays | `eod-scan` | launchd | Daily factors + daily triggers (~200 s, ~4,980 rows) |
 | 18:10 weekdays | `eod-digest` | launchd | One ranked Discord card |
