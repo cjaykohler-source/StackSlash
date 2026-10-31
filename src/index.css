@@ -3048,3 +3048,22 @@ h1 .quote-tag {
   .trigger-feed td:nth-child(7) { grid-area: pct; font-weight: 600; min-width: 3.5em; }
   .trigger-feed-row-high td:first-child { box-shadow: none; }
 }
+
+/* Symbol page on a phone: one column in reading order — chart, then the
+   snapshot (price stats + factors, two to a row), then triggers/news,
+   financials and dossiers. The snapshot is a sibling of the main column, so
+   the main column dissolves (display: contents) to let `order` interleave. */
+@media (max-width: 760px) {
+  .symbol-body { display: flex; flex-direction: column; gap: 12px; }
+  .symbol-body-main { display: contents; }
+  .symbol-body-main > section { order: 3; min-width: 0; }
+  .symbol-body-main > section:first-child { order: 1; }
+  .chart-stats-col { order: 2; }
+  .chart-stats-col .candle-stats { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
+  .chart-stats-col .candle-interval { grid-column: 1 / -1; }
+  .chart-stats-col .factor-snapshot .dossier-metrics { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
+  .page-header h1 { font-size: 1.2rem; }
+  .symbol-quote-price { font-size: 1.7rem; }
+  .symbol-header-title { flex-basis: 100%; margin-bottom: 4px; }
+  .range-toggle button { padding: 6px 10px; }
+}
