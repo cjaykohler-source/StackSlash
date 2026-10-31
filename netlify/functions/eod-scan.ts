@@ -495,8 +495,12 @@ export default async () => {
     // factor_state JSON snapshot in `inputs` — a single unbatched insert
     // of that size hit Postgres's statement timeout (57014) once the
     // NYSE ingestion made this table's per-run write big enough to matter.
-    for (let i = 0; i < evaluations.length; i += UPSERT_BATCH) {
-      const { error } = await db.from("trigger_evaluations").insert(evaluations.slice(i, i + UPSERT_BATCH));
+    // At the ~5,000-symbol universe it is ~55,000 rows a night, and 5,000-
+    // row batches took 3-6 s each against the 8 s statement timeout: two of
+    // three runs on 2026-10-30 died here. 1,000-row batches stay well clear.
+    const EVAL_BATCH = 1000;
+    for (let i = 0; i < evaluations.length; i += EVAL_BATCH) {
+      const { error } = await db.from("trigger_evaluations").insert(evaluations.slice(i, i + EVAL_BATCH));
       if (error) throw error;
     }
 
