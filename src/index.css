@@ -2960,3 +2960,55 @@ h1 .quote-tag {
 .charter-help-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; margin-top: 6px; }
 .charter-help-metric { display: block; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 4px; padding: 1px 4px; color: var(--text-dim); cursor: pointer; font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) { .charter-help-cols { grid-template-columns: 1fr; } }
+
+/* ---- Phone layout (≤ 760px) ------------------------------------------------
+   Desktop is unchanged. On a phone the header is logo + Menu on one row and
+   the symbol search on a full-width row below; the page buttons live in the
+   Menu dropdown. */
+.app-header-links { display: contents; }
+.app-menu { display: none; position: relative; }
+.app-menu summary { list-style: none; }
+.app-menu summary::-webkit-details-marker { display: none; }
+.app-menu summary::after { content: " ▾"; font-size: 0.8em; }
+.app-menu[open] summary::after { content: " ▴"; }
+.app-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 170px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.app-menu-list .link-button { padding: 10px 12px; font-size: 1rem; text-align: left; }
+.desktop-only-note { display: none; }
+
+@media (max-width: 760px) {
+  html, body { overflow-x: hidden; }
+  .page { padding: 12px 16px 48px; }
+  .brand-logo { height: 40px; }
+  .app-header { flex-wrap: wrap; row-gap: 10px; }
+  .app-menu { display: block; }
+  .app-header-links { display: none; }
+  .app-header-nav { flex: 1 1 100%; order: 3; justify-content: stretch; }
+  .app-header-nav .symbol-search { flex: 1 1 auto; max-width: none; margin-right: 0; }
+  /* 16px stops iOS zooming the page when the field is focused. */
+  .symbol-search input,
+  input, select, textarea { font-size: 16px; }
+  .desktop-only-note {
+    display: block;
+    margin: 0 0 14px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+}
