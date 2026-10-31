@@ -17,7 +17,7 @@ the research derivations and the open decisions.
 | Access / credential map | `docs/ACCESS.md` — accounts to be invited to, credential names, what each key can do, handover checklist |
 | Secrets | `~/StackSlash/.env` (not in git). Netlify has its own copy of the same vars in site settings |
 | Local backups | `~/StackSlashBackups/` — nightly 21:15 (`supabase-backup`, keeps 14). Was silently writing empty files 09-21..09-29; fixed #224, verified 227 MB dumps on 09-30 |
-| Tailscale | Tailnet `tail3d8cea.ts.net`: this Mac is `stackslash-worker-host` (100.111.124.95), plus the owner's iPhone. **Tailscale Funnel** publishes the Charter API at `https://stackslash-worker-host.tail3d8cea.ts.net` to the internet (`tailscale funnel --bg --https=443 http://127.0.0.1:8787`; chosen 2026-09-30 so remote devices need no Tailscale). The API does its own auth + rate limiting (`docs/charter.md`) |
+| Domain + tunnel | **`thebrewcible.com`** (registrar Network Solutions, DNS on Cloudflare since 2026-10-31) is the site's primary domain on Netlify (apex + `www` CNAME -> r10t.netlify.app, DNS only; Let's Encrypt via Netlify). `r10t.netlify.app` still answers directly and is what the DB webhook, pg_cron and launchd jobs call. **Cloudflare Tunnel** `stackslash-charter` publishes the Charter API at `https://charter.thebrewcible.com` (launchd `com.stackslash.cloudflared`; config + credentials in `~/.cloudflared/`, not in git). Replaced Tailscale Funnel 2026-10-31; the user doesn't want Tailscale. The API does its own auth + rate limiting (`docs/charter.md`) |
 | Logs | `~/Library/Logs/stackslash-<job>/` , one directory per job |
 | launchd units | `~/Library/LaunchAgents/com.stackslash.*.plist`, copies tracked in `scripts/launchd/` |
 
@@ -135,7 +135,8 @@ PostgREST pagination silently skips rows without an explicit `.order()`.
 | 05:30 daily | `research-publish` | `scripts/run-research-publish.sh`: EDGAR bulk (`submissions.zip` nightly, `companyfacts.zip` Sundays) -> news (current + previous month) -> new Form 4s -> rebuild catalyst event tables (going-concern search incremental, DoltHub earnings Mondays) -> publish to `research_*` (behind `/research`) -> rebuild Charter's `daily_metrics` table. Failed steps are logged and skipped; log `~/Library/Logs/stackslash-research-publish/` |
 | hourly | `reddit-collect` | ApeWisdom mention snapshots, r/pennystocks + r/stocks + r/wallstreetbets -> `research/data/catalysts/raw/reddit.duckdb`. Forward-only; numbers only, no Reddit content |
 | every 5 min | `ops-heartbeat` | `scripts/ops_heartbeat.py`: every `com.stackslash.*` job's loaded / pid / last exit / newest log -> `ops_host_status` (the `/ops` page) |
-| always on | `charter-api` | `research/charter_api/server.py` on 127.0.0.1:8787, behind `/charter`; reached via Tailscale Funnel (public URL, API-side auth + rate limits) |
+| always on | `charter-api` | `research/charter_api/server.py` on 127.0.0.1:8787, behind `/charter`; public at https://charter.thebrewcible.com through the Cloudflare Tunnel (API-side auth + rate limits) |
+| always on (added 2026-10-31) | `cloudflared` | Cloudflare Tunnel `stackslash-charter`: `charter.thebrewcible.com` -> 127.0.0.1:8787. Config `~/.cloudflared/config.yml`; log `~/Library/Logs/stackslash-cloudflared/` |
 | 21:15 daily | `supabase-backup` | now actually works (see §1) |
 | 21:00 weekdays (added 2026-10-02) | `spread-minute-sync` | `scripts/spread_minute_sync.py`: per-symbol round-trip spread from the local 1-minute warehouse (Abdi-Ranaldo on consecutive minutes, median of the last 20 sessions) -> `symbol_spread_estimates` (`method = 'ar_minute_20d'`); the cost used by `record-fire-outcomes` / `sim-flip-exits` |
 

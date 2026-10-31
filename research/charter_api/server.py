@@ -8,7 +8,7 @@ SECURITY (it is designed to be reachable from the live site later)
     and the user id must be in CHARTER_ALLOWED_USER_IDS. Results cached
     5 minutes per token (never past the token's own expiry); rejected
     tokens are cached too, so a replayed bad token never reaches Supabase.
-  - rate limits (it is public through Tailscale Funnel): a client that
+  - rate limits (it is public through a Cloudflare Tunnel): a client that
     fails auth 20 times in 5 minutes is refused (429) until the window
     clears; a signed-in user gets 240 requests/minute; /cross runs at
     most 2 at a time.
@@ -17,8 +17,8 @@ SECURITY (it is designed to be reachable from the live site later)
     symbols are validated against a pattern and bound as parameters,
     dates are parsed, metric ids are checked against the catalog.
   - CORS only for the site and local dev origins.
-  - binds 127.0.0.1 only; remote access goes through Tailscale Funnel
-    (public HTTPS on the Mac's ts.net name -> 127.0.0.1:8787).
+  - binds 127.0.0.1 only; remote access goes through a Cloudflare
+    Tunnel (cloudflared, launchd com.stackslash.cloudflared: public HTTPS -> 127.0.0.1:8787).
 
 ENDPOINTS (GET; JSON, or CSV with &format=csv where noted)
   /health                              liveness (no auth)
@@ -75,7 +75,7 @@ except Exception:  # pragma: no cover
     CATALYST_LABELS = {}
 
 SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
-ORIGINS = {"https://r10t.netlify.app", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"}
+ORIGINS = {"https://r10t.netlify.app", "https://thebrewcible.com", "https://www.thebrewcible.com", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"}
 TOKEN_TTL = 300
 FAIL_LIMIT, FAIL_WINDOW = 20, 300    # failed-auth requests per client per 5 minutes
 USER_LIMIT, USER_WINDOW = 240, 60    # requests per signed-in user per minute
@@ -1041,13 +1041,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
             self.send_header("Access-Control-Max-Age", "600")
             # Chrome's Private Network Access: a public site (r10t.netlify.app) calling a private
-            # address (the tailnet 100.x IP) needs the server to opt in on the preflight
+            # address (a local dev server) needs the server to opt in on the preflight
             if self.headers.get("Access-Control-Request-Private-Network") == "true":
                 self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def _client(self):
-        # behind Tailscale Serve/Funnel every connection comes from tailscaled on 127.0.0.1;
-        # the client address is the X-Forwarded-For entry tailscaled adds (the last one)
+        # behind the Cloudflare Tunnel every connection comes from cloudflared on 127.0.0.1;
+        # Cloudflare's edge sets CF-Connecting-IP to the real client (a client can't override it).
+        # Fallback: the last X-Forwarded-For entry (the hop nearest the server), then the socket
+        cf = self.headers.get("CF-Connecting-IP", "").strip()
+        if cf:
+            return cf
         fwd = self.headers.get("X-Forwarded-For", "")
         return fwd.split(",")[-1].strip() or self.client_address[0]
 

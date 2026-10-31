@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stackslash.cloudflared</string>
+
+    <!-- Cloudflare Tunnel: https://charter.thebrewcible.com -> 127.0.0.1:8787
+         (the Charter API, com.stackslash.charter-api). Always on. Tunnel
+         stackslash-charter; config and secret credentials live in
+         ~/.cloudflared/ (config.yml, <tunnel-id>.json), never in the repo.
+         Replaced Tailscale Funnel 2026-10-31. See docs/charter.md. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/cloudflared</string>
+        <string>tunnel</string>
+        <string>--config</string>
+        <string>/Users/ckohler/.cloudflared/config.yml</string>
+        <string>--no-autoupdate</string>
+        <string>run</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-cloudflared/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ckohler/Library/Logs/stackslash-cloudflared/launchd.err.log</string>
+</dict>
+</plist>

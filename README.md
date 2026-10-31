@@ -98,6 +98,30 @@ so the next attempt doesn't re-discover the same dead ends.
 > and the current operational state. This file is the strategy, the
 > research derivations and the open decisions.
 
+## 2026-10-07 → 10-31 — On hold, restart, new domain and Cloudflare Tunnel
+
+**Read this first; the 2026-09-30 → 10-02 section below is still the
+research and to-do state (nothing in it changed).**
+
+- **Hold:** all 22 local launchd jobs were disabled 2026-10-07 and
+  re-enabled 2026-10-30 ~23:00 ET. Cloud jobs (Netlify scheduled
+  functions, pg_cron) kept running throughout.
+- **Backfilled 10-30/31:** SEC filings (from ~09-25), FINRA short
+  interest, balance sheets, the SIP daily + minute warehouse (33.4M minute
+  bars), `bars_intraday` 10-07..10-30 (401 band + 227 top-liquidity
+  symbols, 2.1M rows, IEX like the live scan), eod-scan/digest/fire
+  outcomes for 10-30, spreads, integrity check, backup, research-publish.
+- **Not recoverable — a gap in every study:** daily `factor_state`,
+  trigger evaluations and trigger events for sessions 10-07..10-29
+  (eod-scan computes only the current session), Reddit snapshots, IB
+  borrow snapshots.
+- **Domain:** the site's primary domain is now **https://thebrewcible.com**
+  (DNS on Cloudflare). `r10t.netlify.app` still answers directly; the
+  webhook and jobs still call it.
+- **Charter:** Tailscale Funnel replaced by a **Cloudflare Tunnel** at
+  `https://charter.thebrewcible.com` (launchd `com.stackslash.cloudflared`;
+  `docs/charter.md`). The user doesn't want Tailscale.
+
 ## Session 2026-09-30 → 10-02 — Charter finished, the pre-registered tests, and production fixes
 
 **Read this before every section below it; where they disagree, this wins.**
