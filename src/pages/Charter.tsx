@@ -396,6 +396,24 @@ const SERIES_PANELS: Record<string, string> = {
   reddit_upvotes: "Reddit upvotes (24h)",
 };
 
+// Phone widths get a shorter price pane, slimmer panels and less axis margin.
+const NARROW_QUERY = "(max-width: 640px)";
+function chartDims(narrow: boolean) {
+  return narrow
+    ? { PRICE_H: 260, PANEL_H: 80, GAP: 20, TOP: 30, LEFT: 46, RIGHT: 8 }
+    : { PRICE_H: 360, PANEL_H: 110, GAP: 28, TOP: 36, LEFT: 64, RIGHT: 24 };
+}
+function useNarrow() {
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW_QUERY);
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return narrow;
+}
+
 function SymbolView({
   cfg,
   setCfg,
@@ -407,6 +425,7 @@ function SymbolView({
   catalog: MetricDef[];
   onApiError: (m: string | null) => void;
 }) {
+  const narrow = useNarrow();
   const [data, setData] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(false);
   const [minuteDate, setMinuteDate] = useState<string | null>(null);
@@ -499,9 +518,9 @@ function SymbolView({
     if (!cols || !data) return null;
     const { dates, c } = cols;
     const panels = cfg.panels.filter((p) => p in c);
-    const PRICE_H = 360, PANEL_H = 110, GAP = 28, TOP = 36;
-    const grids = [{ left: 64, right: 24, top: TOP, height: PRICE_H }];
-    panels.forEach((_, i) => grids.push({ left: 64, right: 24, top: TOP + PRICE_H + GAP + i * (PANEL_H + GAP), height: PANEL_H }));
+    const { PRICE_H, PANEL_H, GAP, TOP, LEFT, RIGHT } = chartDims(narrow);
+    const grids = [{ left: LEFT, right: RIGHT, top: TOP, height: PRICE_H }];
+    panels.forEach((_, i) => grids.push({ left: LEFT, right: RIGHT, top: TOP + PRICE_H + GAP + i * (PANEL_H + GAP), height: PANEL_H }));
     const xAxis = grids.map((_, i) => ({
       type: "category" as const,
       data: dates,
@@ -522,9 +541,15 @@ function SymbolView({
         formatter: (v: number) => (i === 0 ? fmtValue(v, "price") : fmtValue(v, panelUnit(panels[i - 1]))),
       },
       splitLine: { lineStyle: { color: "#1c2230" } },
-      name: i === 0 ? cfg.symbol : panelLabel(panels[i - 1]),
-      nameLocation: "end" as const,
-      nameTextStyle: { color: "#8b93a7", align: "left" as const, padding: [0, 0, 0, -56] },
+    }));
+    // Each pane's name sits just inside its own top-left corner. (As a y-axis
+    // name it rode the gap above the pane, on top of the previous pane's
+    // lowest tick label, and read as that pane's title.)
+    const titles = grids.map((g, i) => ({
+      text: i === 0 ? cfg.symbol : panelLabel(panels[i - 1]),
+      left: g.left + 6,
+      top: g.top + 2,
+      textStyle: { color: "#8b93a7", fontSize: 11, fontWeight: "normal" as const },
     }));
     const series: EChartsOption["series"] = [
       {
@@ -599,7 +624,8 @@ function SymbolView({
     return {
       backgroundColor: "transparent",
       animation: false,
-      legend: { top: 0, left: 64, textStyle: { color: "#8b93a7" }, data: series.filter((s) => s && (s as { xAxisIndex?: number }).xAxisIndex === undefined).map((s) => (s as { name: string }).name) },
+      title: titles,
+      legend: { type: narrow ? "scroll" : "plain", top: 0, left: narrow ? 0 : 64, right: narrow ? 0 : undefined, itemWidth: narrow ? 16 : 25, textStyle: { color: "#8b93a7", fontSize: narrow ? 11 : 12 }, pageTextStyle: { color: "#8b93a7" }, pageIconColor: "#8b93a7", data: series.filter((s) => s && (s as { xAxisIndex?: number }).xAxisIndex === undefined).map((s) => (s as { name: string }).name) },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "cross", link: [{ xAxisIndex: "all" }] },
@@ -628,9 +654,10 @@ function SymbolView({
       ],
       series,
     };
-  }, [cols, data, cfg.panels, cfg.smas, cfg.vwap, cfg.sources, cfg.symbol, cfg.formulas, byId]);
+  }, [cols, data, cfg.panels, cfg.smas, cfg.vwap, cfg.sources, cfg.symbol, cfg.formulas, byId, narrow]);
 
-  const chartHeight = 36 + 360 + cfg.panels.length * (110 + 28) + 60;
+  const dims = chartDims(narrow);
+  const chartHeight = dims.TOP + dims.PRICE_H + cfg.panels.length * (dims.PANEL_H + dims.GAP) + 60;
   // click anywhere in the price chart -> the minute chart for the day under the cursor
   const datesRef = useRef<string[]>([]);
   datesRef.current = cols?.dates ?? [];

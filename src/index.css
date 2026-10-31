@@ -3067,3 +3067,13 @@ h1 .quote-tag {
   .symbol-header-title { flex-basis: 100%; margin-bottom: 4px; }
   .range-toggle button { padding: 6px 10px; }
 }
+
+/* Charter on a phone: controls wrap full-width, formula inputs fill the row. */
+@media (max-width: 640px) {
+  .charter-views { margin-left: 0; }
+  .charter-search, .charter-search input { width: 100%; }
+  .charter-formula, .charter-formula-name { width: 100%; }
+  .charter-chart { padding: 6px 0 2px; }
+  .research-tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .research-tab { white-space: nowrap; }
+}
