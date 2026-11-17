@@ -1,6 +1,6 @@
 # Pattern scout: intraday confluence, three arms (pre-registration)
 
-Written 2026-11-17. Proposal: merge = approval to run discovery. Agent profile:
+Written 2026-11-17. Construction only: merging records the design; discovery runs only on the user's explicit go-ahead in a session. Agent profile:
 `.claude/agents/pattern-scout.md`.
 
 ## Question
