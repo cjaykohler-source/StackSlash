@@ -118,8 +118,46 @@ Choices in `catalyst_study.py` that its published description does not state:
   1,575 (today) as companies left the file. Pre-2022 event results are
   survivor-biased in every implementation; the baseline is not.
 
-### Next (not yet run)
+### Attribution ladder: every gap explained
 
-Attribution ladder: add choices 1-6 to one auditor script one at a time and
-show which closes each gap (the protocol's minimal reproducing case). Then
-decide whether each choice belongs in the spec.
+`research/audit/catalyst_l3_ladder.py` starts from auditor B's build and adds
+the original's choices one at a time, cumulatively, scored against the
+original on the same data. The last rung reproduces all 12 cells exactly
+(n and mean net identical to 4 decimals), which is the minimal reproducing case
+the disagreement protocol requires. Reading the original turned up a seventh
+undocumented choice (L8).
+
+| rung (cumulative) | cells agreeing | worst n gap | worst mean gap | 20d edge 2016-21 | 20d edge 2022+ |
+|---|---|---|---|---|---|
+| L0 auditors, spec as written | 2/12 | 5.46% | 0.62 pp | +0.28 pp | +2.33 pp |
+| L1 tick $0.0001 below $1 | 2/12 | 5.46% | 0.69 pp | +0.27 | +2.26 |
+| **L2 void returns over bad prints / long gaps** | 3/12 | 5.46% | 0.20 pp | **+0.93** | **+2.85** |
+| L3 drop zero-volume flat bars | 3/12 | 5.40% | 0.20 pp | +0.91 | +2.85 |
+| L4 universe: >= 60 in-band days since 2016 | 6/12 | 4.63% | 0.43 pp | +0.84 | +2.91 |
+| L5 dollar volume on the split-adjusted series | 6/12 | 3.17% | 0.18 pp | +0.93 | +2.95 |
+| L6 entry on the symbol's own next bar | 6/12 | 3.24% | 0.17 pp | +0.91 | +2.94 |
+| L7 ticker map as original | 6/12 | 3.24% | 0.17 pp | +0.91 | +2.94 |
+| **L8 a filing with item 1.01 counts as 1.01, not 2.02** | **12/12** | 0.00% | 0.00 pp | **+1.08** | **+2.86** |
+
+### What it means
+
+- **The original is faithful to its code, and its code is now fully
+  specified.** No bug; seven unstated choices.
+- **L2 carries the edge.** Without the bad-print guard, 10x split-adjustment
+  artefacts stay in the baseline and inflate it, shrinking the 2016-21 edge
+  to +0.28 pp. The guard is defensible and belongs in the spec.
+- **L8 is a definitional choice, not a correction.** Dropping 8-Ks that also
+  carry item 1.01 adds 0.17 pp to the 2016-21 edge. Either reading is
+  defensible; the spec must say which.
+- **The 2022+ edge is robust:** +2.85 to +2.95 pp from L2 onward, whatever the
+  other choices.
+- **The 2016-21 edge is modest and choice-sensitive:** +0.84 to +1.08 pp
+  depending on L4-L8, and survivor-biased in every build (ticker map).
+
+### Verdict
+
+Layer 3 is **closed for `catalyst_study.py` 8-K 2.02 (`all` variant)**: the
+published numbers are reproduced and every difference is explained. Spec
+amendments to adopt: state L2-L8 in the study's docstring. Open: ticker-map
+survivorship (a point-in-time CIK-ticker history is needed), and the
+`excl_flags` variant, which this run did not cover.
